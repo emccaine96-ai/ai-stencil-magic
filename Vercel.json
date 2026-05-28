@@ -1,4 +1,6 @@
 {
+  "version": 2,
+  "framework": "vite",
   "cleanUrls": true,
   "rewrites": [
     {
@@ -7,3 +9,4 @@
     }
   ]
 }
+
