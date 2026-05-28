@@ -145,5 +145,34 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Inter", sans-serif;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  .font-script {
+    font-family: "Great Vibes", "Dancing Script", cursive;
+    letter-spacing: 0.02em;
+  }
+
+  .gradient-text {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+
+  .bg-gradient-primary {
+    background: var(--gradient-primary);
+  }
+
+  .bg-gradient-banner {
+    background: var(--gradient-banner);
   }
 }
