@@ -6,7 +6,7 @@ import logo from "@/assets/stencil-logo.png";
 export const Route = createFileRoute("/create")({
   head: () => ({
     meta: [
-      { title: "Create Stencil — Stencil AI" },
+      { title: "Create Stencil — PrimalPrint AI" },
       { name: "description", content: "Upload a photo and generate a professional tattoo stencil with 5-tier tonal layering." },
     ],
   }),
@@ -77,7 +77,7 @@ function CreatePage() {
           </Link>
           <Link to="/" className="flex items-center gap-2">
             <img src={logo} alt="" width={32} height={32} className="h-8 w-8" />
-            <span className="font-script text-xl">Stencil AI</span>
+            <span className="font-script text-xl">PrimalPrint AI</span>
           </Link>
           <div className="w-12" />
         </div>

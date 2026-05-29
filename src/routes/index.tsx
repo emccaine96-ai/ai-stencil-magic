@@ -30,8 +30,8 @@ function Header() {
     <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
       <div className="mx-auto max-w-6xl px-4 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2">
-          <img src={logo} alt="Stencil AI logo" width={36} height={36} className="h-9 w-9" />
-          <span className="font-script text-2xl">Stencil AI</span>
+          <img src={logo} alt="PrimalPrint AI logo" width={36} height={36} className="h-9 w-9" />
+          <span className="font-script text-2xl">PrimalPrint AI</span>
         </Link>
         <div className="flex items-center gap-3">
           <button className="rounded-full border border-border px-4 py-1.5 text-sm hover:bg-muted transition">
@@ -60,7 +60,7 @@ function PlayBanner() {
   return (
     <div className="bg-gradient-banner text-primary-foreground">
       <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-3">
-        <div className="font-semibold">Get StencilAI on Google Play</div>
+        <div className="font-semibold">Get PrimalPrintAI on Google Play</div>
         <div className="flex items-center gap-2">
           <button className="rounded-full bg-white text-foreground px-4 py-1.5 text-sm font-semibold">
             Download
@@ -329,9 +329,9 @@ function Footer() {
       <div className="mx-auto max-w-6xl px-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
         <div className="flex items-center gap-2">
           <img src={logo} alt="" width={28} height={28} className="h-7 w-7" />
-          <span className="font-script text-xl">Stencil AI</span>
+          <span className="font-script text-xl">PrimalPrint AI</span>
         </div>
-        <div>© {new Date().getFullYear()} Stencil AI. All rights reserved.</div>
+        <div>© {new Date().getFullYear()} PrimalPrint AI. All rights reserved.</div>
       </div>
     </footer>
   );
