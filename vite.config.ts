@@ -14,9 +14,3 @@ export default defineConfig({
       }
     }
   },
-  tanstackStart: {
-    server: { entry: "server" },
-    // Vercel serverless function optimization
-    isFileBasedRouting: true,
-  },
-});
