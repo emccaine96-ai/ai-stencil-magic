@@ -76,14 +76,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "description", content: "Professional AI tattoo stencils with 5-tier tonal layering — hatching, solid, dotwork, and hybrid line styles in 30 seconds." },
       { name: "author", content: "Stencil AI" },
       { property: "og:title", content: "Stencil AI — Turn any photo into a perfect tattoo stencil" },
-      { property: "og:description", content: "Professional AI tattoo stencils with 5-tier tonal layering — hatching, solid, dotwork, and hybrid line styles in 30 seconds." },
+      { property: "og:description", content: "Pro-quality stencils with 5-tier tonal layering — shadows, mid-tones, highlights mapped to hatching and dotwork." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@StencilAI" },
-      { name: "twitter:title", content: "Stencil AI — Turn any photo into a perfect tattoo stencil" },
-      { name: "twitter:description", content: "Professional AI tattoo stencils with 5-tier tonal layering — hatching, solid, dotwork, and hybrid line styles in 30 seconds." },
-      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/bWa53l1GK7MKSkWTVPCNG2GRMC93/social-images/social-1780025238523-8b6ef3e9-b374-4606-a2ee-e3a2fb65207f-1_all_1225.webp" },
-      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/bWa53l1GK7MKSkWTVPCNG2GRMC93/social-images/social-1780025238523-8b6ef3e9-b374-4606-a2ee-e3a2fb65207f-1_all_1225.webp" },
     ],
     links: [
       {
