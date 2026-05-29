@@ -24,7 +24,7 @@ export const Route = createFileRoute("/api/stencil")({
         const { image, style, intensity = 0.7 } = (await request.json()) as Body;
         const key = process.env.VITE_GEMINI_API_KEY;
         if (!key) {
-          return new Response(JSON.stringify({ error: "LOVABLE_API_KEY missing" }), {
+          return new Response(JSON.stringify({ error: "GEMENI_API_KEY missing" }), {
             status: 500,
             headers: { "content-type": "application/json" },
           });
