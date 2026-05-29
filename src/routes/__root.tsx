@@ -72,14 +72,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Stencil AI — Turn any photo into a perfect tattoo stencil" },
+      { title: "PrimalPrint AI — Turn any photo into a perfect tattoo stencil" },
       { name: "description", content: "Professional AI tattoo stencils with 5-tier tonal layering — hatching, solid, dotwork, and hybrid line styles in 30 seconds." },
-      { name: "author", content: "Stencil AI" },
-      { property: "og:title", content: "Stencil AI — Turn any photo into a perfect tattoo stencil" },
+      { name: "author", content: "PrimalPrint AI" },
+      { property: "og:title", content: "PrimalPrint AI — Turn any photo into a perfect tattoo stencil" },
       { property: "og:description", content: "Pro-quality stencils with 5-tier tonal layering — shadows, mid-tones, highlights mapped to hatching and dotwork." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@StencilAI" },
+      { name: "twitter:site", content: "@PrimalPrintAI" },
     ],
     links: [
       {
