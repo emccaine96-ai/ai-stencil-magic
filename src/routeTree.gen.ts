@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ApiStencilRouteImport } from './routes/api/stencil'
 
 const CreateRoute = CreateRouteImport.update({
   id: '/create',
@@ -23,40 +22,31 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiStencilRoute = ApiStencilRouteImport.update({
-  id: '/api/stencil',
-  path: '/api/stencil',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
-  '/api/stencil': typeof ApiStencilRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
-  '/api/stencil': typeof ApiStencilRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
-  '/api/stencil': typeof ApiStencilRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/create' | '/api/stencil'
+  fullPaths: '/' | '/create'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/create' | '/api/stencil'
-  id: '__root__' | '/' | '/create' | '/api/stencil'
+  to: '/' | '/create'
+  id: '__root__' | '/' | '/create'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CreateRoute: typeof CreateRoute
-  ApiStencilRoute: typeof ApiStencilRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -75,20 +65,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/stencil': {
-      id: '/api/stencil'
-      path: '/api/stencil'
-      fullPath: '/api/stencil'
-      preLoaderRoute: typeof ApiStencilRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CreateRoute: CreateRoute,
-  ApiStencilRoute: ApiStencilRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

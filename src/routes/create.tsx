@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useRef, useState } from "react";
-import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sliders } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
 
 export const Route = createFileRoute("/create")({
@@ -21,6 +21,18 @@ const STYLES: { id: Style; label: string; sub: string }[] = [
   { id: "hybrid", label: "Hybrid", sub: "Hatch + dots + lines" },
 ];
 
+const KEY_STORAGE = "primalprint.gemini.key";
+const STYLE_PROMPTS: Record<Style, string> = {
+  hatching:
+    "Pure pen-and-ink crosshatching. Deep shadows use 3 overlaid hatch directions; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white.",
+  solid:
+    "Clean bold solid line work, no shading fills. Use varying line weights only. Closed clean contours. Highlights pure white.",
+  dotwork:
+    "Stippling / dotwork only. Shadows = very dense small dots; dark mids = medium density; mids = sparse; lights = very few; highlights = pure white.",
+  hybrid:
+    "Combine bold solid contour lines with crosshatching in dark areas and stippling in mid-to-light areas.",
+};
+
 async function fileToDataUrl(file: File): Promise<string> {
   return new Promise((res, rej) => {
     const r = new FileReader();
@@ -28,6 +40,12 @@ async function fileToDataUrl(file: File): Promise<string> {
     r.onerror = rej;
     r.readAsDataURL(file);
   });
+}
+
+function dataUrlToInline(dataUrl: string): { mimeType: string; data: string } {
+  const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!m) throw new Error("Invalid image data");
+  return { mimeType: m[1], data: m[2] };
 }
 
 function CreatePage() {
@@ -40,6 +58,40 @@ function CreatePage() {
   const [pos, setPos] = useState(50);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // API key
+  const [apiKey, setApiKey] = useState("");
+  const [keyOpen, setKeyOpen] = useState(false);
+  const [keyDraft, setKeyDraft] = useState("");
+
+  // Advanced knobs
+  const [advOpen, setAdvOpen] = useState(false);
+  const [tierDensity, setTierDensity] = useState([90, 75, 55, 30, 0]); // shadows, dark-mid, mid, light, highlight
+  const [thresholdOffset, setThresholdOffset] = useState(0); // -30..+30 shifts all 4 Otsu cutoffs
+  const [hatchAngle, setHatchAngle] = useState(45); // primary hatch angle (deg)
+  const [hatchSpacing, setHatchSpacing] = useState(3); // px
+  const [meshStrength, setMeshStrength] = useState(60); // % face-mesh curvature follow
+
+  useEffect(() => {
+    const k = typeof window !== "undefined" ? localStorage.getItem(KEY_STORAGE) : null;
+    if (k) setApiKey(k);
+    else setKeyOpen(true);
+  }, []);
+
+  function saveKey() {
+    const k = keyDraft.trim();
+    if (!k) return;
+    localStorage.setItem(KEY_STORAGE, k);
+    setApiKey(k);
+    setKeyDraft("");
+    setKeyOpen(false);
+  }
+
+  function clearKey() {
+    localStorage.removeItem(KEY_STORAGE);
+    setApiKey("");
+    setKeyDraft("");
+  }
+
   async function onPick(file?: File | null) {
     if (!file) return;
     setStencil(null);
@@ -49,18 +101,49 @@ function CreatePage() {
 
   async function generate() {
     if (!photo) return;
+    if (!apiKey) {
+      setKeyOpen(true);
+      return;
+    }
     setLoading(true);
     setError(null);
     setStencil(null);
     try {
-      const r = await fetch("/api/stencil", {
+      const { mimeType, data: imgB64 } = dataUrlToInline(photo);
+      const prompt = buildPrompt({
+        style,
+        intensity,
+        tierDensity,
+        thresholdOffset,
+        hatchAngle,
+        hatchSpacing,
+        meshStrength,
+      });
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const r = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: photo, style, intensity }),
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: prompt },
+                { inlineData: { mimeType, data: imgB64 } },
+              ],
+            },
+          ],
+        }),
       });
       const data = await r.json();
-      if (!r.ok) throw new Error(data?.error || `Request failed (${r.status})`);
-      setStencil(data.image);
+      if (!r.ok) {
+        throw new Error(data?.error?.message || `Gemini error ${r.status}`);
+      }
+      const parts = data?.candidates?.[0]?.content?.parts ?? [];
+      const imgPart = parts.find((p: any) => p?.inlineData?.data);
+      if (!imgPart) throw new Error("No image returned by Gemini");
+      const outMime = imgPart.inlineData.mimeType || "image/png";
+      setStencil(`data:${outMime};base64,${imgPart.inlineData.data}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate");
     } finally {
@@ -79,7 +162,16 @@ function CreatePage() {
             <img src={logo} alt="" width={32} height={32} className="h-8 w-8" />
             <span className="font-script text-xl">PrimalPrint AI</span>
           </Link>
-          <div className="w-12" />
+          <button
+            onClick={() => setKeyOpen(true)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            aria-label="API key settings"
+          >
+            <KeyRound size={16} />
+            <span className={apiKey ? "text-primary" : "text-destructive"}>
+              {apiKey ? "Key set" : "Set key"}
+            </span>
+          </button>
         </div>
       </header>
 
@@ -149,6 +241,49 @@ function CreatePage() {
               Higher density = denser hatching/dots in darker tones.
             </p>
           </div>
+
+          <button
+            onClick={() => setAdvOpen((v) => !v)}
+            className="mt-5 w-full flex items-center justify-between p-3 rounded-2xl border border-border bg-card hover:border-primary/50 transition text-sm"
+          >
+            <span className="flex items-center gap-2 font-semibold">
+              <Sliders size={16} /> Advanced tonal controls
+            </span>
+            <span className="text-muted-foreground">{advOpen ? "Hide" : "Show"}</span>
+          </button>
+
+          {advOpen ? (
+            <div className="mt-3 p-4 rounded-2xl border border-border bg-card space-y-5">
+              <div>
+                <div className="text-sm font-semibold mb-3">Per-tier density</div>
+                {["Shadows", "Dark mids", "Mids", "Light mids", "Highlights"].map((label, i) => (
+                  <div key={label} className="mb-3">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">{label}</span>
+                      <span className="gradient-text font-bold">{tierDensity[i]}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={tierDensity[i]}
+                      onChange={(e) => {
+                        const next = [...tierDensity];
+                        next[i] = Number(e.target.value);
+                        setTierDensity(next);
+                      }}
+                      className="w-full mt-1 accent-[oklch(0.64_0.26_303)]"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <Knob label="Otsu threshold offset" value={thresholdOffset} min={-30} max={30} suffix="" onChange={setThresholdOffset} hint="Shifts the 4 luminance cutoffs separating the 5 tiers." />
+              <Knob label="Hatch angle" value={hatchAngle} min={0} max={180} suffix="°" onChange={setHatchAngle} hint="Primary hatch direction (secondary +90°, tertiary +45°)." />
+              <Knob label="Hatch spacing" value={hatchSpacing} min={1} max={10} suffix="px" onChange={setHatchSpacing} hint="Distance between parallel hatch lines." />
+              <Knob label="Face-mesh curvature" value={meshStrength} min={0} max={100} suffix="%" onChange={setMeshStrength} hint="How strongly hatching follows facial 3D surface curvature." />
+            </div>
+          ) : null}
         </section>
 
         <button
@@ -215,6 +350,134 @@ function CreatePage() {
           </section>
         ) : null}
       </main>
+
+      {keyOpen ? (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl border border-border bg-card p-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <Settings size={18} className="text-primary" />
+              <h3 className="font-extrabold text-lg">Gemini API Key</h3>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Your key is stored only in your browser (localStorage) and sent directly to Google. It never touches our servers.
+              Get one at{" "}
+              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-primary underline">
+                aistudio.google.com/apikey
+              </a>.
+            </p>
+            <input
+              type="password"
+              autoFocus
+              placeholder={apiKey ? "•••• change key" : "Paste your Gemini API key"}
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-primary"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={saveKey}
+                disabled={!keyDraft.trim()}
+                className="flex-1 rounded-full bg-gradient-primary text-primary-foreground py-3 font-bold shadow-glow disabled:opacity-50"
+              >
+                Save
+              </button>
+              {apiKey ? (
+                <button
+                  onClick={clearKey}
+                  className="rounded-full border border-destructive/40 text-destructive px-4 py-3 font-semibold hover:bg-destructive/10"
+                >
+                  Clear
+                </button>
+              ) : null}
+              <button
+                onClick={() => setKeyOpen(false)}
+                className="rounded-full border border-border px-4 py-3 font-semibold hover:border-primary"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function Knob({
+  label,
+  value,
+  min,
+  max,
+  suffix,
+  onChange,
+  hint,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  suffix: string;
+  onChange: (v: number) => void;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <div className="flex justify-between text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="gradient-text font-bold">
+          {value}
+          {suffix}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full mt-1 accent-[oklch(0.64_0.26_303)]"
+      />
+      {hint ? <p className="text-[10px] text-muted-foreground mt-1">{hint}</p> : null}
+    </div>
+  );
+}
+
+function buildPrompt(o: {
+  style: Style;
+  intensity: number;
+  tierDensity: number[];
+  thresholdOffset: number;
+  hatchAngle: number;
+  hatchSpacing: number;
+  meshStrength: number;
+}) {
+  const [shadow, darkMid, mid, light, highlight] = o.tierDensity;
+  const angle2 = (o.hatchAngle + 90) % 180;
+  const angle3 = (o.hatchAngle + 45) % 180;
+  return `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.
+
+HARD RULES:
+- Output a single image on PURE WHITE background.
+- All ink is the EXACT color #A855F7 (neon purple). No gray, no black, no other colors.
+- Crystal-clear closed contour line work, tattoo-stencil ready.
+- Preserve the subject's identity, proportions, facial features, hair flow, jewelry, and clothing details.
+- Apply 3D FACE-MESH aware hatching at ${o.meshStrength}% strength: hatch direction follows facial surface curvature (cheek, jawline, brow ridge, nose bridge) like a sculptural sketch.
+
+TONAL LAYERING (5 tiers derived from luminance via Otsu multi-level thresholding, offset by ${o.thresholdOffset > 0 ? "+" : ""}${o.thresholdOffset}):
+1. Deep shadows — density ${shadow}% — densest mark-making.
+2. Dark mid-tones — density ${darkMid}% — heavy mark-making.
+3. Mid-tones — density ${mid}% — medium mark-making.
+4. Light mid-tones — density ${light}% — light mark-making.
+5. Highlights — density ${highlight}% — pure white when 0%.
+
+HATCH GEOMETRY:
+- Primary angle ${o.hatchAngle}°, secondary ${angle2}°, tertiary ${angle3}°.
+- Line spacing ~${o.hatchSpacing}px.
+- Shadows: 3 overlaid hatch directions. Dark mids: 2 directions. Mids: single direction. Lights: sparse. Highlights: blank.
+
+STYLE: ${o.style.toUpperCase()}
+${STYLE_PROMPTS[o.style]}
+
+Overall shading density: ${Math.round(o.intensity * 100)}%.
+No text, no watermarks, no signatures, no frame, no background scenery.`;
 }
