@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sliders } from "lucide-react";
+import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sliders, Sparkles } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
 
 export const Route = createFileRoute("/create")({
@@ -22,6 +22,8 @@ const STYLES: { id: Style; label: string; sub: string }[] = [
 ];
 
 const KEY_STORAGE = "primalprint.gemini.key";
+const PROVIDER_STORAGE = "primalprint.provider"; // 'lovable' | 'gemini'
+type Provider = "lovable" | "gemini";
 const STYLE_PROMPTS: Record<Style, string> = {
   hatching:
     "Pure pen-and-ink crosshatching. Deep shadows use 3 overlaid hatch directions; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white.",
@@ -62,6 +64,9 @@ function CreatePage() {
   const [apiKey, setApiKey] = useState("");
   const [keyOpen, setKeyOpen] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
+  const [provider, setProvider] = useState<Provider>("lovable");
+  const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
+  const [exporting, setExporting] = useState(false);
 
   // Advanced knobs
   const [advOpen, setAdvOpen] = useState(false);
@@ -74,8 +79,15 @@ function CreatePage() {
   useEffect(() => {
     const k = typeof window !== "undefined" ? localStorage.getItem(KEY_STORAGE) : null;
     if (k) setApiKey(k);
-    else setKeyOpen(true);
+    const p = typeof window !== "undefined" ? (localStorage.getItem(PROVIDER_STORAGE) as Provider | null) : null;
+    if (p === "lovable" || p === "gemini") setProvider(p);
   }, []);
+
+  function selectProvider(p: Provider) {
+    setProvider(p);
+    localStorage.setItem(PROVIDER_STORAGE, p);
+    if (p === "gemini" && !apiKey) setKeyOpen(true);
+  }
 
   function saveKey() {
     const k = keyDraft.trim();
@@ -101,7 +113,7 @@ function CreatePage() {
 
   async function generate() {
     if (!photo) return;
-    if (!apiKey) {
+    if (provider === "gemini" && !apiKey) {
       setKeyOpen(true);
       return;
     }
@@ -119,35 +131,71 @@ function CreatePage() {
         hatchSpacing,
         meshStrength,
       });
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${encodeURIComponent(apiKey)}`;
-      const r = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { text: prompt },
-                { inlineData: { mimeType, data: imgB64 } },
-              ],
-            },
-          ],
-        }),
-      });
-      const data = await r.json();
-      if (!r.ok) {
-        throw new Error(data?.error?.message || `Gemini error ${r.status}`);
+      if (provider === "lovable") {
+        const r = await fetch("/api/generate-stencil", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt, image: { mimeType, data: imgB64 } }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data?.error || `Lovable AI error ${r.status}`);
+        setStencil(data.dataUrl);
+      } else {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              { role: "user", parts: [{ text: prompt }, { inlineData: { mimeType, data: imgB64 } }] },
+            ],
+          }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data?.error?.message || `Gemini error ${r.status}`);
+        const parts = data?.candidates?.[0]?.content?.parts ?? [];
+        const imgPart = parts.find((p: any) => p?.inlineData?.data);
+        if (!imgPart) throw new Error("No image returned by Gemini");
+        const outMime = imgPart.inlineData.mimeType || "image/png";
+        setStencil(`data:${outMime};base64,${imgPart.inlineData.data}`);
       }
-      const parts = data?.candidates?.[0]?.content?.parts ?? [];
-      const imgPart = parts.find((p: any) => p?.inlineData?.data);
-      if (!imgPart) throw new Error("No image returned by Gemini");
-      const outMime = imgPart.inlineData.mimeType || "image/png";
-      setStencil(`data:${outMime};base64,${imgPart.inlineData.data}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function downloadUpscaled() {
+    if (!stencil) return;
+    setExporting(true);
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = stencil;
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+      const size = exportSize;
+      const canvas = document.createElement("canvas");
+      const ratio = img.width / img.height || 1;
+      canvas.width = size;
+      canvas.height = Math.round(size / ratio);
+      const ctx = canvas.getContext("2d")!;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const blob: Blob = await new Promise((res) => canvas.toBlob((b) => res(b!), "image/png"));
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = u;
+      a.download = `stencil-${size}px.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(u), 1000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -168,14 +216,36 @@ function CreatePage() {
             aria-label="API key settings"
           >
             <KeyRound size={16} />
-            <span className={apiKey ? "text-primary" : "text-destructive"}>
-              {apiKey ? "Key set" : "Set key"}
+            <span className={provider === "lovable" ? "text-primary" : apiKey ? "text-primary" : "text-destructive"}>
+              {provider === "lovable" ? "Lovable AI" : apiKey ? "My key" : "Set key"}
             </span>
           </button>
         </div>
       </header>
 
       <main className="mx-auto max-w-2xl px-4 py-8 space-y-8">
+        <section>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">AI provider</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => selectProvider("lovable")}
+              className={`p-3 rounded-2xl border text-left transition ${provider === "lovable" ? "border-primary bg-gradient-primary text-primary-foreground shadow-glow" : "border-border bg-card hover:border-primary/50"}`}
+            >
+              <div className="flex items-center gap-2 font-bold text-sm"><Sparkles size={14} /> Lovable AI</div>
+              <div className={`text-[11px] mt-1 ${provider === "lovable" ? "opacity-90" : "text-muted-foreground"}`}>Uses workspace credits. No key required.</div>
+            </button>
+            <button
+              onClick={() => selectProvider("gemini")}
+              className={`p-3 rounded-2xl border text-left transition ${provider === "gemini" ? "border-primary bg-gradient-primary text-primary-foreground shadow-glow" : "border-border bg-card hover:border-primary/50"}`}
+            >
+              <div className="flex items-center gap-2 font-bold text-sm"><KeyRound size={14} /> My Gemini key</div>
+              <div className={`text-[11px] mt-1 ${provider === "gemini" ? "opacity-90" : "text-muted-foreground"}`}>Free tier from Google AI Studio.</div>
+            </button>
+          </div>
+        </section>
+
         <section>
           <h1 className="text-2xl font-extrabold">1. Upload your reference</h1>
           <input
@@ -340,13 +410,29 @@ function CreatePage() {
                 <ChevronsLeftRight size={18} />
               </div>
             </div>
-            <a
-              href={stencil}
-              download="stencil.png"
-              className="w-full rounded-full bg-card border border-border py-3 font-semibold flex items-center justify-center gap-2 hover:border-primary transition"
-            >
-              <Download size={18} /> Download Stencil
-            </a>
+            <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+              <div className="text-sm font-semibold">Export resolution</div>
+              <div className="grid grid-cols-4 gap-2">
+                {([1024, 2048, 4096, 7680] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setExportSize(s)}
+                    className={`py-2 rounded-xl text-xs font-bold border transition ${exportSize === s ? "border-primary bg-gradient-primary text-primary-foreground" : "border-border hover:border-primary/50"}`}
+                  >
+                    {s === 7680 ? "8K" : s === 4096 ? "4K" : s === 2048 ? "2K" : "1K"}
+                    <div className="text-[9px] opacity-70 font-normal">{s}px</div>
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={downloadUpscaled}
+                disabled={exporting}
+                className="w-full rounded-full bg-gradient-primary text-primary-foreground py-3 font-bold shadow-glow disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {exporting ? <><Loader2 className="animate-spin" size={16} /> Preparing…</> : <><Download size={16} /> Download {exportSize === 7680 ? "8K" : exportSize === 4096 ? "4K" : exportSize === 2048 ? "2K" : "1K"} PNG</>}
+              </button>
+              <p className="text-[10px] text-muted-foreground text-center">Upscaled in your browser via high-quality bicubic interpolation.</p>
+            </div>
           </section>
         ) : null}
       </main>
