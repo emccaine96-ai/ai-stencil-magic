@@ -737,20 +737,21 @@ async function postProcessStencil(
   const data = ctx.getImageData(0, 0, W, H);
   const px = data.data;
 
-  // Threshold (0..100) -> luminance cutoff (slider: 50 ~ midpoint)
-  const cut = 60 + (opts.threshold - 50) * 1.6; // ~ -20..+140 around mid
-  // Density (0..100) -> erode/dilate bias. <50 thins, >50 thickens.
+  // Distance-from-white threshold. The generated stencil is purple ink on white,
+  // so "ink" pixels have a large distance from white and background pixels are
+  // near-white. Slider 50 = preserve everything that's visibly not-white.
+  // Higher threshold keeps only the darkest marks; lower keeps faint marks too.
+  // Density biases the cutoff further: >50 thickens (keeps more ink), <50 thins.
+  const baseCut = 30 - (opts.threshold - 50) * 0.5; // ~55..5
   const densityBias = (opts.density - 50) / 50; // -1..+1
+  const cut = Math.max(4, baseCut - densityBias * 15);
 
-  // Binarise toward the stencil's ink color (#A855F7). Anything notably non-white
-  // and within tolerance becomes ink; the rest is white.
   const inkR = 0xa8, inkG = 0x55, inkB = 0xf7;
   for (let i = 0; i < px.length; i += 4) {
     const r = px[i], g = px[i + 1], b = px[i + 2];
-    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-    // density bias shifts the cutoff: higher density => more ink kept
-    const adj = cut - densityBias * 35;
-    if (lum < adj) {
+    // Manhattan distance from white — fast and robust for purple-on-white.
+    const dist = (255 - r) + (255 - g) + (255 - b);
+    if (dist > cut) {
       px[i] = inkR; px[i + 1] = inkG; px[i + 2] = inkB; px[i + 3] = 255;
     } else {
       px[i] = 255; px[i + 1] = 255; px[i + 2] = 255; px[i + 3] = 255;
