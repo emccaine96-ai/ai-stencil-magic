@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sliders, Sparkles } from "lucide-react";
+import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sliders, Sparkles, Wand2, Map as MapIcon } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
 
 export const Route = createFileRoute("/create")({
@@ -76,12 +76,61 @@ function CreatePage() {
   const [hatchSpacing, setHatchSpacing] = useState(3); // px
   const [meshStrength, setMeshStrength] = useState(60); // % face-mesh curvature follow
 
+  // Post-generation edit knobs (client-side only, no re-generation)
+  const [editOpen, setEditOpen] = useState(false);
+  const [editAdvOpen, setEditAdvOpen] = useState(false);
+  const [stencilDensity, setStencilDensity] = useState(50); // 0..100
+  const [advThreshold, setAdvThreshold] = useState(50); // 0..100
+  const [shadingStyle, setShadingStyle] = useState<"none" | "smooth" | "whip" | "pendulum">("none");
+  const [portraitMap, setPortraitMap] = useState(false);
+  const [viewMode, setViewMode] = useState<"stencil" | "map">("stencil");
+  const [processedUrl, setProcessedUrl] = useState<string | null>(null);
+  const [mapUrl, setMapUrl] = useState<string | null>(null);
+
   useEffect(() => {
     const k = typeof window !== "undefined" ? localStorage.getItem(KEY_STORAGE) : null;
     if (k) setApiKey(k);
     const p = typeof window !== "undefined" ? (localStorage.getItem(PROVIDER_STORAGE) as Provider | null) : null;
     if (p === "lovable" || p === "gemini") setProvider(p);
   }, []);
+
+  // Re-run client-side post-processing whenever the stencil or edit knobs change.
+  useEffect(() => {
+    let cancelled = false;
+    if (!stencil) {
+      setProcessedUrl(null);
+      setMapUrl(null);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const out = await postProcessStencil(stencil, {
+          density: stencilDensity,
+          threshold: advThreshold,
+          shadingStyle,
+        });
+        if (cancelled) return;
+        setProcessedUrl(out);
+        if (portraitMap) {
+          const m = await buildShadingMap(stencil, photo, advThreshold);
+          if (!cancelled) setMapUrl(m);
+        } else {
+          setMapUrl(null);
+        }
+      } catch {
+        /* keep last frame */
+      }
+    }, 60);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [stencil, photo, stencilDensity, advThreshold, shadingStyle, portraitMap]);
+
+  // Reset edit panel when a new stencil arrives.
+  useEffect(() => {
+    setViewMode("stencil");
+  }, [stencil]);
 
   function selectProvider(p: Provider) {
     setProvider(p);
@@ -167,12 +216,13 @@ function CreatePage() {
   }
 
   async function downloadUpscaled() {
-    if (!stencil) return;
+    const source = viewMode === "map" && mapUrl ? mapUrl : processedUrl ?? stencil;
+    if (!source) return;
     setExporting(true);
     try {
       const img = new Image();
       img.crossOrigin = "anonymous";
-      img.src = stencil;
+      img.src = source;
       await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
       const size = exportSize;
       const canvas = document.createElement("canvas");
