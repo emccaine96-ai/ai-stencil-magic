@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sliders, Sparkles } from "lucide-react";
+import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sliders, Sparkles, Wand2, Map as MapIcon } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
 
 export const Route = createFileRoute("/create")({
@@ -76,12 +76,61 @@ function CreatePage() {
   const [hatchSpacing, setHatchSpacing] = useState(3); // px
   const [meshStrength, setMeshStrength] = useState(60); // % face-mesh curvature follow
 
+  // Post-generation edit knobs (client-side only, no re-generation)
+  const [editOpen, setEditOpen] = useState(false);
+  const [editAdvOpen, setEditAdvOpen] = useState(false);
+  const [stencilDensity, setStencilDensity] = useState(50); // 0..100
+  const [advThreshold, setAdvThreshold] = useState(50); // 0..100
+  const [shadingStyle, setShadingStyle] = useState<"none" | "smooth" | "whip" | "pendulum">("none");
+  const [portraitMap, setPortraitMap] = useState(false);
+  const [viewMode, setViewMode] = useState<"stencil" | "map">("stencil");
+  const [processedUrl, setProcessedUrl] = useState<string | null>(null);
+  const [mapUrl, setMapUrl] = useState<string | null>(null);
+
   useEffect(() => {
     const k = typeof window !== "undefined" ? localStorage.getItem(KEY_STORAGE) : null;
     if (k) setApiKey(k);
     const p = typeof window !== "undefined" ? (localStorage.getItem(PROVIDER_STORAGE) as Provider | null) : null;
     if (p === "lovable" || p === "gemini") setProvider(p);
   }, []);
+
+  // Re-run client-side post-processing whenever the stencil or edit knobs change.
+  useEffect(() => {
+    let cancelled = false;
+    if (!stencil) {
+      setProcessedUrl(null);
+      setMapUrl(null);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const out = await postProcessStencil(stencil, {
+          density: stencilDensity,
+          threshold: advThreshold,
+          shadingStyle,
+        });
+        if (cancelled) return;
+        setProcessedUrl(out);
+        if (portraitMap) {
+          const m = await buildShadingMap(stencil, photo, advThreshold);
+          if (!cancelled) setMapUrl(m);
+        } else {
+          setMapUrl(null);
+        }
+      } catch {
+        /* keep last frame */
+      }
+    }, 60);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [stencil, photo, stencilDensity, advThreshold, shadingStyle, portraitMap]);
+
+  // Reset edit panel when a new stencil arrives.
+  useEffect(() => {
+    setViewMode("stencil");
+  }, [stencil]);
 
   function selectProvider(p: Provider) {
     setProvider(p);
@@ -167,12 +216,13 @@ function CreatePage() {
   }
 
   async function downloadUpscaled() {
-    if (!stencil) return;
+    const source = viewMode === "map" && mapUrl ? mapUrl : processedUrl ?? stencil;
+    if (!source) return;
     setExporting(true);
     try {
       const img = new Image();
       img.crossOrigin = "anonymous";
-      img.src = stencil;
+      img.src = source;
       await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
       const size = exportSize;
       const canvas = document.createElement("canvas");
@@ -378,7 +428,21 @@ function CreatePage() {
 
         {stencil ? (
           <section className="space-y-4">
-            <h2 className="text-2xl font-extrabold">Your stencil</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-extrabold">Your stencil</h2>
+              {portraitMap && mapUrl ? (
+                <div className="inline-flex rounded-full border border-border bg-card p-1 text-xs">
+                  <button
+                    onClick={() => setViewMode("stencil")}
+                    className={`px-3 py-1 rounded-full transition ${viewMode === "stencil" ? "bg-gradient-primary text-primary-foreground" : "text-muted-foreground"}`}
+                  >Stencil</button>
+                  <button
+                    onClick={() => setViewMode("map")}
+                    className={`px-3 py-1 rounded-full transition ${viewMode === "map" ? "bg-gradient-primary text-primary-foreground" : "text-muted-foreground"}`}
+                  >Shading map</button>
+                </div>
+              ) : null}
+            </div>
             <div className="relative aspect-square bg-white rounded-3xl overflow-hidden border border-border">
               {photo ? (
                 <img
@@ -389,7 +453,7 @@ function CreatePage() {
                 />
               ) : null}
               <img
-                src={stencil}
+                src={viewMode === "map" && mapUrl ? mapUrl : processedUrl ?? stencil}
                 alt="Stencil"
                 className="absolute inset-0 h-full w-full object-cover"
                 style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
@@ -410,6 +474,71 @@ function CreatePage() {
                 <ChevronsLeftRight size={18} />
               </div>
             </div>
+
+            <button
+              onClick={() => setEditOpen((v) => !v)}
+              className="w-full flex items-center justify-between p-3 rounded-2xl border border-border bg-card hover:border-primary/50 transition text-sm"
+            >
+              <span className="flex items-center gap-2 font-semibold">
+                <Wand2 size={16} /> Edit stencil (live, no re-generate)
+              </span>
+              <span className="text-muted-foreground">{editOpen ? "Hide" : "Show"}</span>
+            </button>
+
+            {editOpen ? (
+              <div className="p-4 rounded-2xl border border-border bg-card space-y-5">
+                <Knob label="Stencil density" value={stencilDensity} min={0} max={100} suffix="%" onChange={setStencilDensity} hint="Line weight & detail threshold of the rendered stencil." />
+
+                <button
+                  onClick={() => setEditAdvOpen((v) => !v)}
+                  className="w-full flex items-center justify-between p-2 rounded-xl border border-border hover:border-primary/50 transition text-xs"
+                >
+                  <span className="flex items-center gap-2 font-semibold"><Sliders size={14} /> Advanced settings</span>
+                  <span className="text-muted-foreground">{editAdvOpen ? "Hide" : "Show"}</span>
+                </button>
+
+                {editAdvOpen ? (
+                  <div className="space-y-5 pt-1">
+                    <Knob label="Advanced threshold" value={advThreshold} min={0} max={100} suffix="%" onChange={setAdvThreshold} hint="Fine-tunes high/low-contrast separation limits." />
+
+                    <div>
+                      <div className="text-xs font-semibold mb-2">Tattoo shading style</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([
+                          { id: "none", label: "Original", sub: "No shading filter" },
+                          { id: "smooth", label: "Smooth", sub: "Soft gradients" },
+                          { id: "whip", label: "Whip", sub: "Spaced directional dots" },
+                          { id: "pendulum", label: "Pendulum", sub: "Tapered swing texture" },
+                        ] as const).map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => setShadingStyle(s.id)}
+                            className={`text-left p-2 rounded-xl border transition ${shadingStyle === s.id ? "border-primary bg-gradient-primary text-primary-foreground" : "border-border hover:border-primary/50"}`}
+                          >
+                            <div className="font-bold text-xs">{s.label}</div>
+                            <div className={`text-[10px] ${shadingStyle === s.id ? "opacity-90" : "text-muted-foreground"}`}>{s.sub}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <label className="flex items-center justify-between p-3 rounded-xl border border-border cursor-pointer">
+                      <span className="flex items-center gap-2 text-xs font-semibold"><MapIcon size={14} /> Portrait shading map</span>
+                      <span
+                        className={`relative inline-block w-10 h-6 rounded-full transition ${portraitMap ? "bg-gradient-primary" : "bg-muted"}`}
+                      >
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-all ${portraitMap ? "left-[18px]" : "left-0.5"}`} />
+                      </span>
+                      <input type="checkbox" className="hidden" checked={portraitMap} onChange={(e) => setPortraitMap(e.target.checked)} />
+                    </label>
+                    {portraitMap ? (
+                      <p className="text-[10px] text-muted-foreground -mt-3">Broken contour lines close around dark/mid/light transitions, with a translucent tonal underlay. Toggle the view above the preview.</p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
               <div className="text-sm font-semibold">Export resolution</div>
               <div className="grid grid-cols-4 gap-2">
@@ -566,4 +695,212 @@ ${STYLE_PROMPTS[o.style]}
 
 Overall shading density: ${Math.round(o.intensity * 100)}%.
 No text, no watermarks, no signatures, no frame, no background scenery.`;
+}
+
+// ---------- Client-side post-processing ----------
+
+async function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = src;
+  });
+}
+
+function makeCanvas(w: number, h: number) {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  return c;
+}
+
+/**
+ * Re-renders the stencil with adjustable density / threshold / shading style,
+ * all client-side. The original generated stencil is never lost — this only
+ * derives a new display image from it.
+ */
+async function postProcessStencil(
+  src: string,
+  opts: { density: number; threshold: number; shadingStyle: "none" | "smooth" | "whip" | "pendulum" },
+): Promise<string> {
+  const img = await loadImage(src);
+  const W = Math.min(img.width, 1024);
+  const H = Math.round((W / img.width) * img.height);
+  const canvas = makeCanvas(W, H);
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(img, 0, 0, W, H);
+
+  const data = ctx.getImageData(0, 0, W, H);
+  const px = data.data;
+
+  // Threshold (0..100) -> luminance cutoff (slider: 50 ~ midpoint)
+  const cut = 60 + (opts.threshold - 50) * 1.6; // ~ -20..+140 around mid
+  // Density (0..100) -> erode/dilate bias. <50 thins, >50 thickens.
+  const densityBias = (opts.density - 50) / 50; // -1..+1
+
+  // Binarise toward the stencil's ink color (#A855F7). Anything notably non-white
+  // and within tolerance becomes ink; the rest is white.
+  const inkR = 0xa8, inkG = 0x55, inkB = 0xf7;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i], g = px[i + 1], b = px[i + 2];
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    // density bias shifts the cutoff: higher density => more ink kept
+    const adj = cut - densityBias * 35;
+    if (lum < adj) {
+      px[i] = inkR; px[i + 1] = inkG; px[i + 2] = inkB; px[i + 3] = 255;
+    } else {
+      px[i] = 255; px[i + 1] = 255; px[i + 2] = 255; px[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(data, 0, 0);
+
+  // Shading style overlays (operate only on already-inked regions via masking).
+  if (opts.shadingStyle === "smooth") {
+    // soft gradient: blur a copy then darken-blend
+    const tmp = makeCanvas(W, H);
+    const tctx = tmp.getContext("2d")!;
+    tctx.drawImage(canvas, 0, 0);
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    (ctx as any).filter = "blur(1.6px)";
+    ctx.drawImage(tmp, 0, 0);
+    (ctx as any).filter = "none";
+    ctx.restore();
+  } else if (opts.shadingStyle === "whip" || opts.shadingStyle === "pendulum") {
+    overlayShadingTexture(ctx, W, H, opts.shadingStyle, inkR, inkG, inkB);
+  }
+
+  return canvas.toDataURL("image/png");
+}
+
+function overlayShadingTexture(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  kind: "whip" | "pendulum",
+  r: number, g: number, b: number,
+) {
+  // Mask = currently inked pixels.
+  const base = ctx.getImageData(0, 0, W, H);
+  const mask = new Uint8Array(W * H);
+  for (let i = 0, j = 0; i < base.data.length; i += 4, j++) {
+    mask[j] = base.data[i] < 250 ? 1 : 0;
+  }
+
+  const tex = makeCanvas(W, H);
+  const tctx = tex.getContext("2d")!;
+  tctx.fillStyle = `rgb(${r},${g},${b})`;
+
+  if (kind === "whip") {
+    // Spaced directional dot-work: dots along 30° lines, fading along the line.
+    const angle = (Math.PI / 180) * 30;
+    const dx = Math.cos(angle), dy = Math.sin(angle);
+    const spacing = 7;
+    for (let y = 0; y < H; y += spacing) {
+      for (let t = 0; t < W * 1.4; t += 3) {
+        const x = Math.round(t * dx + y);
+        const yy = Math.round(t * dy + y);
+        if (x < 0 || x >= W || yy < 0 || yy >= H) continue;
+        if (!mask[yy * W + x]) continue;
+        const fade = 1 - (t % 60) / 60;
+        tctx.globalAlpha = 0.35 + fade * 0.5;
+        tctx.beginPath();
+        tctx.arc(x, yy, 0.9 + fade * 0.8, 0, Math.PI * 2);
+        tctx.fill();
+      }
+    }
+  } else {
+    // Pendulum: tapered back-and-forth swing strokes.
+    const rowH = 10;
+    for (let y = 0; y < H; y += rowH) {
+      const phase = (y / rowH) % 2 === 0 ? 1 : -1;
+      tctx.beginPath();
+      let started = false;
+      for (let x = 0; x < W; x += 2) {
+        const yy = Math.round(y + Math.sin((x / W) * Math.PI * 6) * 2.2 * phase);
+        if (yy < 0 || yy >= H) continue;
+        if (!mask[yy * W + x]) { started = false; continue; }
+        if (!started) { tctx.moveTo(x, yy); started = true; } else { tctx.lineTo(x, yy); }
+      }
+      const taper = 0.6 + Math.random() * 0.8;
+      tctx.lineWidth = taper;
+      tctx.globalAlpha = 0.7;
+      tctx.strokeStyle = `rgb(${r},${g},${b})`;
+      tctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.drawImage(tex, 0, 0);
+}
+
+/**
+ * Builds the Portrait Shading Map: broken topographic-style contour lines that
+ * close around the dark / mid / light boundaries of the original photo, with a
+ * semi-transparent tonal underlay inside the boundaries.
+ */
+async function buildShadingMap(
+  stencilSrc: string,
+  photoSrc: string | null,
+  threshold: number,
+): Promise<string> {
+  const ref = await loadImage(photoSrc ?? stencilSrc);
+  const W = Math.min(ref.width, 800);
+  const H = Math.round((W / ref.width) * ref.height);
+  const src = makeCanvas(W, H);
+  const sctx = src.getContext("2d")!;
+  sctx.drawImage(ref, 0, 0, W, H);
+  const srcData = sctx.getImageData(0, 0, W, H).data;
+
+  // 3-tier tonal segmentation
+  const lum = new Uint8Array(W * H);
+  for (let i = 0, j = 0; i < srcData.length; i += 4, j++) {
+    lum[j] = (0.299 * srcData[i] + 0.587 * srcData[i + 1] + 0.114 * srcData[i + 2]) | 0;
+  }
+  const lo = 85 + (threshold - 50) * 0.8;
+  const hi = 170 + (threshold - 50) * 0.8;
+  const tier = new Uint8Array(W * H);
+  for (let i = 0; i < lum.length; i++) {
+    tier[i] = lum[i] < lo ? 0 : lum[i] < hi ? 1 : 2;
+  }
+
+  const out = makeCanvas(W, H);
+  const octx = out.getContext("2d")!;
+  octx.fillStyle = "#ffffff";
+  octx.fillRect(0, 0, W, H);
+
+  // Translucent tonal underlay inside the boundaries.
+  const underlay = octx.createImageData(W, H);
+  for (let j = 0, i = 0; j < tier.length; j++, i += 4) {
+    // Map tier -> ink alpha (dark=more, mid=some, light=none)
+    const a = tier[j] === 0 ? 90 : tier[j] === 1 ? 45 : 0;
+    underlay.data[i] = 0xa8;
+    underlay.data[i + 1] = 0x55;
+    underlay.data[i + 2] = 0xf7;
+    underlay.data[i + 3] = a;
+  }
+  octx.putImageData(underlay, 0, 0);
+
+  // Broken contour lines on tier boundaries (4-neighbour edge detect on tier map).
+  octx.fillStyle = "#A855F7";
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const k = y * W + x;
+      const t = tier[k];
+      const edge =
+        tier[k - 1] !== t ||
+        tier[k + 1] !== t ||
+        tier[k - W] !== t ||
+        tier[k + W] !== t;
+      if (!edge) continue;
+      // "Broken" lines: probabilistic skip creates dashed contour look.
+      if (((x * 73856093) ^ (y * 19349663)) % 5 === 0) continue;
+      octx.fillRect(x, y, 1, 1);
+    }
+  }
+
+  return out.toDataURL("image/png");
 }
