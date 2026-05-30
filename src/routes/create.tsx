@@ -428,7 +428,21 @@ function CreatePage() {
 
         {stencil ? (
           <section className="space-y-4">
-            <h2 className="text-2xl font-extrabold">Your stencil</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-extrabold">Your stencil</h2>
+              {portraitMap && mapUrl ? (
+                <div className="inline-flex rounded-full border border-border bg-card p-1 text-xs">
+                  <button
+                    onClick={() => setViewMode("stencil")}
+                    className={`px-3 py-1 rounded-full transition ${viewMode === "stencil" ? "bg-gradient-primary text-primary-foreground" : "text-muted-foreground"}`}
+                  >Stencil</button>
+                  <button
+                    onClick={() => setViewMode("map")}
+                    className={`px-3 py-1 rounded-full transition ${viewMode === "map" ? "bg-gradient-primary text-primary-foreground" : "text-muted-foreground"}`}
+                  >Shading map</button>
+                </div>
+              ) : null}
+            </div>
             <div className="relative aspect-square bg-white rounded-3xl overflow-hidden border border-border">
               {photo ? (
                 <img
@@ -439,7 +453,7 @@ function CreatePage() {
                 />
               ) : null}
               <img
-                src={stencil}
+                src={viewMode === "map" && mapUrl ? mapUrl : processedUrl ?? stencil}
                 alt="Stencil"
                 className="absolute inset-0 h-full w-full object-cover"
                 style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
@@ -460,6 +474,71 @@ function CreatePage() {
                 <ChevronsLeftRight size={18} />
               </div>
             </div>
+
+            <button
+              onClick={() => setEditOpen((v) => !v)}
+              className="w-full flex items-center justify-between p-3 rounded-2xl border border-border bg-card hover:border-primary/50 transition text-sm"
+            >
+              <span className="flex items-center gap-2 font-semibold">
+                <Wand2 size={16} /> Edit stencil (live, no re-generate)
+              </span>
+              <span className="text-muted-foreground">{editOpen ? "Hide" : "Show"}</span>
+            </button>
+
+            {editOpen ? (
+              <div className="p-4 rounded-2xl border border-border bg-card space-y-5">
+                <Knob label="Stencil density" value={stencilDensity} min={0} max={100} suffix="%" onChange={setStencilDensity} hint="Line weight & detail threshold of the rendered stencil." />
+
+                <button
+                  onClick={() => setEditAdvOpen((v) => !v)}
+                  className="w-full flex items-center justify-between p-2 rounded-xl border border-border hover:border-primary/50 transition text-xs"
+                >
+                  <span className="flex items-center gap-2 font-semibold"><Sliders size={14} /> Advanced settings</span>
+                  <span className="text-muted-foreground">{editAdvOpen ? "Hide" : "Show"}</span>
+                </button>
+
+                {editAdvOpen ? (
+                  <div className="space-y-5 pt-1">
+                    <Knob label="Advanced threshold" value={advThreshold} min={0} max={100} suffix="%" onChange={setAdvThreshold} hint="Fine-tunes high/low-contrast separation limits." />
+
+                    <div>
+                      <div className="text-xs font-semibold mb-2">Tattoo shading style</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([
+                          { id: "none", label: "Original", sub: "No shading filter" },
+                          { id: "smooth", label: "Smooth", sub: "Soft gradients" },
+                          { id: "whip", label: "Whip", sub: "Spaced directional dots" },
+                          { id: "pendulum", label: "Pendulum", sub: "Tapered swing texture" },
+                        ] as const).map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => setShadingStyle(s.id)}
+                            className={`text-left p-2 rounded-xl border transition ${shadingStyle === s.id ? "border-primary bg-gradient-primary text-primary-foreground" : "border-border hover:border-primary/50"}`}
+                          >
+                            <div className="font-bold text-xs">{s.label}</div>
+                            <div className={`text-[10px] ${shadingStyle === s.id ? "opacity-90" : "text-muted-foreground"}`}>{s.sub}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <label className="flex items-center justify-between p-3 rounded-xl border border-border cursor-pointer">
+                      <span className="flex items-center gap-2 text-xs font-semibold"><MapIcon size={14} /> Portrait shading map</span>
+                      <span
+                        className={`relative inline-block w-10 h-6 rounded-full transition ${portraitMap ? "bg-gradient-primary" : "bg-muted"}`}
+                      >
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-all ${portraitMap ? "left-[18px]" : "left-0.5"}`} />
+                      </span>
+                      <input type="checkbox" className="hidden" checked={portraitMap} onChange={(e) => setPortraitMap(e.target.checked)} />
+                    </label>
+                    {portraitMap ? (
+                      <p className="text-[10px] text-muted-foreground -mt-3">Broken contour lines close around dark/mid/light transitions, with a translucent tonal underlay. Toggle the view above the preview.</p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
               <div className="text-sm font-semibold">Export resolution</div>
               <div className="grid grid-cols-4 gap-2">
