@@ -648,38 +648,27 @@ const KNOB_DEFS: { key: keyof Knobs; label: string; hint: string }[] = [
   { key: "smoothing",   label: "Noise reduction", hint: "Gaussian pre-blur to kill speckle (radius 0–8px)." },
 ];
 
-function buildPrompt(o: {
-  style: Style;
-  intensity: number;
-  tierDensity: number[];
-  thresholdOffset: number;
-  hatchAngle: number;
-  hatchSpacing: number;
-  meshStrength: number;
-}) {
-  const [shadow, darkMid, mid, light, highlight] = o.tierDensity;
-  const angle2 = (o.hatchAngle + 90) % 180;
-  const angle3 = (o.hatchAngle + 45) % 180;
+function buildPrompt(o: { style: Style; intensity: number }) {
+  // Bake the proven "May 27" defaults into the prompt so first-shot output is
+  // gallery-grade without the user needing to touch sliders.
   return `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.
 
 HARD RULES:
 - Output a single image on PURE WHITE background.
 - All ink is the EXACT color #A855F7 (neon purple). No gray, no black, no other colors.
 - Crystal-clear closed contour line work, tattoo-stencil ready.
-- Preserve the subject's identity, proportions, facial features, hair flow, jewelry, and clothing details.
-- Apply 3D FACE-MESH aware hatching at ${o.meshStrength}% strength: hatch direction follows facial surface curvature (cheek, jawline, brow ridge, nose bridge) like a sculptural sketch.
+- Preserve the subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly.
+- For portraits: apply 3D face-mesh aware crosshatching that follows facial surface curvature (cheek, jawline, brow ridge, nose bridge). Eyes, lips and teeth crisply defined.
+- For flowers / objects: delicate parallel hatching radiating along petal curvature, soft pencil-like graduations from saturated purple in shadow folds to faint outline on outer petals.
 
-TONAL LAYERING (5 tiers derived from luminance via Otsu multi-level thresholding, offset by ${o.thresholdOffset > 0 ? "+" : ""}${o.thresholdOffset}):
-1. Deep shadows — density ${shadow}% — densest mark-making.
-2. Dark mid-tones — density ${darkMid}% — heavy mark-making.
-3. Mid-tones — density ${mid}% — medium mark-making.
-4. Light mid-tones — density ${light}% — light mark-making.
-5. Highlights — density ${highlight}% — pure white when 0%.
+TONAL LAYERING (5 tiers via Otsu multi-level thresholding):
+1. Deep shadows — densest mark-making, 3 overlaid hatch directions.
+2. Dark mid-tones — heavy mark-making, 2 hatch directions.
+3. Mid-tones — medium single-direction hatching.
+4. Light mid-tones — sparse parallel strokes.
+5. Highlights — pure white paper.
 
-HATCH GEOMETRY:
-- Primary angle ${o.hatchAngle}°, secondary ${angle2}°, tertiary ${angle3}°.
-- Line spacing ~${o.hatchSpacing}px.
-- Shadows: 3 overlaid hatch directions. Dark mids: 2 directions. Mids: single direction. Lights: sparse. Highlights: blank.
+HATCH GEOMETRY: primary 45°, secondary 135°, tertiary 90°. ~3px line spacing.
 
 STYLE: ${o.style.toUpperCase()}
 ${STYLE_PROMPTS[o.style]}
