@@ -26,8 +26,8 @@ export function Upscaler({ photo, onReplace }: Props) {
       img.src = photo;
       await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
       const ratio = img.width / img.height;
-      let dstW = target;
-      let dstH = Math.round(target / ratio);
+      let dstW: number = target;
+      let dstH: number = Math.round(target / ratio);
       if (ratio < 1) { dstH = target; dstW = Math.round(target * ratio); }
       // Cap so we never exceed ~3840x2160 area equivalent (memory safety).
       const maxArea = 3840 * 2160;
