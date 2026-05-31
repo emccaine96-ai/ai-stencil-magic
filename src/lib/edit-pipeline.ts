@@ -98,7 +98,7 @@ function gaussianBlur(data: ImageData, radius: number) {
 
 // Morphological dilate (grow ink = thicker) or erode (shrink ink = thinner).
 // Mask: 1 = ink. Operates on a binary mask in-place via a temp buffer.
-function morph(mask: Uint8Array, w: number, h: number, radius: number, mode: "dilate" | "erode") {
+function morph(mask: Uint8Array, w: number, h: number, radius: number, mode: "dilate" | "erode"): Uint8Array {
   if (radius <= 0) return mask;
   const r = Math.min(5, Math.max(1, Math.round(radius)));
   const out = new Uint8Array(mask.length);
@@ -230,7 +230,7 @@ export async function composeStencil(srcDataUrl: string, knobs: Knobs, signal?: 
   const detailBias = (knobs.detail - 50) / 50;       // -1..+1, lowers cutoff to admit more edges
   const cut = Math.max(4, baseCut - detailBias * 18);
 
-  let mask = new Uint8Array(W * H);
+  let mask: Uint8Array = new Uint8Array(W * H);
   for (let j = 0; j < mask.length; j++) {
     // Lum modulation: pixels darkened by shadowDepth get a small bonus to ink.
     const lumBonus = lum[j] < 76 ? (76 - lum[j]) * 0.3 : 0;
@@ -242,8 +242,7 @@ export async function composeStencil(srcDataUrl: string, knobs: Knobs, signal?: 
     const t = (knobs.thickness - 50) / 50; // -1..+1
     const radius = Math.round(Math.abs(t) * 5);
     if (radius > 0) {
-      const m2 = morph(mask, W, H, radius, t > 0 ? "dilate" : "erode");
-      mask = m2 as Uint8Array;
+      mask = morph(mask, W, H, radius, t > 0 ? "dilate" : "erode");
     }
   }
 
