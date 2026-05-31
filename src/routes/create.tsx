@@ -214,7 +214,7 @@ function CreatePage() {
   }
 
   async function downloadUpscaled() {
-    const source = processedUrl ?? stencil;
+    const source = processedUrl ?? filteredStencil ?? stencil;
     if (!source) return;
     setExporting(true);
     try {
@@ -267,7 +267,7 @@ function CreatePage() {
               <Archive size={14} />
               <span className="hidden sm:inline">Vault</span>
             </Link>
-            <MasterSuite photo={photo} stencilUrl={processedUrl ?? stencil} onReplacePhoto={(d) => { setStencil(null); setPhoto(d); }} />
+            <MasterSuite photo={photo} stencilUrl={processedUrl ?? filteredStencil ?? stencil} onReplacePhoto={(d) => { setStencil(null); setPhoto(d); }} />
             <button
               onClick={() => setKeyOpen(true)}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
