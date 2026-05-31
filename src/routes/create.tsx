@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sliders, Sparkles, Wand2, Map as MapIcon, Archive, Zap } from "lucide-react";
+import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sparkles, Wand2, Map as MapIcon, Archive, Zap } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
 import { composeStencil, DEFAULT_KNOBS, type Knobs } from "@/lib/edit-pipeline";
 import { buildTonalMap } from "@/lib/tonal-map";
@@ -73,19 +73,10 @@ function CreatePage() {
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
 
-  // Advanced knobs
-  const [advOpen, setAdvOpen] = useState(false);
-  const [tierDensity, setTierDensity] = useState([90, 75, 55, 30, 0]); // shadows, dark-mid, mid, light, highlight
-  const [thresholdOffset, setThresholdOffset] = useState(0); // -30..+30 shifts all 4 Otsu cutoffs
-  const [hatchAngle, setHatchAngle] = useState(45); // primary hatch angle (deg)
-  const [hatchSpacing, setHatchSpacing] = useState(3); // px
-  const [meshStrength, setMeshStrength] = useState(60); // % face-mesh curvature follow
-
   // Post-generation edit knobs (client-side only, no re-generation)
   const [editOpen, setEditOpen] = useState(false);
   const [knobs, setKnobs] = useState<Knobs>(DEFAULT_KNOBS);
   const [portraitMap, setPortraitMap] = useState(false);
-  const [viewMode, setViewMode] = useState<"stencil" | "map">("stencil");
   const [processedUrl, setProcessedUrl] = useState<string | null>(null);
   const [mapUrl, setMapUrl] = useState<string | null>(null);
   // Pre-generation shading filter applied as a post-pass on the returned stencil.
@@ -159,11 +150,6 @@ function CreatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stencil]);
 
-  // Reset edit panel when a new stencil arrives.
-  useEffect(() => {
-    setViewMode("stencil");
-  }, [stencil]);
-
   function selectProvider(p: Provider) {
     setProvider(p);
     localStorage.setItem(PROVIDER_STORAGE, p);
@@ -203,15 +189,7 @@ function CreatePage() {
     setStencil(null);
     try {
       const { mimeType, data: imgB64 } = dataUrlToInline(photo);
-      const prompt = buildPrompt({
-        style,
-        intensity,
-        tierDensity,
-        thresholdOffset,
-        hatchAngle,
-        hatchSpacing,
-        meshStrength,
-      });
+      const prompt = buildPrompt({ style, intensity });
       if (provider === "lovable") {
         const r = await fetch("/api/generate-stencil", {
           method: "POST",
@@ -248,7 +226,7 @@ function CreatePage() {
   }
 
   async function downloadUpscaled() {
-    const source = viewMode === "map" && mapUrl ? mapUrl : processedUrl ?? stencil;
+    const source = processedUrl ?? stencil;
     if (!source) return;
     setExporting(true);
     try {
@@ -411,48 +389,6 @@ function CreatePage() {
             </p>
           </div>
 
-          <button
-            onClick={() => setAdvOpen((v) => !v)}
-            className="mt-5 w-full flex items-center justify-between p-3 rounded-2xl border border-border bg-card hover:border-primary/50 transition text-sm"
-          >
-            <span className="flex items-center gap-2 font-semibold">
-              <Sliders size={16} /> Advanced tonal controls
-            </span>
-            <span className="text-muted-foreground">{advOpen ? "Hide" : "Show"}</span>
-          </button>
-
-          {advOpen ? (
-            <div className="mt-3 p-4 rounded-2xl border border-border bg-card space-y-5">
-              <div>
-                <div className="text-sm font-semibold mb-3">Per-tier density</div>
-                {["Shadows", "Dark mids", "Mids", "Light mids", "Highlights"].map((label, i) => (
-                  <div key={label} className="mb-3">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">{label}</span>
-                      <span className="gradient-text font-bold">{tierDensity[i]}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={tierDensity[i]}
-                      onChange={(e) => {
-                        const next = [...tierDensity];
-                        next[i] = Number(e.target.value);
-                        setTierDensity(next);
-                      }}
-                      className="w-full mt-1 accent-[oklch(0.64_0.26_303)]"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <Knob label="Otsu threshold offset" value={thresholdOffset} min={-30} max={30} suffix="" onChange={setThresholdOffset} hint="Shifts the 4 luminance cutoffs separating the 5 tiers." />
-              <Knob label="Hatch angle" value={hatchAngle} min={0} max={180} suffix="°" onChange={setHatchAngle} hint="Primary hatch direction (secondary +90°, tertiary +45°)." />
-              <Knob label="Hatch spacing" value={hatchSpacing} min={1} max={10} suffix="px" onChange={setHatchSpacing} hint="Distance between parallel hatch lines." />
-              <Knob label="Face-mesh curvature" value={meshStrength} min={0} max={100} suffix="%" onChange={setMeshStrength} hint="How strongly hatching follows facial 3D surface curvature." />
-            </div>
-          ) : null}
         </section>
 
         <section>
@@ -499,21 +435,7 @@ function CreatePage() {
 
         {stencil ? (
           <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-extrabold">Your stencil</h2>
-              {portraitMap && mapUrl ? (
-                <div className="inline-flex rounded-full border border-border bg-card p-1 text-xs">
-                  <button
-                    onClick={() => setViewMode("stencil")}
-                    className={`px-3 py-1 rounded-full transition ${viewMode === "stencil" ? "bg-gradient-primary text-primary-foreground" : "text-muted-foreground"}`}
-                  >Stencil</button>
-                  <button
-                    onClick={() => setViewMode("map")}
-                    className={`px-3 py-1 rounded-full transition ${viewMode === "map" ? "bg-gradient-primary text-primary-foreground" : "text-muted-foreground"}`}
-                  >Shading map</button>
-                </div>
-              ) : null}
-            </div>
+            <h2 className="text-2xl font-extrabold">Your stencil</h2>
             <div className="relative aspect-square bg-white rounded-3xl overflow-hidden border border-border">
               {photo ? (
                 <img
@@ -524,11 +446,19 @@ function CreatePage() {
                 />
               ) : null}
               <img
-                src={viewMode === "map" && mapUrl ? mapUrl : processedUrl ?? stencil}
+                src={processedUrl ?? stencil}
                 alt="Stencil"
                 className="absolute inset-0 h-full w-full object-cover"
                 style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
               />
+              {portraitMap && mapUrl ? (
+                <img
+                  src={mapUrl}
+                  alt="Tonal map overlay"
+                  className="absolute inset-0 h-full w-full object-cover pointer-events-none"
+                  style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
+                />
+              ) : null}
               <input
                 type="range"
                 min={0}
@@ -712,50 +642,33 @@ function Knob({
 }
 
 const KNOB_DEFS: { key: keyof Knobs; label: string; hint: string }[] = [
-  { key: "contrast",    label: "1. Contrast / threshold",  hint: "Luminance cutoff between ink and paper." },
-  { key: "thickness",   label: "2. Line thickness",        hint: "Morphological dilate (>50) thickens; erode (<50) thins." },
-  { key: "detail",      label: "3. Detail density",        hint: "Sobel sensitivity for fine edges and texture." },
-  { key: "smoothing",   label: "4. Noise reduction",       hint: "Gaussian pre-blur to kill speckle (radius 0–8px)." },
-  { key: "shadowDepth", label: "5. Shadow depth",          hint: "Gamma boost on dark luminance band only." },
-  { key: "midtone",     label: "6. Midtone boost",         hint: "Bezier squeeze on the 33–66% luminance band." },
-  { key: "highlights",  label: "7. Highlights suppression", hint: "Compresses values above 80% luminance." },
-  { key: "sharpness",   label: "8. Fine line sharpness",   hint: "Unsharp mask blend for micro-detail accent." },
-  { key: "grain",       label: "9. Paper grain",           hint: "Carbon-transfer texture overlay opacity." },
-  { key: "intensity",   label: "10. Thermal intensity",    hint: "Lerps ink tint from faded violet to deep thermal purple." },
+  { key: "contrast",    label: "Contrast",        hint: "Luminance cutoff between ink and paper." },
+  { key: "thickness",   label: "Line thickness",  hint: "Morphological dilate (>50) thickens; erode (<50) thins." },
+  { key: "shadowDepth", label: "Shadow depth",    hint: "Gamma boost on the dark luminance band." },
+  { key: "smoothing",   label: "Noise reduction", hint: "Gaussian pre-blur to kill speckle (radius 0–8px)." },
 ];
 
-function buildPrompt(o: {
-  style: Style;
-  intensity: number;
-  tierDensity: number[];
-  thresholdOffset: number;
-  hatchAngle: number;
-  hatchSpacing: number;
-  meshStrength: number;
-}) {
-  const [shadow, darkMid, mid, light, highlight] = o.tierDensity;
-  const angle2 = (o.hatchAngle + 90) % 180;
-  const angle3 = (o.hatchAngle + 45) % 180;
+function buildPrompt(o: { style: Style; intensity: number }) {
+  // Bake the proven "May 27" defaults into the prompt so first-shot output is
+  // gallery-grade without the user needing to touch sliders.
   return `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.
 
 HARD RULES:
 - Output a single image on PURE WHITE background.
 - All ink is the EXACT color #A855F7 (neon purple). No gray, no black, no other colors.
 - Crystal-clear closed contour line work, tattoo-stencil ready.
-- Preserve the subject's identity, proportions, facial features, hair flow, jewelry, and clothing details.
-- Apply 3D FACE-MESH aware hatching at ${o.meshStrength}% strength: hatch direction follows facial surface curvature (cheek, jawline, brow ridge, nose bridge) like a sculptural sketch.
+- Preserve the subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly.
+- For portraits: apply 3D face-mesh aware crosshatching that follows facial surface curvature (cheek, jawline, brow ridge, nose bridge). Eyes, lips and teeth crisply defined.
+- For flowers / objects: delicate parallel hatching radiating along petal curvature, soft pencil-like graduations from saturated purple in shadow folds to faint outline on outer petals.
 
-TONAL LAYERING (5 tiers derived from luminance via Otsu multi-level thresholding, offset by ${o.thresholdOffset > 0 ? "+" : ""}${o.thresholdOffset}):
-1. Deep shadows — density ${shadow}% — densest mark-making.
-2. Dark mid-tones — density ${darkMid}% — heavy mark-making.
-3. Mid-tones — density ${mid}% — medium mark-making.
-4. Light mid-tones — density ${light}% — light mark-making.
-5. Highlights — density ${highlight}% — pure white when 0%.
+TONAL LAYERING (5 tiers via Otsu multi-level thresholding):
+1. Deep shadows — densest mark-making, 3 overlaid hatch directions.
+2. Dark mid-tones — heavy mark-making, 2 hatch directions.
+3. Mid-tones — medium single-direction hatching.
+4. Light mid-tones — sparse parallel strokes.
+5. Highlights — pure white paper.
 
-HATCH GEOMETRY:
-- Primary angle ${o.hatchAngle}°, secondary ${angle2}°, tertiary ${angle3}°.
-- Line spacing ~${o.hatchSpacing}px.
-- Shadows: 3 overlaid hatch directions. Dark mids: 2 directions. Mids: single direction. Lights: sparse. Highlights: blank.
+HATCH GEOMETRY: primary 45°, secondary 135°, tertiary 90°. ~3px line spacing.
 
 STYLE: ${o.style.toUpperCase()}
 ${STYLE_PROMPTS[o.style]}
