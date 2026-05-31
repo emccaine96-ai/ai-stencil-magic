@@ -352,6 +352,12 @@ function CreatePage() {
               </>
             )}
           </button>
+          {photo ? (
+            <div className="mt-2 flex items-center justify-end gap-2 text-[10px] text-muted-foreground">
+              <Zap size={11} className="text-primary" />
+              <span>Need more detail? Open the <span className="font-semibold text-foreground">Studio Suite → Upscale</span> tab to Lanczos-3 up to 4K.</span>
+            </div>
+          ) : null}
         </section>
 
         <section>
