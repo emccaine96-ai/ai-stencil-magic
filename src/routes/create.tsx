@@ -438,6 +438,28 @@ function CreatePage() {
           ) : null}
         </section>
 
+        <section>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-2">Pre-generation shading filter</h2>
+          <div className="grid grid-cols-4 gap-2">
+            {([
+              { id: "none", label: "None", sub: "Default ink" },
+              { id: "whip", label: "Whip", sub: "Directional flick" },
+              { id: "pendulum", label: "Pendulum", sub: "Rocking swing" },
+              { id: "stipple", label: "Stipple", sub: "Pure dotwork" },
+            ] as const).map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setPreFilter(f.id as ShadingKind)}
+                className={`text-left p-2 rounded-xl border transition ${preFilter === f.id ? "border-primary bg-gradient-primary text-primary-foreground" : "border-border hover:border-primary/50"}`}
+              >
+                <div className="font-bold text-xs">{f.label}</div>
+                <div className={`text-[10px] ${preFilter === f.id ? "opacity-90" : "text-muted-foreground"}`}>{f.sub}</div>
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-2">Applied to the generated stencil as a fully client-side pixel-math pass. Stack with the live editor knobs below.</p>
+        </section>
+
         <button
           onClick={generate}
           disabled={!photo || loading}
