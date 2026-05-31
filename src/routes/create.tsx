@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sliders, Sparkles, Wand2, Map as MapIcon, Archive, Zap } from "lucide-react";
+import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sparkles, Wand2, Map as MapIcon, Archive, Zap } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
 import { composeStencil, DEFAULT_KNOBS, type Knobs } from "@/lib/edit-pipeline";
 import { buildTonalMap } from "@/lib/tonal-map";
