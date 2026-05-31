@@ -83,14 +83,14 @@ function CreatePage() {
 
   // Post-generation edit knobs (client-side only, no re-generation)
   const [editOpen, setEditOpen] = useState(false);
-  const [editAdvOpen, setEditAdvOpen] = useState(false);
-  const [stencilDensity, setStencilDensity] = useState(50); // 0..100
-  const [advThreshold, setAdvThreshold] = useState(50); // 0..100
-  const [shadingStyle, setShadingStyle] = useState<"none" | "smooth" | "whip" | "pendulum">("none");
+  const [knobs, setKnobs] = useState<Knobs>(DEFAULT_KNOBS);
   const [portraitMap, setPortraitMap] = useState(false);
   const [viewMode, setViewMode] = useState<"stencil" | "map">("stencil");
   const [processedUrl, setProcessedUrl] = useState<string | null>(null);
   const [mapUrl, setMapUrl] = useState<string | null>(null);
+  // Pre-generation shading filter applied as a post-pass on the returned stencil.
+  const [preFilter, setPreFilter] = useState<ShadingKind>("none");
+  const [filteredStencil, setFilteredStencil] = useState<string | null>(null);
 
   useEffect(() => {
     const k = typeof window !== "undefined" ? localStorage.getItem(KEY_STORAGE) : null;
@@ -99,38 +99,54 @@ function CreatePage() {
     if (p === "lovable" || p === "gemini") setProvider(p);
   }, []);
 
-  // Re-run client-side post-processing whenever the stencil or edit knobs change.
+  // When the raw stencil OR pre-generation filter changes, recompute the
+  // filtered base image once. The 10-knob editor then derives from this.
   useEffect(() => {
     let cancelled = false;
-    if (!stencil) {
-      setProcessedUrl(null);
-      setMapUrl(null);
-      return;
-    }
+    if (!stencil) { setFilteredStencil(null); return; }
+    (async () => {
+      try {
+        const out = await applyShadingFilter(stencil, preFilter);
+        if (!cancelled) setFilteredStencil(out);
+      } catch { /* keep previous */ }
+    })();
+    return () => { cancelled = true; };
+  }, [stencil, preFilter]);
+
+  // Real-time 10-knob editor: rerun the canvas pipeline whenever any knob changes.
+  useEffect(() => {
+    const base = filteredStencil ?? stencil;
+    if (!base) { setProcessedUrl(null); return; }
+    const signal = { cancelled: false };
     const handle = setTimeout(async () => {
       try {
-        const out = await postProcessStencil(stencil, {
-          density: stencilDensity,
-          threshold: advThreshold,
-          shadingStyle,
-        });
-        if (cancelled) return;
-        setProcessedUrl(out);
-        if (portraitMap) {
-          const m = await buildShadingMap(stencil, photo, advThreshold);
-          if (!cancelled) setMapUrl(m);
-        } else {
-          setMapUrl(null);
-        }
-      } catch {
-        /* keep last frame */
-      }
+        const out = await composeStencil(base, knobs, signal);
+        if (!signal.cancelled) setProcessedUrl(out);
+      } catch { /* slider was bumped again; skip */ }
     }, 60);
-    return () => {
-      cancelled = true;
-      clearTimeout(handle);
-    };
-  }, [stencil, photo, stencilDensity, advThreshold, shadingStyle, portraitMap]);
+    return () => { signal.cancelled = true; clearTimeout(handle); };
+  }, [filteredStencil, stencil, knobs]);
+
+  // Tonal map overlay derives from the ORIGINAL photo, not the stencil,
+  // so the underlying stencil line work stays untouched.
+  useEffect(() => {
+    let cancelled = false;
+    if (!portraitMap || !photo) { setMapUrl(null); return; }
+    (async () => {
+      try {
+        const m = await buildTonalMap(photo);
+        if (!cancelled) setMapUrl(m);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [portraitMap, photo]);
+
+  // Auto-save every new stencil to the local Storage Vault (IndexedDB).
+  useEffect(() => {
+    if (!stencil) return;
+    saveStencil({ stencil, photo, style, meta: { preFilter, intensity, knobs } }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stencil]);
 
   // Reset edit panel when a new stencil arrives.
   useEffect(() => {
