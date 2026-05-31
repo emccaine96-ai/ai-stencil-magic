@@ -106,12 +106,12 @@ function CreatePage() {
     if (!stencil) { setFilteredStencil(null); return; }
     (async () => {
       try {
-        const out = await applyShadingFilter(stencil, preFilter);
+        const out = await applyShadingFilter(stencil, preFilter, photo);
         if (!cancelled) setFilteredStencil(out);
       } catch { /* keep previous */ }
     })();
     return () => { cancelled = true; };
-  }, [stencil, preFilter]);
+  }, [stencil, preFilter, photo]);
 
   // Real-time 10-knob editor: rerun the canvas pipeline whenever any knob changes.
   useEffect(() => {
