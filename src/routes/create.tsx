@@ -281,16 +281,27 @@ function CreatePage() {
             <img src={logo} alt="" width={32} height={32} className="h-8 w-8" />
             <span className="font-script text-xl">PrimalPrint AI</span>
           </Link>
-          <button
-            onClick={() => setKeyOpen(true)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            aria-label="API key settings"
-          >
-            <KeyRound size={16} />
-            <span className={provider === "lovable" ? "text-primary" : apiKey ? "text-primary" : "text-destructive"}>
-              {provider === "lovable" ? "Lovable AI" : apiKey ? "My key" : "Set key"}
-            </span>
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/vault"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              aria-label="Saved Generations / Storage Vault"
+            >
+              <Archive size={14} />
+              <span className="hidden sm:inline">Vault</span>
+            </Link>
+            <MasterSuite photo={photo} stencilUrl={processedUrl ?? stencil} onReplacePhoto={(d) => { setStencil(null); setPhoto(d); }} />
+            <button
+              onClick={() => setKeyOpen(true)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              aria-label="API key settings"
+            >
+              <KeyRound size={14} />
+              <span className={`hidden sm:inline ${provider === "lovable" ? "text-primary" : apiKey ? "text-primary" : "text-destructive"}`}>
+                {provider === "lovable" ? "Lovable AI" : apiKey ? "My key" : "Set key"}
+              </span>
+            </button>
+          </div>
         </div>
       </header>
 
