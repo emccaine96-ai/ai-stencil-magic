@@ -73,19 +73,10 @@ function CreatePage() {
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
 
-  // Advanced knobs
-  const [advOpen, setAdvOpen] = useState(false);
-  const [tierDensity, setTierDensity] = useState([90, 75, 55, 30, 0]); // shadows, dark-mid, mid, light, highlight
-  const [thresholdOffset, setThresholdOffset] = useState(0); // -30..+30 shifts all 4 Otsu cutoffs
-  const [hatchAngle, setHatchAngle] = useState(45); // primary hatch angle (deg)
-  const [hatchSpacing, setHatchSpacing] = useState(3); // px
-  const [meshStrength, setMeshStrength] = useState(60); // % face-mesh curvature follow
-
   // Post-generation edit knobs (client-side only, no re-generation)
   const [editOpen, setEditOpen] = useState(false);
   const [knobs, setKnobs] = useState<Knobs>(DEFAULT_KNOBS);
   const [portraitMap, setPortraitMap] = useState(false);
-  const [viewMode, setViewMode] = useState<"stencil" | "map">("stencil");
   const [processedUrl, setProcessedUrl] = useState<string | null>(null);
   const [mapUrl, setMapUrl] = useState<string | null>(null);
   // Pre-generation shading filter applied as a post-pass on the returned stencil.
@@ -157,11 +148,6 @@ function CreatePage() {
     if (!stencil) return;
     saveStencil({ stencil, photo, style, meta: { preFilter, intensity, knobs } }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stencil]);
-
-  // Reset edit panel when a new stencil arrives.
-  useEffect(() => {
-    setViewMode("stencil");
   }, [stencil]);
 
   function selectProvider(p: Provider) {
