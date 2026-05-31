@@ -507,55 +507,38 @@ function CreatePage() {
             </button>
 
             {editOpen ? (
-              <div className="p-4 rounded-2xl border border-border bg-card space-y-5">
-                <Knob label="Stencil density" value={stencilDensity} min={0} max={100} suffix="%" onChange={setStencilDensity} hint="Line weight & detail threshold of the rendered stencil." />
+              <div className="p-4 rounded-2xl border border-border bg-card space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Real-time canvas knobs</div>
+                  <button
+                    onClick={() => setKnobs(DEFAULT_KNOBS)}
+                    className="text-[10px] text-primary hover:underline"
+                  >Reset all</button>
+                </div>
+                {KNOB_DEFS.map((d) => (
+                  <Knob
+                    key={d.key}
+                    label={d.label}
+                    value={knobs[d.key]}
+                    min={0}
+                    max={100}
+                    suffix="%"
+                    onChange={(v) => setKnobs((k) => ({ ...k, [d.key]: v }))}
+                    hint={d.hint}
+                  />
+                ))}
 
-                <button
-                  onClick={() => setEditAdvOpen((v) => !v)}
-                  className="w-full flex items-center justify-between p-2 rounded-xl border border-border hover:border-primary/50 transition text-xs"
-                >
-                  <span className="flex items-center gap-2 font-semibold"><Sliders size={14} /> Advanced settings</span>
-                  <span className="text-muted-foreground">{editAdvOpen ? "Hide" : "Show"}</span>
-                </button>
-
-                {editAdvOpen ? (
-                  <div className="space-y-5 pt-1">
-                    <Knob label="Advanced threshold" value={advThreshold} min={0} max={100} suffix="%" onChange={setAdvThreshold} hint="Fine-tunes high/low-contrast separation limits." />
-
-                    <div>
-                      <div className="text-xs font-semibold mb-2">Tattoo shading style</div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {([
-                          { id: "none", label: "Original", sub: "No shading filter" },
-                          { id: "smooth", label: "Smooth", sub: "Soft gradients" },
-                          { id: "whip", label: "Whip", sub: "Spaced directional dots" },
-                          { id: "pendulum", label: "Pendulum", sub: "Tapered swing texture" },
-                        ] as const).map((s) => (
-                          <button
-                            key={s.id}
-                            onClick={() => setShadingStyle(s.id)}
-                            className={`text-left p-2 rounded-xl border transition ${shadingStyle === s.id ? "border-primary bg-gradient-primary text-primary-foreground" : "border-border hover:border-primary/50"}`}
-                          >
-                            <div className="font-bold text-xs">{s.label}</div>
-                            <div className={`text-[10px] ${shadingStyle === s.id ? "opacity-90" : "text-muted-foreground"}`}>{s.sub}</div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <label className="flex items-center justify-between p-3 rounded-xl border border-border cursor-pointer">
-                      <span className="flex items-center gap-2 text-xs font-semibold"><MapIcon size={14} /> Portrait shading map</span>
-                      <span
-                        className={`relative inline-block w-10 h-6 rounded-full transition ${portraitMap ? "bg-gradient-primary" : "bg-muted"}`}
-                      >
-                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-all ${portraitMap ? "left-[18px]" : "left-0.5"}`} />
-                      </span>
-                      <input type="checkbox" className="hidden" checked={portraitMap} onChange={(e) => setPortraitMap(e.target.checked)} />
-                    </label>
-                    {portraitMap ? (
-                      <p className="text-[10px] text-muted-foreground -mt-3">Broken contour lines close around dark/mid/light transitions, with a translucent tonal underlay. Toggle the view above the preview.</p>
-                    ) : null}
-                  </div>
+                <label className="flex items-center justify-between p-3 rounded-xl border border-border cursor-pointer mt-2">
+                  <span className="flex items-center gap-2 text-xs font-semibold"><MapIcon size={14} /> 3D Tonal Map Guide</span>
+                  <span
+                    className={`relative inline-block w-10 h-6 rounded-full transition ${portraitMap ? "bg-gradient-primary" : "bg-muted"}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-all ${portraitMap ? "left-[18px]" : "left-0.5"}`} />
+                  </span>
+                  <input type="checkbox" className="hidden" checked={portraitMap} onChange={(e) => setPortraitMap(e.target.checked)} />
+                </label>
+                {portraitMap ? (
+                  <p className="text-[10px] text-muted-foreground">Dashed contours mark dark/mid/light tonal zone boundaries: <span className="text-[#B91C1C]">dark→mid</span>, <span className="text-[#F97316]">mid transitions</span>, <span className="text-[#FACC15]">light→highlight</span>. Stencil underneath stays untouched.</p>
                 ) : null}
               </div>
             ) : null}
