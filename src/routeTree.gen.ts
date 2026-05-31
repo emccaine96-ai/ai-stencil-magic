@@ -9,10 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VaultRouteImport } from './routes/vault'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiGenerateStencilRouteImport } from './routes/api/generate-stencil'
 
+const VaultRoute = VaultRouteImport.update({
+  id: '/vault',
+  path: '/vault',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CreateRoute = CreateRouteImport.update({
   id: '/create',
   path: '/create',
@@ -32,35 +38,46 @@ const ApiGenerateStencilRoute = ApiGenerateStencilRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
+  '/vault': typeof VaultRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
+  '/vault': typeof VaultRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
+  '/vault': typeof VaultRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/create' | '/api/generate-stencil'
+  fullPaths: '/' | '/create' | '/vault' | '/api/generate-stencil'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/create' | '/api/generate-stencil'
-  id: '__root__' | '/' | '/create' | '/api/generate-stencil'
+  to: '/' | '/create' | '/vault' | '/api/generate-stencil'
+  id: '__root__' | '/' | '/create' | '/vault' | '/api/generate-stencil'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CreateRoute: typeof CreateRoute
+  VaultRoute: typeof VaultRoute
   ApiGenerateStencilRoute: typeof ApiGenerateStencilRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/vault': {
+      id: '/vault'
+      path: '/vault'
+      fullPath: '/vault'
+      preLoaderRoute: typeof VaultRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/create': {
       id: '/create'
       path: '/create'
@@ -88,6 +105,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CreateRoute: CreateRoute,
+  VaultRoute: VaultRoute,
   ApiGenerateStencilRoute: ApiGenerateStencilRoute,
 }
 export const routeTree = rootRouteImport

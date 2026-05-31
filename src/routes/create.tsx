@@ -1,7 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sliders, Sparkles, Wand2, Map as MapIcon } from "lucide-react";
+import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sliders, Sparkles, Wand2, Map as MapIcon, Archive, Zap } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
+import { composeStencil, DEFAULT_KNOBS, type Knobs } from "@/lib/edit-pipeline";
+import { buildTonalMap } from "@/lib/tonal-map";
+import { applyShadingFilter, type ShadingKind } from "@/lib/shading-filters";
+import { saveStencil } from "@/lib/vault";
+import { MasterSuite } from "@/components/master-suite/MasterSuite";
 
 export const Route = createFileRoute("/create")({
   head: () => ({
@@ -78,14 +83,14 @@ function CreatePage() {
 
   // Post-generation edit knobs (client-side only, no re-generation)
   const [editOpen, setEditOpen] = useState(false);
-  const [editAdvOpen, setEditAdvOpen] = useState(false);
-  const [stencilDensity, setStencilDensity] = useState(50); // 0..100
-  const [advThreshold, setAdvThreshold] = useState(50); // 0..100
-  const [shadingStyle, setShadingStyle] = useState<"none" | "smooth" | "whip" | "pendulum">("none");
+  const [knobs, setKnobs] = useState<Knobs>(DEFAULT_KNOBS);
   const [portraitMap, setPortraitMap] = useState(false);
   const [viewMode, setViewMode] = useState<"stencil" | "map">("stencil");
   const [processedUrl, setProcessedUrl] = useState<string | null>(null);
   const [mapUrl, setMapUrl] = useState<string | null>(null);
+  // Pre-generation shading filter applied as a post-pass on the returned stencil.
+  const [preFilter, setPreFilter] = useState<ShadingKind>("none");
+  const [filteredStencil, setFilteredStencil] = useState<string | null>(null);
 
   useEffect(() => {
     const k = typeof window !== "undefined" ? localStorage.getItem(KEY_STORAGE) : null;
@@ -94,38 +99,54 @@ function CreatePage() {
     if (p === "lovable" || p === "gemini") setProvider(p);
   }, []);
 
-  // Re-run client-side post-processing whenever the stencil or edit knobs change.
+  // When the raw stencil OR pre-generation filter changes, recompute the
+  // filtered base image once. The 10-knob editor then derives from this.
   useEffect(() => {
     let cancelled = false;
-    if (!stencil) {
-      setProcessedUrl(null);
-      setMapUrl(null);
-      return;
-    }
+    if (!stencil) { setFilteredStencil(null); return; }
+    (async () => {
+      try {
+        const out = await applyShadingFilter(stencil, preFilter);
+        if (!cancelled) setFilteredStencil(out);
+      } catch { /* keep previous */ }
+    })();
+    return () => { cancelled = true; };
+  }, [stencil, preFilter]);
+
+  // Real-time 10-knob editor: rerun the canvas pipeline whenever any knob changes.
+  useEffect(() => {
+    const base = filteredStencil ?? stencil;
+    if (!base) { setProcessedUrl(null); return; }
+    const signal = { cancelled: false };
     const handle = setTimeout(async () => {
       try {
-        const out = await postProcessStencil(stencil, {
-          density: stencilDensity,
-          threshold: advThreshold,
-          shadingStyle,
-        });
-        if (cancelled) return;
-        setProcessedUrl(out);
-        if (portraitMap) {
-          const m = await buildShadingMap(stencil, photo, advThreshold);
-          if (!cancelled) setMapUrl(m);
-        } else {
-          setMapUrl(null);
-        }
-      } catch {
-        /* keep last frame */
-      }
+        const out = await composeStencil(base, knobs, signal);
+        if (!signal.cancelled) setProcessedUrl(out);
+      } catch { /* slider was bumped again; skip */ }
     }, 60);
-    return () => {
-      cancelled = true;
-      clearTimeout(handle);
-    };
-  }, [stencil, photo, stencilDensity, advThreshold, shadingStyle, portraitMap]);
+    return () => { signal.cancelled = true; clearTimeout(handle); };
+  }, [filteredStencil, stencil, knobs]);
+
+  // Tonal map overlay derives from the ORIGINAL photo, not the stencil,
+  // so the underlying stencil line work stays untouched.
+  useEffect(() => {
+    let cancelled = false;
+    if (!portraitMap || !photo) { setMapUrl(null); return; }
+    (async () => {
+      try {
+        const m = await buildTonalMap(photo);
+        if (!cancelled) setMapUrl(m);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [portraitMap, photo]);
+
+  // Auto-save every new stencil to the local Storage Vault (IndexedDB).
+  useEffect(() => {
+    if (!stencil) return;
+    saveStencil({ stencil, photo, style, meta: { preFilter, intensity, knobs } }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stencil]);
 
   // Reset edit panel when a new stencil arrives.
   useEffect(() => {
@@ -260,16 +281,27 @@ function CreatePage() {
             <img src={logo} alt="" width={32} height={32} className="h-8 w-8" />
             <span className="font-script text-xl">PrimalPrint AI</span>
           </Link>
-          <button
-            onClick={() => setKeyOpen(true)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            aria-label="API key settings"
-          >
-            <KeyRound size={16} />
-            <span className={provider === "lovable" ? "text-primary" : apiKey ? "text-primary" : "text-destructive"}>
-              {provider === "lovable" ? "Lovable AI" : apiKey ? "My key" : "Set key"}
-            </span>
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/vault"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              aria-label="Saved Generations / Storage Vault"
+            >
+              <Archive size={14} />
+              <span className="hidden sm:inline">Vault</span>
+            </Link>
+            <MasterSuite photo={photo} stencilUrl={processedUrl ?? stencil} onReplacePhoto={(d) => { setStencil(null); setPhoto(d); }} />
+            <button
+              onClick={() => setKeyOpen(true)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              aria-label="API key settings"
+            >
+              <KeyRound size={14} />
+              <span className={`hidden sm:inline ${provider === "lovable" ? "text-primary" : apiKey ? "text-primary" : "text-destructive"}`}>
+                {provider === "lovable" ? "Lovable AI" : apiKey ? "My key" : "Set key"}
+              </span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -320,6 +352,12 @@ function CreatePage() {
               </>
             )}
           </button>
+          {photo ? (
+            <div className="mt-2 flex items-center justify-end gap-2 text-[10px] text-muted-foreground">
+              <Zap size={11} className="text-primary" />
+              <span>Need more detail? Open the <span className="font-semibold text-foreground">Studio Suite → Upscale</span> tab to Lanczos-3 up to 4K.</span>
+            </div>
+          ) : null}
         </section>
 
         <section>
@@ -406,6 +444,28 @@ function CreatePage() {
           ) : null}
         </section>
 
+        <section>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-2">Pre-generation shading filter</h2>
+          <div className="grid grid-cols-4 gap-2">
+            {([
+              { id: "none", label: "None", sub: "Default ink" },
+              { id: "whip", label: "Whip", sub: "Directional flick" },
+              { id: "pendulum", label: "Pendulum", sub: "Rocking swing" },
+              { id: "stipple", label: "Stipple", sub: "Pure dotwork" },
+            ] as const).map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setPreFilter(f.id as ShadingKind)}
+                className={`text-left p-2 rounded-xl border transition ${preFilter === f.id ? "border-primary bg-gradient-primary text-primary-foreground" : "border-border hover:border-primary/50"}`}
+              >
+                <div className="font-bold text-xs">{f.label}</div>
+                <div className={`text-[10px] ${preFilter === f.id ? "opacity-90" : "text-muted-foreground"}`}>{f.sub}</div>
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-2">Applied to the generated stencil as a fully client-side pixel-math pass. Stack with the live editor knobs below.</p>
+        </section>
+
         <button
           onClick={generate}
           disabled={!photo || loading}
@@ -486,55 +546,38 @@ function CreatePage() {
             </button>
 
             {editOpen ? (
-              <div className="p-4 rounded-2xl border border-border bg-card space-y-5">
-                <Knob label="Stencil density" value={stencilDensity} min={0} max={100} suffix="%" onChange={setStencilDensity} hint="Line weight & detail threshold of the rendered stencil." />
+              <div className="p-4 rounded-2xl border border-border bg-card space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Real-time canvas knobs</div>
+                  <button
+                    onClick={() => setKnobs(DEFAULT_KNOBS)}
+                    className="text-[10px] text-primary hover:underline"
+                  >Reset all</button>
+                </div>
+                {KNOB_DEFS.map((d) => (
+                  <Knob
+                    key={d.key}
+                    label={d.label}
+                    value={knobs[d.key]}
+                    min={0}
+                    max={100}
+                    suffix="%"
+                    onChange={(v) => setKnobs((k) => ({ ...k, [d.key]: v }))}
+                    hint={d.hint}
+                  />
+                ))}
 
-                <button
-                  onClick={() => setEditAdvOpen((v) => !v)}
-                  className="w-full flex items-center justify-between p-2 rounded-xl border border-border hover:border-primary/50 transition text-xs"
-                >
-                  <span className="flex items-center gap-2 font-semibold"><Sliders size={14} /> Advanced settings</span>
-                  <span className="text-muted-foreground">{editAdvOpen ? "Hide" : "Show"}</span>
-                </button>
-
-                {editAdvOpen ? (
-                  <div className="space-y-5 pt-1">
-                    <Knob label="Advanced threshold" value={advThreshold} min={0} max={100} suffix="%" onChange={setAdvThreshold} hint="Fine-tunes high/low-contrast separation limits." />
-
-                    <div>
-                      <div className="text-xs font-semibold mb-2">Tattoo shading style</div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {([
-                          { id: "none", label: "Original", sub: "No shading filter" },
-                          { id: "smooth", label: "Smooth", sub: "Soft gradients" },
-                          { id: "whip", label: "Whip", sub: "Spaced directional dots" },
-                          { id: "pendulum", label: "Pendulum", sub: "Tapered swing texture" },
-                        ] as const).map((s) => (
-                          <button
-                            key={s.id}
-                            onClick={() => setShadingStyle(s.id)}
-                            className={`text-left p-2 rounded-xl border transition ${shadingStyle === s.id ? "border-primary bg-gradient-primary text-primary-foreground" : "border-border hover:border-primary/50"}`}
-                          >
-                            <div className="font-bold text-xs">{s.label}</div>
-                            <div className={`text-[10px] ${shadingStyle === s.id ? "opacity-90" : "text-muted-foreground"}`}>{s.sub}</div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <label className="flex items-center justify-between p-3 rounded-xl border border-border cursor-pointer">
-                      <span className="flex items-center gap-2 text-xs font-semibold"><MapIcon size={14} /> Portrait shading map</span>
-                      <span
-                        className={`relative inline-block w-10 h-6 rounded-full transition ${portraitMap ? "bg-gradient-primary" : "bg-muted"}`}
-                      >
-                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-all ${portraitMap ? "left-[18px]" : "left-0.5"}`} />
-                      </span>
-                      <input type="checkbox" className="hidden" checked={portraitMap} onChange={(e) => setPortraitMap(e.target.checked)} />
-                    </label>
-                    {portraitMap ? (
-                      <p className="text-[10px] text-muted-foreground -mt-3">Broken contour lines close around dark/mid/light transitions, with a translucent tonal underlay. Toggle the view above the preview.</p>
-                    ) : null}
-                  </div>
+                <label className="flex items-center justify-between p-3 rounded-xl border border-border cursor-pointer mt-2">
+                  <span className="flex items-center gap-2 text-xs font-semibold"><MapIcon size={14} /> 3D Tonal Map Guide</span>
+                  <span
+                    className={`relative inline-block w-10 h-6 rounded-full transition ${portraitMap ? "bg-gradient-primary" : "bg-muted"}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-all ${portraitMap ? "left-[18px]" : "left-0.5"}`} />
+                  </span>
+                  <input type="checkbox" className="hidden" checked={portraitMap} onChange={(e) => setPortraitMap(e.target.checked)} />
+                </label>
+                {portraitMap ? (
+                  <p className="text-[10px] text-muted-foreground">Dashed contours mark dark/mid/light tonal zone boundaries: <span className="text-[#B91C1C]">dark→mid</span>, <span className="text-[#F97316]">mid transitions</span>, <span className="text-[#FACC15]">light→highlight</span>. Stencil underneath stays untouched.</p>
                 ) : null}
               </div>
             ) : null}
@@ -656,6 +699,19 @@ function Knob({
     </div>
   );
 }
+
+const KNOB_DEFS: { key: keyof Knobs; label: string; hint: string }[] = [
+  { key: "contrast",    label: "1. Contrast / threshold",  hint: "Luminance cutoff between ink and paper." },
+  { key: "thickness",   label: "2. Line thickness",        hint: "Morphological dilate (>50) thickens; erode (<50) thins." },
+  { key: "detail",      label: "3. Detail density",        hint: "Sobel sensitivity for fine edges and texture." },
+  { key: "smoothing",   label: "4. Noise reduction",       hint: "Gaussian pre-blur to kill speckle (radius 0–8px)." },
+  { key: "shadowDepth", label: "5. Shadow depth",          hint: "Gamma boost on dark luminance band only." },
+  { key: "midtone",     label: "6. Midtone boost",         hint: "Bezier squeeze on the 33–66% luminance band." },
+  { key: "highlights",  label: "7. Highlights suppression", hint: "Compresses values above 80% luminance." },
+  { key: "sharpness",   label: "8. Fine line sharpness",   hint: "Unsharp mask blend for micro-detail accent." },
+  { key: "grain",       label: "9. Paper grain",           hint: "Carbon-transfer texture overlay opacity." },
+  { key: "intensity",   label: "10. Thermal intensity",    hint: "Lerps ink tint from faded violet to deep thermal purple." },
+];
 
 function buildPrompt(o: {
   style: Style;

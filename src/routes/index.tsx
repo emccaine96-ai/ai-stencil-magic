@@ -48,6 +48,7 @@ function Header() {
           <a href="#how" className="py-2">How it works</a>
           <a href="#results" className="py-2">Best Results</a>
           <a href="#preview" className="py-2">See Examples</a>
+          <Link to="/vault" className="py-2 text-primary font-semibold">Saved Generations / Storage Vault</Link>
         </div>
       ) : null}
     </header>
