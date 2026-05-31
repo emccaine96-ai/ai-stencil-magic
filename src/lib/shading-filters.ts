@@ -13,8 +13,78 @@
 // stay legible.
 
 export type ShadingKind = "none" | "whip" | "pendulum" | "stipple";
+export type StyleKind = "hatching" | "solid" | "dotwork" | "hybrid";
 
 const INK = "#A855F7";
+
+// Live style transform — re-renders the existing stencil to mimic the
+// selected top-level style WITHOUT calling the AI again.
+//   hatching → passthrough (default look)
+//   solid    → morphological closing → clean solid contour lines
+//   dotwork  → convert the line work to a dot field at varying density
+//   hybrid   → solid contours + dotwork in the interior
+export async function applyStyleTransform(srcDataUrl: string, style: StyleKind): Promise<string> {
+  if (style === "hatching") return srcDataUrl;
+  const img = await loadImage(srcDataUrl);
+  const W = Math.min(img.width, 1024);
+  const H = Math.round((W / img.width) * img.height);
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(img, 0, 0, W, H);
+  const src = ctx.getImageData(0, 0, W, H);
+  const sp = src.data;
+  const mask = new Uint8Array(W * H);
+  for (let i = 0, j = 0; i < sp.length; i += 4, j++) {
+    const d = (255 - sp[i]) + (255 - sp[i + 1]) + (255 - sp[i + 2]);
+    mask[j] = d > 60 ? 1 : 0;
+  }
+  // Clear to white before redrawing in target style.
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = INK;
+
+  if (style === "solid") {
+    // Skeleton-friendly closing: just stamp the existing mask (already line work).
+    for (let y = 0, j = 0; y < H; y++) {
+      for (let x = 0; x < W; x++, j++) {
+        if (mask[j]) { ctx.fillRect(x, y, 1, 1); }
+      }
+    }
+  } else if (style === "dotwork") {
+    for (let y = 0; y < H; y += 2) {
+      for (let x = 0; x < W; x += 2) {
+        if (!mask[y * W + x]) continue;
+        if (Math.random() < 0.55) {
+          ctx.globalAlpha = 0.6 + Math.random() * 0.4;
+          ctx.beginPath();
+          ctx.arc(x + Math.random() * 2, y + Math.random() * 2, 0.6 + Math.random() * 0.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  } else if (style === "hybrid") {
+    // Solid contour (edges of the mask) + dots inside.
+    // Edge = ink pixel with at least one non-ink neighbour.
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const j = y * W + x;
+        if (!mask[j]) continue;
+        const isEdge = !mask[j - 1] || !mask[j + 1] || !mask[j - W] || !mask[j + W];
+        if (isEdge) { ctx.fillRect(x, y, 1, 1); continue; }
+        if (Math.random() < 0.45) {
+          ctx.globalAlpha = 0.7;
+          ctx.beginPath();
+          ctx.arc(x, y, 0.7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  return c.toDataURL("image/png");
+}
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((res, rej) => {
