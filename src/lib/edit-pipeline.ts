@@ -167,8 +167,9 @@ function inkColor(intensity: number): [number, number, number] {
 export async function composeStencil(srcDataUrl: string, knobs: Knobs, signal?: { cancelled: boolean }): Promise<string> {
   const img = await loadImage(srcDataUrl);
   if (signal?.cancelled) throw new Error("cancelled");
-  // Work at a smaller stable resolution so slider drags stay responsive.
-  const W = Math.min(img.width, 720);
+  // Non-destructive pipeline: pure-white pixels stay white. Only existing
+  // ink pixels are modified, so sliders can never "flood" the canvas.
+  const W = Math.min(img.width, 900);
   const H = Math.round((W / img.width) * img.height);
 
   const c = getCanvas("work", W, H);
@@ -177,107 +178,57 @@ export async function composeStencil(srcDataUrl: string, knobs: Knobs, signal?: 
   ctx.fillRect(0, 0, W, H);
   ctx.drawImage(img, 0, 0, W, H);
 
-  let data = ctx.getImageData(0, 0, W, H);
-
-  // 4. Pre-smoothing (gaussian) — keeps speckle off subsequent edges.
-  if (knobs.smoothing > 0) {
-    data = gaussianBlur(data, (knobs.smoothing / 100) * 8);
-  }
-
-  // Compute luminance & ink-distance for every pixel.
+  const data = ctx.getImageData(0, 0, W, H);
   const px = data.data;
-  const lum = new Float32Array(W * H);
-  const dist = new Float32Array(W * H);
+  const N = W * H;
+
+  // Per-pixel "inkness" 0..1 — how far from pure white the source pixel is.
+  // Anti-aliased fringe is < 1, solid ink is 1.
+  const inkness = new Float32Array(N);
   for (let i = 0, j = 0; i < px.length; i += 4, j++) {
-    const r = px[i], g = px[i + 1], b = px[i + 2];
-    lum[j] = 0.299 * r + 0.587 * g + 0.114 * b;
-    dist[j] = (255 - r) + (255 - g) + (255 - b);
+    const d = (255 - px[i]) + (255 - px[i + 1]) + (255 - px[i + 2]); // 0..765
+    inkness[j] = Math.min(1, d / 320);
   }
 
-  // 5. Shadow depth — push dark pixels harder toward ink.
-  //    Gamma curve applied to luminance for shadow band only.
-  if (knobs.shadowDepth !== 50) {
-    const gamma = 1 + ((50 - knobs.shadowDepth) / 50) * 1.4; // 50 = neutral, 100 = aggressive darken
-    for (let j = 0; j < lum.length; j++) {
-      if (lum[j] < 76) lum[j] = 255 * Math.pow(lum[j] / 255, gamma);
-    }
-  }
+  // Ink mask (binary) drives morphology only — strictly from existing ink,
+  // never re-thresholds the whole image.
+  let mask = new Uint8Array(N);
+  for (let j = 0; j < N; j++) mask[j] = inkness[j] > 0.18 ? 1 : 0;
 
-  // 6. Midtone Bezier squeeze on 33..66% luminance.
-  if (knobs.midtone !== 50) {
-    const k = (knobs.midtone - 50) / 50; // -1..+1
-    for (let j = 0; j < lum.length; j++) {
-      const L = lum[j];
-      if (L >= 84 && L <= 168) {
-        const t = (L - 84) / 84;       // 0..1 across midband
-        const bez = t * t * (3 - 2 * t); // smoothstep
-        lum[j] = L + (bez - t) * 60 * k;
-      }
-    }
-  }
-
-  // 7. Highlights suppression — compress >80% luminance downward.
-  if (knobs.highlights > 50) {
-    const k = (knobs.highlights - 50) / 50; // 0..1
-    for (let j = 0; j < lum.length; j++) {
-      if (lum[j] > 204) lum[j] = lum[j] - (lum[j] - 204) * k * 0.6;
-    }
-  }
-
-  // 1. Contrast / threshold cutoff -> binary ink mask.
-  //    Use distance-from-white (purple ink is luminance ~128 so luminance alone fails).
-  const baseCut = 35 - (knobs.contrast - 50) * 0.5; // ~60..10
-  const detailBias = (knobs.detail - 50) / 50;       // -1..+1, lowers cutoff to admit more edges
-  const cut = Math.max(4, baseCut - detailBias * 18);
-
-  let mask: Uint8Array = new Uint8Array(W * H);
-  for (let j = 0; j < mask.length; j++) {
-    // Lum modulation: pixels darkened by shadowDepth get a small bonus to ink.
-    const lumBonus = lum[j] < 76 ? (76 - lum[j]) * 0.3 : 0;
-    mask[j] = dist[j] + lumBonus > cut ? 1 : 0;
-  }
-
-  // 2. Line thickness — morphological dilate (>50) or erode (<50) on the mask.
+  // 2. Line thickness — gentle morph, max 3px so it can't bloom.
   if (knobs.thickness !== 50) {
-    const t = (knobs.thickness - 50) / 50; // -1..+1
-    const radius = Math.round(Math.abs(t) * 5);
+    const t = (knobs.thickness - 50) / 50;          // -1..+1
+    const radius = Math.round(Math.abs(t) * 3);
     if (radius > 0) {
       mask = morph(mask, W, H, radius, t > 0 ? "dilate" : "erode");
     }
   }
 
-  // Paint the mask back as ink-or-white.
-  const [ir, ig, ib] = inkColor(knobs.intensity); // 10. thermal intensity
-  for (let j = 0, i = 0; j < mask.length; j++, i += 4) {
-    if (mask[j]) {
-      px[i] = ir; px[i + 1] = ig; px[i + 2] = ib; px[i + 3] = 255;
-    } else {
-      px[i] = 255; px[i + 1] = 255; px[i + 2] = 255; px[i + 3] = 255;
-    }
+  // 1. Contrast — S-curve on inkness. >50 deepens existing ink + drops
+  // weak fringe; <50 fades ink toward white. Never paints new pixels.
+  const cSlope = 1 + ((knobs.contrast - 50) / 50) * 1.4; // 0.6..2 — never floods
+  const pivot = 0.5;
+
+  const [ir, ig, ib] = inkColor(knobs.intensity);
+  for (let j = 0, i = 0; j < N; j++, i += 4) {
+    let v = inkness[j];
+
+    // Dilation extension: brand-new mask pixels start at full strength.
+    if (mask[j] && v < 0.2) v = 0.9;
+    // Erosion: mask says "not ink" -> force white.
+    if (!mask[j]) v = 0;
+
+    // S-curve around pivot, clamped.
+    v = Math.max(0, Math.min(1, pivot + (v - pivot) * cSlope));
+
+    // Lerp white -> ink color by v.
+    px[i]     = Math.round(255 + (ir - 255) * v);
+    px[i + 1] = Math.round(255 + (ig - 255) * v);
+    px[i + 2] = Math.round(255 + (ib - 255) * v);
+    px[i + 3] = 255;
   }
+
   ctx.putImageData(data, 0, 0);
-
-  // 8. Unsharp mask — sharpen the inked output.
-  if (knobs.sharpness !== 50) {
-    const amount = ((knobs.sharpness - 50) / 50) * 0.9; // -0.9..+0.9
-    if (Math.abs(amount) > 0.02) {
-      const cur = ctx.getImageData(0, 0, W, H);
-      const blurred = gaussianBlur(cur, 1.4);
-      unsharp(cur, blurred, amount);
-      ctx.putImageData(cur, 0, 0);
-    }
-  }
-
-  // 9. Paper grain overlay.
-  if (knobs.grain > 0) {
-    const tile = getGrainTile();
-    ctx.save();
-    ctx.globalAlpha = (knobs.grain / 100) * 0.4;
-    ctx.globalCompositeOperation = "multiply";
-    const pat = ctx.createPattern(tile, "repeat");
-    if (pat) { ctx.fillStyle = pat; ctx.fillRect(0, 0, W, H); }
-    ctx.restore();
-  }
 
   if (signal?.cancelled) throw new Error("cancelled");
   return c.toDataURL("image/png");
