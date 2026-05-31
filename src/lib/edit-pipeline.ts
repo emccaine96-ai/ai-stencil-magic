@@ -242,7 +242,8 @@ export async function composeStencil(srcDataUrl: string, knobs: Knobs, signal?: 
     const t = (knobs.thickness - 50) / 50; // -1..+1
     const radius = Math.round(Math.abs(t) * 5);
     if (radius > 0) {
-      mask = morph(mask, W, H, radius, t > 0 ? "dilate" : "erode");
+      const m2 = morph(mask, W, H, radius, t > 0 ? "dilate" : "erode");
+      mask = m2 as Uint8Array;
     }
   }
 
