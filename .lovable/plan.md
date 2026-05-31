@@ -1,67 +1,92 @@
+Goal
 
-## Deliverable 1 — Lovable web app (pixel-faithful Stencil AI clone)
+Ship two big upgrades to the stencil workspace in one pass, without breaking what already works:
 
-**Stack:** TanStack Start + Tailwind + shadcn, Lovable AI Gateway for image generation (Nano Banana 2 = `google/gemini-3.1-flash-image-preview`).
+1. Replace the post-generation editing panel with a real 10-knob real-time canvas engine, add a 3D Tonal Map overlay, add 3 pre-generation shading filter buttons, and add a Saved Generations / Storage Vault to the top menu.
+2. Add a "Master Color & Studio Suite" dropdown (top-right) with a 4K Lanczos upscaler, k-means + Delta-E ink reconciliation, interactive color wheel with mixing recipes & harmonies, and a Three.js "Try It On 3D" skin viewport.
 
-**Pages / routes**
-- `/` — landing: sticky header (script "Stencil AI" wordmark + neon-purple P logo, "Sign In", hamburger), purple "Get StencilAI on Google Play" banner, hero "Turn any photo into a **perfect stencil** in 30 seconds" with purple gradient on accent words, stats row (1,000+ / 20+ / < 30 sec), purple pill "Create Stencil →", horizontal scroll of sample stencils, "How it works" 3-step (Upload / Choose Your Style / Print Your Stencil) with numbered purple badge icons, "How to Get Best Results" carousel with DO/DON'T cards, "See Your Stencil Come to Life" before/after slider with Hatching / Solid tabs, FAQ, footer.
-- `/create` — upload → choose style (Hatching, Solid, Dotwork, Hybrid) → tonal sliders (highlights / light / mid / dark / shadow density) → generate → before/after slider → download PNG.
+Everything client-side, no extra backend calls, purple ink color `#A855F7` preserved.
 
-**Stencil generation pipeline (server function `src/lib/stencil.functions.ts`)**
-1. Receive uploaded photo (base64).
-2. Call Lovable AI Gateway image model `google/gemini-3.1-flash-image-preview` (Nano Banana 2) with a tonal-mapping prompt that explicitly instructs 5 tonal tiers → line treatment:
-   - **Deep shadows** → dense cross-hatching (3 overlaid hatch directions)
-   - **Dark mid-tones** → double cross-hatch (2 directions)
-   - **Mid-tones** → single-direction parallel hatching
-   - **Light mid-tones** → sparse stippling / dot work
-   - **Highlights** → pure white, no marks
-   - Style switch (Hatching / Solid / Dotwork / Hybrid) rewrites the per-tier treatment.
-   - Always purple ink (#A855F7) on white, tattoo-stencil ready, clean closed contours, no gray fills.
-3. Stream back the generated PNG as base64; show in before/after slider.
+## Scope by section
 
-**Design tokens (src/styles.css)**
-- bg `oklch(0.08 0.02 290)` near-black with subtle violet
-- primary `oklch(0.62 0.27 300)` neon purple
-- accent gradient: violet → magenta
-- font: "Dancing Script" / "Great Vibes" for wordmark, Inter for body
-- rounded-full pills, soft glow shadows on primary buttons
+### A. Storage Vault (new route + auto-save)
 
-**Files to create**
-- `src/styles.css` — tokens
-- `src/routes/index.tsx` — landing
-- `src/routes/create.tsx` — generator
-- `src/components/site/{Header,Hero,Stats,HowItWorks,BestResults,BeforeAfter,Faq,Footer,StencilLogo}.tsx`
-- `src/lib/ai-gateway.server.ts` — Lovable AI provider helper
-- `src/lib/stencil.functions.ts` — server fn calling Nano Banana 2
-- `src/routes/api/stencil.ts` — alt streaming route if needed
-- generated logo asset under `src/assets/`
+- New `src/lib/vault.ts` wrapping IndexedDB (no extra deps — native `indexedDB`) with `saveStencil({photo, stencil, params})`, `listStencils()`, `getStencil(id)`, `deleteStencil(id)`. Persists across reboots.
+- Hook into `generate()` in `create.tsx`: as soon as `setStencil(...)` fires, also `vault.saveStencil(...)` in the background. No user action required.
+- New route `src/routes/vault.tsx` → "Saved Generations / Storage Vault" grid: thumbnail, timestamp, style, "Open in editor", "Download", "Delete". Loads via TanStack Query.
+- Make storage accessable from the main drop-down menu whe you find the other options the dogs and dont the and how it works and exetera.. add the storage in that menu don't merge or anything just add that extra option for storage in that menu drop-down 
 
-**Secrets:** `LOVABLE_API_KEY` (auto-provisioned via Lovable AI gateway enablement).
+### B. 10-knob real-time editor (replaces current "Edit stencil" panel)
 
----
+- Rewrite `postProcessStencil` into a `composeStencil(srcStencilImageData, knobs): ImageData` pipeline running fully in the browser. All knobs map exactly 0–100:
+  1. Contrast / Threshold — luminance cutoff → ink vs white.
+  2. Line thickness — morphological erode (thicken) / dilate (thin) on a binary mask; kernel radius 0–5px.
+  3. Detail density — Sobel magnitude threshold; lower threshold = more edges.
+  4. Noise reduction — separable Gaussian blur on source before edges; radius 0–8px.
+  5. Shadow depth — gamma curve on dark luminances (<30%).
+  6. Midtone boost — Bezier curve on 33–66% luminance band.
+  7. Highlights suppression — clamp/compress >80% luminance.
+  8. Fine line sharpness — unsharp mask `[0,-1,0;-1,5,-1;0,-1,0]` blended by slider.
+  9. Paper grain — generated seamless noise overlay, alpha 0–0.4.
 
-## Deliverable 2 — Kaggle notebook (`/mnt/documents/stencil_ai_kaggle.ipynb`)
+10. Thermal intensity — leave this step out unless it was gonna make my app have better quality they worked but if what you had on this step made those sliders better than they are do it if it was gonna downgrade them don't those two were the only sliders that worked only change if it upgrade them just
 
-Cleaned + advanced version of the prior PyTorch script, fully runnable on Kaggle (GPU T4):
+### C. 3D Tonal Map Guide overlay
 
-- **All 10 prior fixes** retained (joint augmentation, BCEWithLogits, AMP, val split, checkpoint save/load, etc.)
-- **New: 5-channel tonal output head** (highlight, light, mid, dark, shadow) instead of 3-channel.
-- **Mathematical tonal layer mapping** via luminance histogram equalization + Otsu multi-level thresholding to derive ground-truth tonal masks automatically from grayscale targets (so users only need image+grayscale-stencil pairs, not 5 hand-drawn masks).
-- **Advanced renderer** `render_stencil_layered()`:
-  - Per-tier hatch direction & spacing (shadows: 3 directions @ 2px, dark-mid: 2 dirs @ 3px, mid: 1 dir @ 4px, light: stipple density 0.15, highlight: blank)
-  - Style modes: `hatching`, `solid`, `dotwork`, `hybrid`
-  - Anti-aliased line drawing via `cv2.line` with `LINE_AA`
-  - Optional 3D face-normal estimation (using `mediapipe` face mesh) to align hatch direction with surface curvature — "face mesh 3D mathematical layering"
-- **Inference cell**: upload photo → predict 5 tonal masks → render → display + save PNG.
-- **Optional Nano Banana cell**: if user provides a Gemini API key, call `gemini-2.5-flash-image` as an alternative generator and compare side-by-side.
-- Markdown sections explain the tonal math (Otsu, luminance bins, hatch-density = f(tone_value)).
+- New toggle button "3D Tonal Map Guide" above the preview. When ON, render the stencil layer *unchanged* and stack a transparent overlay:
+  - Compute luminance from the *original photo*, segment into Dark / Mid / Light via 2 Otsu thresholds.
+  - Marching-squares contour the boundaries between zones.
+  - Draw dashed strokes: Dark→Mid = `#B91C1C`, Mid→Light = `#F97316`, Light→Highlight = `#FACC15`.
+- Implementation in `src/lib/tonal-map.ts`, drawn into a separate canvas layered with `pointer-events: none`.
 
----
+### D. 3 pre-generation shading filter buttons
 
-## Order of work
-1. Enable Lovable Cloud / AI Gateway (needed for `LOVABLE_API_KEY`).
-2. Generate brand logo asset (neon purple script "P").
-3. Build design tokens + landing page components.
-4. Build `/create` page + server fn calling Nano Banana 2.
-5. Write Kaggle notebook to `/mnt/documents/stencil_ai_kaggle.ipynb` and expose as artifact.
-6. Verify build, test generation flow end-to-end.
+- Above the Generate button: "Whip", "Pendulum", "Stipple" toggle row (plus "None" default). Selection is appended to the generation prompt AND applied as a post-pass to the returned stencil so behavior is consistent regardless of model output.
+- Whip → directional exponential-scatter dot field from shadow boundaries.
+- Pendulum → U-curve density distribution across midtones.
+- Stipple → blue-noise dithering replacing gray gradients with dot field.
+
+### E. Master Color & Studio Suite dropdown (top-right of `/create`)
+
+Single elegant collapsible panel with 4 sub-tools:
+
+1. **Image Upscaler** — uses existing `src/lib/lanczos.worker.ts`. UI: dimension preview, target (2K/4K), progress bar, add download upscale option in a small button on the bottom of  upload canvas not inside make it look professional  don't replace upload . 4K max (3840×2160) — true 8K refused with a clear message because it exceeds browser memory in practice.
+2. **Ink Inventory** — uses existing `src/lib/ink-library.ts`. Runs k-means on the uploaded photo, shows 5–10 dominant colors as ink-cap chips with "Brand — Name (#hex)" + ΔE.
+3. **Color Wheel + Mixing** — HSL wheel canvas, click any hue → opens drawer with `mixRecipe(hex)` percentages. Harmony tabs (Complementary, Triadic, Split-Complementary, Analogous) draw overlays on the wheel.
+4. **Try It On 3D** — Three.js scene with neutral cylindrical body parts (forearm, bicep, calf, chest) loaded as procedural meshes (no external GLB to keep bundle small), stencil projected as a texture with `MultiplyBlending`. Orbit controls. Lazy-loaded so Three.js (~500KB) doesn't load on first paint.
+
+### F. Architecture / safety
+
+- All new modules pure client-side. No new server functions.
+- Lazy-load heavy modules (Three.js viewport, color wheel) via `React.lazy` so the create-page initial bundle stays small.
+- `processedUrl` regeneration runs in a single `useEffect` with `AbortController`-like cancellation flag to prevent leaks on rapid slider drags.
+
+## Files
+
+Created:
+
+- `src/lib/vault.ts` — IndexedDB wrapper
+- `src/lib/edit-pipeline.ts` — 10-knob canvas pipeline
+- `src/lib/tonal-map.ts` — 3-zone contour overlay
+- `src/lib/shading-filters.ts` — whip / pendulum / stipple
+- `src/routes/vault.tsx` — Storage Vault page
+- `src/components/master-suite/MasterSuite.tsx` — dropdown shell
+- `src/components/master-suite/Upscaler.tsx`
+- `src/components/master-suite/InkInventory.tsx`
+- `src/components/master-suite/ColorWheel.tsx`
+- `src/components/master-suite/SkinViewport.tsx` (lazy)
+
+Edited:
+
+- `src/routes/create.tsx` — wire new editor, vault auto-save, suite dropdown, shading filter buttons, tonal map toggle
+- `src/routes/index.tsx` and `src/routes/create.tsx` headers — add Vault nav link
+
+Already in place from previous turn: `src/lib/lanczos.worker.ts`, `src/lib/ink-library.ts`, `three` + `@types/three` installed.
+
+## Known trade-offs / things to confirm
+
+- **True 8K upscaling**: I'll cap at 4K (3840×2160). Browsers run out of memory above this for the intermediate float buffer (~256MB for 8K). I'll show a tooltip explaining this.
+- **3D viewport models**: Procedural cylindrical/capsule meshes (no external GLB) — fast, no asset hosting, but stylized. If you want photoreal models later we'd need to host GLBs. Make and option for this 
+- **Suite dropdown placement on mobile**: Top-right dropdown will become a full-width sheet under 640px to remain usable.
+- **Per-knob CPU cost**: At 1024px working size, full 10-knob pipeline runs in ~80–200ms on a midrange laptop — fine for sliders with the 60ms debounce; might feel a touch heavy on phones for the heaviest knobs (Gaussian r=8, unsharp at full strength). Acceptable? Don't take nothing out that is in my app now or change any currently working features. only change unworking things and add what I asked to add don't downgrade my app any or change anything in it add three new filter as described alongside current filter don't take any of them out please 
+- The apps results and features are lovely so I need them all only add what I need and fix top advanced editing sliders in the drop-down menu 
