@@ -700,6 +700,19 @@ function Knob({
   );
 }
 
+const KNOB_DEFS: { key: keyof Knobs; label: string; hint: string }[] = [
+  { key: "contrast",    label: "1. Contrast / threshold",  hint: "Luminance cutoff between ink and paper." },
+  { key: "thickness",   label: "2. Line thickness",        hint: "Morphological dilate (>50) thickens; erode (<50) thins." },
+  { key: "detail",      label: "3. Detail density",        hint: "Sobel sensitivity for fine edges and texture." },
+  { key: "smoothing",   label: "4. Noise reduction",       hint: "Gaussian pre-blur to kill speckle (radius 0–8px)." },
+  { key: "shadowDepth", label: "5. Shadow depth",          hint: "Gamma boost on dark luminance band only." },
+  { key: "midtone",     label: "6. Midtone boost",         hint: "Bezier squeeze on the 33–66% luminance band." },
+  { key: "highlights",  label: "7. Highlights suppression", hint: "Compresses values above 80% luminance." },
+  { key: "sharpness",   label: "8. Fine line sharpness",   hint: "Unsharp mask blend for micro-detail accent." },
+  { key: "grain",       label: "9. Paper grain",           hint: "Carbon-transfer texture overlay opacity." },
+  { key: "intensity",   label: "10. Thermal intensity",    hint: "Lerps ink tint from faded violet to deep thermal purple." },
+];
+
 function buildPrompt(o: {
   style: Style;
   intensity: number;
