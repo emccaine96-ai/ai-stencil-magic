@@ -389,48 +389,6 @@ function CreatePage() {
             </p>
           </div>
 
-          <button
-            onClick={() => setAdvOpen((v) => !v)}
-            className="mt-5 w-full flex items-center justify-between p-3 rounded-2xl border border-border bg-card hover:border-primary/50 transition text-sm"
-          >
-            <span className="flex items-center gap-2 font-semibold">
-              <Sliders size={16} /> Advanced tonal controls
-            </span>
-            <span className="text-muted-foreground">{advOpen ? "Hide" : "Show"}</span>
-          </button>
-
-          {advOpen ? (
-            <div className="mt-3 p-4 rounded-2xl border border-border bg-card space-y-5">
-              <div>
-                <div className="text-sm font-semibold mb-3">Per-tier density</div>
-                {["Shadows", "Dark mids", "Mids", "Light mids", "Highlights"].map((label, i) => (
-                  <div key={label} className="mb-3">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">{label}</span>
-                      <span className="gradient-text font-bold">{tierDensity[i]}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={tierDensity[i]}
-                      onChange={(e) => {
-                        const next = [...tierDensity];
-                        next[i] = Number(e.target.value);
-                        setTierDensity(next);
-                      }}
-                      className="w-full mt-1 accent-[oklch(0.64_0.26_303)]"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <Knob label="Otsu threshold offset" value={thresholdOffset} min={-30} max={30} suffix="" onChange={setThresholdOffset} hint="Shifts the 4 luminance cutoffs separating the 5 tiers." />
-              <Knob label="Hatch angle" value={hatchAngle} min={0} max={180} suffix="°" onChange={setHatchAngle} hint="Primary hatch direction (secondary +90°, tertiary +45°)." />
-              <Knob label="Hatch spacing" value={hatchSpacing} min={1} max={10} suffix="px" onChange={setHatchSpacing} hint="Distance between parallel hatch lines." />
-              <Knob label="Face-mesh curvature" value={meshStrength} min={0} max={100} suffix="%" onChange={setMeshStrength} hint="How strongly hatching follows facial 3D surface curvature." />
-            </div>
-          ) : null}
         </section>
 
         <section>
@@ -477,21 +435,7 @@ function CreatePage() {
 
         {stencil ? (
           <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-extrabold">Your stencil</h2>
-              {portraitMap && mapUrl ? (
-                <div className="inline-flex rounded-full border border-border bg-card p-1 text-xs">
-                  <button
-                    onClick={() => setViewMode("stencil")}
-                    className={`px-3 py-1 rounded-full transition ${viewMode === "stencil" ? "bg-gradient-primary text-primary-foreground" : "text-muted-foreground"}`}
-                  >Stencil</button>
-                  <button
-                    onClick={() => setViewMode("map")}
-                    className={`px-3 py-1 rounded-full transition ${viewMode === "map" ? "bg-gradient-primary text-primary-foreground" : "text-muted-foreground"}`}
-                  >Shading map</button>
-                </div>
-              ) : null}
-            </div>
+            <h2 className="text-2xl font-extrabold">Your stencil</h2>
             <div className="relative aspect-square bg-white rounded-3xl overflow-hidden border border-border">
               {photo ? (
                 <img
@@ -502,11 +446,19 @@ function CreatePage() {
                 />
               ) : null}
               <img
-                src={viewMode === "map" && mapUrl ? mapUrl : processedUrl ?? stencil}
+                src={processedUrl ?? stencil}
                 alt="Stencil"
                 className="absolute inset-0 h-full w-full object-cover"
                 style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
               />
+              {portraitMap && mapUrl ? (
+                <img
+                  src={mapUrl}
+                  alt="Tonal map overlay"
+                  className="absolute inset-0 h-full w-full object-cover pointer-events-none"
+                  style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
+                />
+              ) : null}
               <input
                 type="range"
                 min={0}
