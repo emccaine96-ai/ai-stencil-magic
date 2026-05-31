@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sparkles, Wand2, Archive, Zap } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
 import { composeStencil, DEFAULT_KNOBS, type Knobs } from "@/lib/edit-pipeline";
-import { applyShadingFilter, type ShadingKind } from "@/lib/shading-filters";
+import { applyShadingFilter, applyStyleTransform, type ShadingKind } from "@/lib/shading-filters";
 import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
 
@@ -105,12 +105,14 @@ function CreatePage() {
     if (!stencil) { setFilteredStencil(null); return; }
     (async () => {
       try {
-        const out = await applyShadingFilter(stencil, preFilter, photo);
-        if (!cancelled) setFilteredStencil(out);
+        const shaded = await applyShadingFilter(stencil, preFilter, photo);
+        if (cancelled) return;
+        const styled = await applyStyleTransform(shaded, style);
+        if (!cancelled) setFilteredStencil(styled);
       } catch { /* keep previous */ }
     })();
     return () => { cancelled = true; };
-  }, [stencil, preFilter, photo]);
+  }, [stencil, preFilter, photo, style]);
 
   // Real-time editor: ONLY rerun the canvas pipeline when the user has
   // actually changed a knob. With default knobs we display the untouched
