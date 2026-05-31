@@ -1,9 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sparkles, Wand2, Map as MapIcon, Archive, Zap } from "lucide-react";
+import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sparkles, Wand2, Archive, Zap } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
 import { composeStencil, DEFAULT_KNOBS, type Knobs } from "@/lib/edit-pipeline";
-import { buildTonalMap } from "@/lib/tonal-map";
 import { applyShadingFilter, type ShadingKind } from "@/lib/shading-filters";
 import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
@@ -76,9 +75,7 @@ function CreatePage() {
   // Post-generation edit knobs (client-side only, no re-generation)
   const [editOpen, setEditOpen] = useState(false);
   const [knobs, setKnobs] = useState<Knobs>(DEFAULT_KNOBS);
-  const [portraitMap, setPortraitMap] = useState(false);
   const [processedUrl, setProcessedUrl] = useState<string | null>(null);
-  const [mapUrl, setMapUrl] = useState<string | null>(null);
   // Pre-generation shading filter applied as a post-pass on the returned stencil.
   const [preFilter, setPreFilter] = useState<ShadingKind>("none");
   const [filteredStencil, setFilteredStencil] = useState<string | null>(null);
@@ -115,10 +112,15 @@ function CreatePage() {
     return () => { cancelled = true; };
   }, [stencil, preFilter, photo]);
 
-  // Real-time 10-knob editor: rerun the canvas pipeline whenever any knob changes.
+  // Real-time editor: ONLY rerun the canvas pipeline when the user has
+  // actually changed a knob. With default knobs we display the untouched
+  // generated stencil — this is what produced the "May 27" perfect results.
+  const knobsTouched =
+    knobs.contrast !== DEFAULT_KNOBS.contrast ||
+    knobs.thickness !== DEFAULT_KNOBS.thickness;
   useEffect(() => {
     const base = filteredStencil ?? stencil;
-    if (!base) { setProcessedUrl(null); return; }
+    if (!base || !knobsTouched) { setProcessedUrl(null); return; }
     const signal = { cancelled: false };
     const handle = setTimeout(async () => {
       try {
@@ -127,21 +129,7 @@ function CreatePage() {
       } catch { /* slider was bumped again; skip */ }
     }, 60);
     return () => { signal.cancelled = true; clearTimeout(handle); };
-  }, [filteredStencil, stencil, knobs]);
-
-  // Tonal map overlay derives from the ORIGINAL photo, not the stencil,
-  // so the underlying stencil line work stays untouched.
-  useEffect(() => {
-    let cancelled = false;
-    if (!portraitMap || !photo) { setMapUrl(null); return; }
-    (async () => {
-      try {
-        const m = await buildTonalMap(photo);
-        if (!cancelled) setMapUrl(m);
-      } catch { /* ignore */ }
-    })();
-    return () => { cancelled = true; };
-  }, [portraitMap, photo]);
+  }, [filteredStencil, stencil, knobs, knobsTouched]);
 
   // Auto-save every new stencil to the local Storage Vault (IndexedDB).
   useEffect(() => {
@@ -446,19 +434,11 @@ function CreatePage() {
                 />
               ) : null}
               <img
-                src={processedUrl ?? stencil}
+                src={processedUrl ?? filteredStencil ?? stencil}
                 alt="Stencil"
                 className="absolute inset-0 h-full w-full object-cover"
                 style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
               />
-              {portraitMap && mapUrl ? (
-                <img
-                  src={mapUrl}
-                  alt="Tonal map overlay"
-                  className="absolute inset-0 h-full w-full object-cover pointer-events-none"
-                  style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
-                />
-              ) : null}
               <input
                 type="range"
                 min={0}
@@ -508,18 +488,7 @@ function CreatePage() {
                   />
                 ))}
 
-                <label className="flex items-center justify-between p-3 rounded-xl border border-border cursor-pointer mt-2">
-                  <span className="flex items-center gap-2 text-xs font-semibold"><MapIcon size={14} /> 3D Tonal Map Guide</span>
-                  <span
-                    className={`relative inline-block w-10 h-6 rounded-full transition ${portraitMap ? "bg-gradient-primary" : "bg-muted"}`}
-                  >
-                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-all ${portraitMap ? "left-[18px]" : "left-0.5"}`} />
-                  </span>
-                  <input type="checkbox" className="hidden" checked={portraitMap} onChange={(e) => setPortraitMap(e.target.checked)} />
-                </label>
-                {portraitMap ? (
-                  <p className="text-[10px] text-muted-foreground">Dashed contours mark dark/mid/light tonal zone boundaries: <span className="text-[#B91C1C]">dark→mid</span>, <span className="text-[#F97316]">mid transitions</span>, <span className="text-[#FACC15]">light→highlight</span>. Stencil underneath stays untouched.</p>
-                ) : null}
+                <p className="text-[10px] text-muted-foreground">Edits run live on top of your generated stencil. Reset to return to the original AI result.</p>
               </div>
             ) : null}
 
@@ -644,8 +613,6 @@ function Knob({
 const KNOB_DEFS: { key: keyof Knobs; label: string; hint: string }[] = [
   { key: "contrast",    label: "Contrast",        hint: "Luminance cutoff between ink and paper." },
   { key: "thickness",   label: "Line thickness",  hint: "Morphological dilate (>50) thickens; erode (<50) thins." },
-  { key: "shadowDepth", label: "Shadow depth",    hint: "Gamma boost on the dark luminance band." },
-  { key: "smoothing",   label: "Noise reduction", hint: "Gaussian pre-blur to kill speckle (radius 0–8px)." },
 ];
 
 function buildPrompt(o: { style: Style; intensity: number }) {
