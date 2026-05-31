@@ -97,6 +97,17 @@ function CreatePage() {
     if (k) setApiKey(k);
     const p = typeof window !== "undefined" ? (localStorage.getItem(PROVIDER_STORAGE) as Provider | null) : null;
     if (p === "lovable" || p === "gemini") setProvider(p);
+    // Hand-off from Vault: open a saved entry directly in the editor.
+    try {
+      const raw = typeof window !== "undefined" ? sessionStorage.getItem("primalprint.editor.load") : null;
+      if (raw) {
+        sessionStorage.removeItem("primalprint.editor.load");
+        const parsed = JSON.parse(raw) as { stencil?: string; photo?: string | null; style?: Style };
+        if (parsed.photo) setPhoto(parsed.photo);
+        if (parsed.style) setStyle(parsed.style);
+        if (parsed.stencil) setStencil(parsed.stencil);
+      }
+    } catch { /* ignore */ }
   }, []);
 
   // When the raw stencil OR pre-generation filter changes, recompute the
