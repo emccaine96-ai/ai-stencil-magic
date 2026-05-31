@@ -1,10 +1,16 @@
 // Pre-generation shading filters applied as a post-pass on the returned
-// purple-on-white stencil. Three styles:
-//  - whip:     directional scatter from shadow boundaries.
-//  - pendulum: U-curve symmetric tapering across midtones.
-//  - stipple:  blue-noise dot field replacing solid gray fills.
+// purple-on-white stencil.
 //
-// Each takes the stencil dataURL and returns a new dataURL.
+// The user's mental model (per the reference infographics):
+//   - WHIP:     hard dark "head" tapering to a light flick tail.
+//   - PENDULUM: dense dark center fading symmetrically out to lighter ends.
+//   - STIPPLE: pure microdot field. Dark tones = very dense dots,
+//              mid tones = medium density, light = sparse, highlights = blank.
+//
+// Tonal density is driven by the ORIGINAL photo luminance (not the line
+// stencil), so we get a real Dark / Mid / Light gradient in every output.
+// Lines from the source stencil are preserved on top so identity / contours
+// stay legible.
 
 export type ShadingKind = "none" | "whip" | "pendulum" | "stipple";
 
@@ -20,7 +26,11 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-export async function applyShadingFilter(srcDataUrl: string, kind: ShadingKind): Promise<string> {
+export async function applyShadingFilter(
+  srcDataUrl: string,
+  kind: ShadingKind,
+  photoDataUrl?: string | null,
+): Promise<string> {
   if (kind === "none") return srcDataUrl;
   const img = await loadImage(srcDataUrl);
   const W = Math.min(img.width, 1024);
@@ -31,107 +41,143 @@ export async function applyShadingFilter(srcDataUrl: string, kind: ShadingKind):
   ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
   ctx.drawImage(img, 0, 0, W, H);
 
-  // Build a binary ink mask.
+  // Binary ink mask from the line stencil (purple on white).
   const data = ctx.getImageData(0, 0, W, H);
   const px = data.data;
-  const mask = new Uint8Array(W * H);
+  const lineMask = new Uint8Array(W * H);
   for (let i = 0, j = 0; i < px.length; i += 4, j++) {
     const dist = (255 - px[i]) + (255 - px[i + 1]) + (255 - px[i + 2]);
-    mask[j] = dist > 40 ? 1 : 0;
+    lineMask[j] = dist > 40 ? 1 : 0;
   }
 
-  if (kind === "whip") {
-    // Find shadow boundaries (mask edges) and flick dots along a vector.
-    ctx.fillStyle = INK;
-    const dx = Math.cos((30 * Math.PI) / 180);
-    const dy = Math.sin((30 * Math.PI) / 180);
-    for (let y = 1; y < H - 1; y++) {
-      for (let x = 1; x < W - 1; x++) {
-        const j = y * W + x;
-        if (!mask[j]) continue;
-        // Detect boundary cells
-        const edge = !mask[j - 1] || !mask[j + 1] || !mask[j - W] || !mask[j + W];
-        if (!edge) continue;
-        // Flick: dots along (dx, dy) with exponential density falloff.
-        const steps = 18;
-        for (let s = 1; s <= steps; s++) {
-          const t = s / steps;
-          const radius = 0.8 + (1 - t) * 1.6;
-          const alpha = Math.pow(1 - t, 1.8);
-          const xx = Math.round(x + dx * s * 1.3 + (Math.random() - 0.5) * 1.5);
-          const yy = Math.round(y + dy * s * 1.3 + (Math.random() - 0.5) * 1.5);
-          if (xx < 0 || yy < 0 || xx >= W || yy >= H) break;
-          ctx.globalAlpha = alpha * 0.85;
-          ctx.beginPath();
-          ctx.arc(xx, yy, radius, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
+  // --- Tonal density field from the ORIGINAL photo --------------------
+  // density(x,y) ∈ [0..1]   0 = highlight (no marks)   1 = deep shadow.
+  const density = new Float32Array(W * H);
+  if (photoDataUrl) {
+    const photoImg = await loadImage(photoDataUrl);
+    const pc = document.createElement("canvas");
+    pc.width = W; pc.height = H;
+    const pctx = pc.getContext("2d")!;
+    pctx.drawImage(photoImg, 0, 0, W, H);
+    const pdata = pctx.getImageData(0, 0, W, H).data;
+    for (let i = 0, j = 0; i < pdata.length; i += 4, j++) {
+      const L = 0.299 * pdata[i] + 0.587 * pdata[i + 1] + 0.114 * pdata[i + 2];
+      // Map luminance to 4-tier density curve:
+      //   <64  shadows  → 1.0
+      //   64..128 dark mids → 0.7
+      //   128..192 mids → 0.35
+      //   192..230 light → 0.12
+      //   >230 highlight → 0
+      let d;
+      if (L < 64) d = 1.0;
+      else if (L < 128) d = 0.7;
+      else if (L < 192) d = 0.35;
+      else if (L < 230) d = 0.12;
+      else d = 0;
+      density[j] = d;
     }
-    ctx.globalAlpha = 1;
-  } else if (kind === "pendulum") {
-    // U-curve density across each horizontal slice of ink: dense center,
-    // tapered at outer edges via symmetric falloff.
-    ctx.fillStyle = INK;
-    for (let y = 0; y < H; y += 2) {
-      // find run extents on this row
-      let runStart = -1;
-      for (let x = 0; x <= W; x++) {
-        const inside = x < W && mask[y * W + x];
-        if (inside && runStart < 0) runStart = x;
-        if ((!inside || x === W) && runStart >= 0) {
-          const runEnd = x - 1;
-          const len = runEnd - runStart + 1;
-          if (len > 4) {
-            const mid = (runStart + runEnd) / 2;
-            const half = len / 2;
-            for (let xx = runStart; xx <= runEnd; xx += 1) {
-              // U-shape: density peaks at center
-              const d = Math.abs(xx - mid) / half; // 0..1
-              const density = 1 - d * d; // 1 center, 0 edges
-              if (Math.random() < density) {
-                ctx.globalAlpha = 0.4 + density * 0.5;
-                ctx.fillRect(xx, y, 1.2, 1.2);
-              }
-            }
-          }
-          runStart = -1;
-        }
-      }
-    }
-    ctx.globalAlpha = 1;
-  } else if (kind === "stipple") {
-    // Clear the canvas and dot-redraw using ink-density as probability.
-    // Build a low-pass density field to control dot spacing.
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, W, H);
-    const cell = 3;
-    ctx.fillStyle = INK;
+  } else {
+    // Fallback: derive density from the stencil mask coverage in a small window.
+    for (let j = 0; j < lineMask.length; j++) density[j] = lineMask[j] ? 0.8 : 0.15;
+  }
+
+  // --- Render filter ---------------------------------------------------
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = INK;
+
+  if (kind === "stipple") {
+    // Pure microdot field across the whole tonal range. Density-weighted
+    // jittered grid → dark = very dense, light = sparse, highlight = blank.
+    const cell = 2;
     for (let y = 0; y < H; y += cell) {
       for (let x = 0; x < W; x += cell) {
-        // average mask in cell
-        let sum = 0, n = 0;
-        for (let dy = 0; dy < cell; dy++) {
-          for (let dx = 0; dx < cell; dx++) {
-            const xx = x + dx, yy = y + dy;
-            if (xx >= W || yy >= H) continue;
-            sum += mask[yy * W + xx]; n++;
-          }
-        }
-        const density = n ? sum / n : 0;
-        if (density < 0.05) continue;
-        // probability ~ density^0.8, jittered position
-        if (Math.random() < density * 0.95) {
+        const d = density[y * W + x];
+        if (d < 0.04) continue;
+        // Number of dots scales with density (0..3 per cell).
+        const tries = d > 0.85 ? 3 : d > 0.55 ? 2 : 1;
+        for (let t = 0; t < tries; t++) {
+          if (Math.random() > d) continue;
           const jx = x + Math.random() * cell;
           const jy = y + Math.random() * cell;
-          const r = 0.6 + density * 1.1;
+          const r = 0.45 + d * 0.85;
+          ctx.globalAlpha = 0.55 + d * 0.45;
           ctx.beginPath();
           ctx.arc(jx, jy, r, 0, Math.PI * 2);
           ctx.fill();
         }
       }
     }
+  } else if (kind === "whip") {
+    // Whip = teardrop strokes. Each stroke seeded in mid+dark tones.
+    // Hard dark head, exponentially tapering light tail along a fixed vector.
+    const ang = (35 * Math.PI) / 180;
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    const cell = 4;
+    for (let y = 0; y < H; y += cell) {
+      for (let x = 0; x < W; x += cell) {
+        const d = density[y * W + x];
+        if (d < 0.18) continue;
+        if (Math.random() > d * 0.9) continue;
+        const len = 4 + d * 14;       // longer strokes in darker tones
+        const headR = 0.6 + d * 1.6;  // fatter head in darker tones
+        const steps = Math.ceil(len);
+        const sx = x + (Math.random() - 0.5) * cell;
+        const sy = y + (Math.random() - 0.5) * cell;
+        for (let s = 0; s < steps; s++) {
+          const t = s / steps;             // 0 = head, 1 = tail
+          const r = headR * Math.pow(1 - t, 1.4);
+          if (r < 0.15) break;
+          ctx.globalAlpha = (0.55 + d * 0.45) * Math.pow(1 - t, 0.6);
+          const xx = sx + dx * s;
+          const yy = sy + dy * s;
+          if (xx < 0 || yy < 0 || xx >= W || yy >= H) break;
+          ctx.beginPath();
+          ctx.arc(xx, yy, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+  } else if (kind === "pendulum") {
+    // Pendulum = curved arcs swung from a center, dense in the middle and
+    // fading symmetrically out toward both ends.
+    const cell = 5;
+    for (let y = 0; y < H; y += cell) {
+      for (let x = 0; x < W; x += cell) {
+        const d = density[y * W + x];
+        if (d < 0.18) continue;
+        if (Math.random() > d * 0.7) continue;
+        const arcLen = 10 + d * 18;            // arc length grows with density
+        const radius = arcLen * 1.4;
+        const cx = x;
+        const cy = y + radius * 0.4;
+        const startA = -Math.PI / 2 - arcLen / radius / 2;
+        const endA   = -Math.PI / 2 + arcLen / radius / 2;
+        const steps = Math.ceil(arcLen);
+        for (let s = 0; s <= steps; s++) {
+          const t = s / steps;                  // 0..1 across the arc
+          // U-curve: bright at ends, dark at center.
+          const u = 1 - (2 * t - 1) * (2 * t - 1); // 0..1
+          const dotR = 0.4 + d * (0.4 + u * 1.2);
+          ctx.globalAlpha = (0.35 + d * 0.45) * (0.35 + u * 0.65);
+          const a = startA + (endA - startA) * t;
+          const xx = cx + Math.cos(a) * radius;
+          const yy = cy + Math.sin(a) * radius;
+          if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+          ctx.beginPath();
+          ctx.arc(xx, yy, dotR, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
   }
+
+  ctx.globalAlpha = 1;
+
+  // Re-stamp the original stencil's line work on top so contours stay crisp.
+  ctx.globalAlpha = 0.95;
+  ctx.drawImage(img, 0, 0, W, H);
+  ctx.globalAlpha = 1;
 
   return c.toDataURL("image/png");
 }

@@ -1,6 +1,6 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ChevronLeft, Download, Trash2, Inbox } from "lucide-react";
+import { ChevronLeft, Download, Trash2, Inbox, Wand2 } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
 import { listStencils, deleteStencil, type VaultEntry } from "@/lib/vault";
 
@@ -16,6 +16,7 @@ export const Route = createFileRoute("/vault")({
 
 function VaultPage() {
   const [entries, setEntries] = useState<VaultEntry[] | null>(null);
+  const navigate = useNavigate();
 
   async function refresh() {
     const e = await listStencils();
@@ -33,6 +34,17 @@ function VaultPage() {
     a.href = e.stencil;
     a.download = `stencil-${e.id}.png`;
     a.click();
+  }
+
+  function openInEditor(e: VaultEntry) {
+    try {
+      sessionStorage.setItem("primalprint.editor.load", JSON.stringify({
+        stencil: e.stencil,
+        photo: e.photo,
+        style: e.style,
+      }));
+    } catch { /* quota */ }
+    navigate({ to: "/create" });
   }
 
   return (
@@ -68,15 +80,23 @@ function VaultPage() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {entries.map((e) => (
-              <div key={e.id} className="rounded-2xl border border-border bg-card overflow-hidden group">
-                <div className="aspect-square bg-white overflow-hidden">
+              <div key={e.id} className="rounded-2xl border border-border bg-card overflow-hidden group hover:border-primary transition">
+                <button
+                  onClick={() => openInEditor(e)}
+                  className="block w-full aspect-square bg-white overflow-hidden relative"
+                  aria-label="Open in editor"
+                >
                   <img src={e.thumb} alt="Stencil thumbnail" className="w-full h-full object-contain" />
-                </div>
+                  <span className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white text-xs font-bold">
+                    <Wand2 size={14} /> Open in editor
+                  </span>
+                </button>
                 <div className="p-2.5 text-xs">
                   <div className="font-semibold capitalize">{e.style}</div>
                   <div className="text-[10px] text-muted-foreground">{new Date(e.createdAt).toLocaleString()}</div>
                   <div className="flex gap-1 mt-2">
-                    <button onClick={() => download(e)} className="flex-1 rounded-lg border border-border py-1 hover:border-primary flex items-center justify-center gap-1"><Download size={10} /> PNG</button>
+                    <button onClick={() => openInEditor(e)} className="flex-1 rounded-lg bg-gradient-primary text-primary-foreground py-1 font-semibold flex items-center justify-center gap-1"><Wand2 size={10} /> Edit</button>
+                    <button onClick={() => download(e)} className="rounded-lg border border-border px-2 py-1 hover:border-primary flex items-center justify-center gap-1"><Download size={10} /></button>
                     <button onClick={() => onDelete(e.id)} className="rounded-lg border border-destructive/40 text-destructive px-2 py-1 hover:bg-destructive/10"><Trash2 size={10} /></button>
                   </div>
                 </div>

@@ -1,9 +1,17 @@
-// 3D Tonal Map Guide — render dashed contour overlay segmenting an image
-// into Dark / Mid / Light zones via 2 Otsu thresholds, marching-squares
-// contours along zone boundaries.
+// 3D Tonal Map Guide — clean, long, *broken* contour lines that mark
+// where the photo transitions from one tonal zone to the next. The
+// output is a transparent PNG overlaid above the stencil; the underlying
+// line work is never modified.
 //
-// Output is a transparent PNG dataURL sized like the source so it can be
-// stacked on top of the stencil without touching it.
+// Two tonal boundaries are traced (both via Otsu):
+//   - dark   → mid   (red dashed)
+//   - light  → mid   (yellow dashed)
+//
+// Boundary masks are first morphologically smoothed so contours look
+// continuous like a topo map, then walked with a "moore neighborhood"
+// border tracer to emit one long polyline per region. Each polyline is
+// stroked with a dash so the artist can see where tonal transitions sit
+// without the stencil being affected in any way.
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((res, rej) => {
@@ -45,45 +53,103 @@ function otsu2(hist: Float64Array): [number, number] {
   return [Math.round((t1 / N) * 255), Math.round((t2 / N) * 255)];
 }
 
-// Trace boundaries of a binary mask using a coarse marching-squares.
-// Outputs a set of dashed strokes drawn directly into ctx.
-function strokeBoundary(
+// Box-blur smoothing on a binary mask to produce continuous, less jaggy borders.
+function smoothMask(mask: Uint8Array, W: number, H: number, iters = 2): Uint8Array {
+  let cur = mask;
+  for (let n = 0; n < iters; n++) {
+    const out = new Uint8Array(cur.length);
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        let s = 0;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++)
+            s += cur[(y + dy) * W + (x + dx)];
+        out[y * W + x] = s >= 5 ? 1 : 0;
+      }
+    }
+    cur = out;
+  }
+  return cur;
+}
+
+// Walk the border of every connected region in `mask` using a Moore-neighbor
+// tracer. Returns a list of polylines (each an array of [x,y] in mask coords).
+function traceContours(mask: Uint8Array, W: number, H: number, minLen = 14): number[][][] {
+  const visited = new Uint8Array(mask.length);
+  const out: number[][][] = [];
+  // 8-neighborhood, clockwise from east.
+  const NX = [1, 1, 0, -1, -1, -1, 0, 1];
+  const NY = [0, 1, 1, 1, 0, -1, -1, -1];
+  const isBorder = (x: number, y: number) => {
+    if (!mask[y * W + x]) return false;
+    if (x === 0 || y === 0 || x === W - 1 || y === H - 1) return true;
+    return !mask[y * W + x - 1] || !mask[y * W + x + 1] || !mask[(y - 1) * W + x] || !mask[(y + 1) * W + x];
+  };
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const idx = y * W + x;
+      if (visited[idx] || !isBorder(x, y)) continue;
+      const poly: number[][] = [[x, y]];
+      visited[idx] = 1;
+      let cx = x, cy = y, dir = 0;
+      let safety = 0;
+      while (safety++ < 4000) {
+        let found = false;
+        for (let k = 0; k < 8; k++) {
+          const nd = (dir + 6 + k) & 7;
+          const nx = cx + NX[nd], ny = cy + NY[nd];
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          if (isBorder(nx, ny)) {
+            cx = nx; cy = ny; dir = nd;
+            const i2 = ny * W + nx;
+            if (visited[i2]) { found = false; break; }
+            visited[i2] = 1;
+            poly.push([cx, cy]);
+            found = true;
+            break;
+          }
+        }
+        if (!found) break;
+        if (cx === x && cy === y) break;
+      }
+      if (poly.length >= minLen) out.push(poly);
+    }
+  }
+  return out;
+}
+
+function strokePolylines(
   ctx: CanvasRenderingContext2D,
-  mask: Uint8Array,
-  W: number,
-  H: number,
+  polys: number[][][],
   scale: number,
   color: string,
 ) {
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  for (let y = 0; y < H - 1; y++) {
-    for (let x = 0; x < W - 1; x++) {
-      const tl = mask[y * W + x];
-      const tr = mask[y * W + x + 1];
-      const bl = mask[(y + 1) * W + x];
-      const br = mask[(y + 1) * W + x + 1];
-      const idx = tl | (tr << 1) | (br << 2) | (bl << 3);
-      if (idx === 0 || idx === 15) continue;
-      const cx = (x + 0.5) * scale, cy = (y + 0.5) * scale;
-      // Short marching segments — good enough as a guide overlay.
-      if (idx === 1 || idx === 14) { ctx.moveTo(cx - scale / 2, cy); ctx.lineTo(cx, cy - scale / 2); }
-      else if (idx === 2 || idx === 13) { ctx.moveTo(cx, cy - scale / 2); ctx.lineTo(cx + scale / 2, cy); }
-      else if (idx === 4 || idx === 11) { ctx.moveTo(cx + scale / 2, cy); ctx.lineTo(cx, cy + scale / 2); }
-      else if (idx === 8 || idx === 7) { ctx.moveTo(cx, cy + scale / 2); ctx.lineTo(cx - scale / 2, cy); }
-      else if (idx === 3 || idx === 12) { ctx.moveTo(cx - scale / 2, cy); ctx.lineTo(cx + scale / 2, cy); }
-      else if (idx === 6 || idx === 9) { ctx.moveTo(cx, cy - scale / 2); ctx.lineTo(cx, cy + scale / 2); }
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.setLineDash([6, 5]);
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 1.5;
+  for (const p of polys) {
+    ctx.beginPath();
+    // Skip every other vertex for a smoother stroke
+    for (let i = 0; i < p.length; i += 2) {
+      const [x, y] = p[i];
+      const sx = x * scale, sy = y * scale;
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
     }
+    ctx.stroke();
   }
-  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.setLineDash([]);
 }
 
 export async function buildTonalMap(photoDataUrl: string, outW = 1024): Promise<string> {
   const img = await loadImage(photoDataUrl);
   // Sample at low res for thresholds + mask, render strokes at outW for crispness.
-  const sW = 256;
+  const sW = 220;
   const sH = Math.max(1, Math.round((sW / img.width) * img.height));
   const sample = document.createElement("canvas");
   sample.width = sW; sample.height = sH;
@@ -100,15 +166,15 @@ export async function buildTonalMap(photoDataUrl: string, outW = 1024): Promise<
   }
   const [t1, t2] = otsu2(hist);
 
-  // Boundary masks: dark/mid and mid/light. We build per-class masks and
-  // stroke their joint boundary.
-  const darkMask = new Uint8Array(lum.length);
-  const lightMask = new Uint8Array(lum.length);
+  // Build smooth tonal masks for the two boundaries we care about.
+  const darkRaw = new Uint8Array(lum.length);
+  const lightRaw = new Uint8Array(lum.length);
   for (let i = 0; i < lum.length; i++) {
-    if (lum[i] < t1) darkMask[i] = 1;
-    if (lum[i] > t2) lightMask[i] = 1;
+    if (lum[i] < t1) darkRaw[i] = 1;
+    if (lum[i] > t2) lightRaw[i] = 1;
   }
-  // mid mask is the inverse of (dark | light)
+  const darkMask = smoothMask(darkRaw, sW, sH, 2);
+  const lightMask = smoothMask(lightRaw, sW, sH, 2);
 
   const H = Math.round((outW / sW) * sH);
   const out = document.createElement("canvas");
@@ -117,23 +183,12 @@ export async function buildTonalMap(photoDataUrl: string, outW = 1024): Promise<
   ctx.clearRect(0, 0, outW, H);
   const scale = outW / sW;
 
-  strokeBoundary(ctx, darkMask, sW, sH, scale, "#B91C1C");  // dark→mid
-  strokeBoundary(ctx, lightMask, sW, sH, scale, "#FACC15"); // mid→light/highlight
-  // mid contour: pixels where neither dark nor light but adjacent to one.
-  const midEdge = new Uint8Array(lum.length);
-  for (let y = 0; y < sH; y++) {
-    for (let x = 0; x < sW; x++) {
-      const i = y * sW + x;
-      if (darkMask[i] || lightMask[i]) continue;
-      const has = (xx: number, yy: number) => {
-        if (xx < 0 || yy < 0 || xx >= sW || yy >= sH) return false;
-        const j = yy * sW + xx;
-        return darkMask[j] || lightMask[j];
-      };
-      if (has(x - 1, y) || has(x + 1, y) || has(x, y - 1) || has(x, y + 1)) midEdge[i] = 1;
-    }
-  }
-  strokeBoundary(ctx, midEdge, sW, sH, scale, "#F97316"); // mid transitions
+  const darkPolys = traceContours(darkMask, sW, sH);
+  const lightPolys = traceContours(lightMask, sW, sH);
+  // Dark → mid boundary in red.
+  strokePolylines(ctx, darkPolys, scale, "#EF4444");
+  // Mid → light boundary in yellow.
+  strokePolylines(ctx, lightPolys, scale, "#FACC15");
 
   return out.toDataURL("image/png");
 }

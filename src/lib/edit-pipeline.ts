@@ -167,8 +167,8 @@ function inkColor(intensity: number): [number, number, number] {
 export async function composeStencil(srcDataUrl: string, knobs: Knobs, signal?: { cancelled: boolean }): Promise<string> {
   const img = await loadImage(srcDataUrl);
   if (signal?.cancelled) throw new Error("cancelled");
-  // Work at a stable resolution so the pipeline is fast and consistent.
-  const W = Math.min(img.width, 1024);
+  // Work at a smaller stable resolution so slider drags stay responsive.
+  const W = Math.min(img.width, 720);
   const H = Math.round((W / img.width) * img.height);
 
   const c = getCanvas("work", W, H);
