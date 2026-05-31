@@ -189,15 +189,7 @@ function CreatePage() {
     setStencil(null);
     try {
       const { mimeType, data: imgB64 } = dataUrlToInline(photo);
-      const prompt = buildPrompt({
-        style,
-        intensity,
-        tierDensity,
-        thresholdOffset,
-        hatchAngle,
-        hatchSpacing,
-        meshStrength,
-      });
+      const prompt = buildPrompt({ style, intensity });
       if (provider === "lovable") {
         const r = await fetch("/api/generate-stencil", {
           method: "POST",
@@ -234,7 +226,7 @@ function CreatePage() {
   }
 
   async function downloadUpscaled() {
-    const source = viewMode === "map" && mapUrl ? mapUrl : processedUrl ?? stencil;
+    const source = processedUrl ?? stencil;
     if (!source) return;
     setExporting(true);
     try {
