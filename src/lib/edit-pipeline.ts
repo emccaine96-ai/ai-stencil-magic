@@ -192,7 +192,7 @@ export async function composeStencil(srcDataUrl: string, knobs: Knobs, signal?: 
 
   // Ink mask (binary) drives morphology only — strictly from existing ink,
   // never re-thresholds the whole image.
-  let mask = new Uint8Array(N);
+  let mask: Uint8Array<ArrayBuffer> = new Uint8Array(new ArrayBuffer(N));
   for (let j = 0; j < N; j++) mask[j] = inkness[j] > 0.18 ? 1 : 0;
 
   // 2. Line thickness — gentle morph, max 3px so it can't bloom.
