@@ -1,16 +1,13 @@
-import { lazy, Suspense, useState } from "react";
-import { ChevronDown, Sparkles, Image as ImageIcon, Droplet, Palette, Box, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Sparkles, Image as ImageIcon, Droplet, Palette } from "lucide-react";
 import { Upscaler } from "./Upscaler";
 import { InkInventory } from "./InkInventory";
 import { ColorWheel } from "./ColorWheel";
 
-const SkinViewport = lazy(() => import("./SkinViewport"));
-
-type Tab = "upscaler" | "ink" | "wheel" | "3d";
+type Tab = "upscaler" | "ink" | "wheel";
 
 export function MasterSuite({
   photo,
-  stencilUrl,
   onReplacePhoto,
 }: {
   photo: string | null;
@@ -37,7 +34,6 @@ export function MasterSuite({
               { id: "upscaler", label: "Upscale", icon: ImageIcon },
               { id: "ink", label: "Inks", icon: Droplet },
               { id: "wheel", label: "Wheel", icon: Palette },
-              { id: "3d", label: "3D Skin", icon: Box },
             ] as const).map((t) => (
               <button
                 key={t.id}
@@ -52,11 +48,6 @@ export function MasterSuite({
             {tab === "upscaler" ? <Upscaler photo={photo} onReplace={onReplacePhoto} /> : null}
             {tab === "ink" ? <InkInventory photo={photo} /> : null}
             {tab === "wheel" ? <ColorWheel /> : null}
-            {tab === "3d" ? (
-              <Suspense fallback={<div className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="animate-spin" size={12} /> Loading 3D engine…</div>}>
-                <SkinViewport stencilUrl={stencilUrl} />
-              </Suspense>
-            ) : null}
           </div>
         </div>
       ) : null}
