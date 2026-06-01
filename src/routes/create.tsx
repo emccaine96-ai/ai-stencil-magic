@@ -1,9 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sparkles, Wand2, Archive, Zap } from "lucide-react";
+import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sparkles, Archive, Zap } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
-import { composeStencil, DEFAULT_KNOBS, type Knobs } from "@/lib/edit-pipeline";
-import { applyShadingFilter, applyStyleTransform, type ShadingKind } from "@/lib/shading-filters";
 import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
 
@@ -30,13 +28,13 @@ const PROVIDER_STORAGE = "primalprint.provider"; // 'lovable' | 'gemini'
 type Provider = "lovable" | "gemini";
 const STYLE_PROMPTS: Record<Style, string> = {
   hatching:
-    "Pure pen-and-ink crosshatching. Deep shadows use 3 overlaid hatch directions; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white.",
+    "Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable.",
   solid:
     "Clean bold solid line work, no shading fills. Use varying line weights only. Closed clean contours. Highlights pure white.",
   dotwork:
-    "Stippling / dotwork only. Shadows = very dense small dots; dark mids = medium density; mids = sparse; lights = very few; highlights = pure white.",
+    "Dotwork stencil: clean solid CONTOUR LINES define every shape, with stippling DOTS filling the interior tones. Shadows = very dense small dots; dark mids = medium density; mids = sparse; lights = very few; highlights = pure white. Contour lines must be present and crisp — this is NOT pure dots, it is line work + dot shading.",
   hybrid:
-    "Combine bold solid contour lines with crosshatching in dark areas and stippling in mid-to-light areas.",
+    "Combine bold solid CONTOUR LINES with CROSSHATCHING in dark areas and STIPPLING dots in mid-to-light areas. All three techniques visible in the same image.",
 };
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -72,14 +70,6 @@ function CreatePage() {
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
 
-  // Post-generation edit knobs (client-side only, no re-generation)
-  const [editOpen, setEditOpen] = useState(false);
-  const [knobs, setKnobs] = useState<Knobs>(DEFAULT_KNOBS);
-  const [processedUrl, setProcessedUrl] = useState<string | null>(null);
-  // Pre-generation shading filter applied as a post-pass on the returned stencil.
-  const [preFilter, setPreFilter] = useState<ShadingKind>("none");
-  const [filteredStencil, setFilteredStencil] = useState<string | null>(null);
-
   useEffect(() => {
     const k = typeof window !== "undefined" ? localStorage.getItem(KEY_STORAGE) : null;
     if (k) setApiKey(k);
@@ -98,45 +88,10 @@ function CreatePage() {
     } catch { /* ignore */ }
   }, []);
 
-  // When the raw stencil OR pre-generation filter changes, recompute the
-  // filtered base image once. The 10-knob editor then derives from this.
-  useEffect(() => {
-    let cancelled = false;
-    if (!stencil) { setFilteredStencil(null); return; }
-    (async () => {
-      try {
-        const shaded = await applyShadingFilter(stencil, preFilter, photo);
-        if (cancelled) return;
-        const styled = await applyStyleTransform(shaded, style);
-        if (!cancelled) setFilteredStencil(styled);
-      } catch { /* keep previous */ }
-    })();
-    return () => { cancelled = true; };
-  }, [stencil, preFilter, photo, style]);
-
-  // Real-time editor: ONLY rerun the canvas pipeline when the user has
-  // actually changed a knob. With default knobs we display the untouched
-  // generated stencil — this is what produced the "May 27" perfect results.
-  const knobsTouched =
-    knobs.contrast !== DEFAULT_KNOBS.contrast ||
-    knobs.thickness !== DEFAULT_KNOBS.thickness;
-  useEffect(() => {
-    const base = filteredStencil ?? stencil;
-    if (!base || !knobsTouched) { setProcessedUrl(null); return; }
-    const signal = { cancelled: false };
-    const handle = setTimeout(async () => {
-      try {
-        const out = await composeStencil(base, knobs, signal);
-        if (!signal.cancelled) setProcessedUrl(out);
-      } catch { /* slider was bumped again; skip */ }
-    }, 60);
-    return () => { signal.cancelled = true; clearTimeout(handle); };
-  }, [filteredStencil, stencil, knobs, knobsTouched]);
-
   // Auto-save every new stencil to the local Storage Vault (IndexedDB).
   useEffect(() => {
     if (!stencil) return;
-    saveStencil({ stencil, photo, style, meta: { preFilter, intensity, knobs } }).catch(() => {});
+    saveStencil({ stencil, photo, style, meta: { intensity } }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stencil]);
 
@@ -216,7 +171,7 @@ function CreatePage() {
   }
 
   async function downloadUpscaled() {
-    const source = processedUrl ?? filteredStencil ?? stencil;
+    const source = stencil;
     if (!source) return;
     setExporting(true);
     try {
