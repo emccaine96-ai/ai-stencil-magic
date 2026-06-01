@@ -1,9 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sparkles, Wand2, Archive, Zap } from "lucide-react";
+import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, KeyRound, Sparkles, Archive, Zap } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
-import { composeStencil, DEFAULT_KNOBS, type Knobs } from "@/lib/edit-pipeline";
-import { applyShadingFilter, applyStyleTransform, type ShadingKind } from "@/lib/shading-filters";
 import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
 
@@ -30,13 +28,13 @@ const PROVIDER_STORAGE = "primalprint.provider"; // 'lovable' | 'gemini'
 type Provider = "lovable" | "gemini";
 const STYLE_PROMPTS: Record<Style, string> = {
   hatching:
-    "Pure pen-and-ink crosshatching. Deep shadows use 3 overlaid hatch directions; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white.",
+    "Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable.",
   solid:
     "Clean bold solid line work, no shading fills. Use varying line weights only. Closed clean contours. Highlights pure white.",
   dotwork:
-    "Stippling / dotwork only. Shadows = very dense small dots; dark mids = medium density; mids = sparse; lights = very few; highlights = pure white.",
+    "Dotwork stencil: clean solid CONTOUR LINES define every shape, with stippling DOTS filling the interior tones. Shadows = very dense small dots; dark mids = medium density; mids = sparse; lights = very few; highlights = pure white. Contour lines must be present and crisp — this is NOT pure dots, it is line work + dot shading.",
   hybrid:
-    "Combine bold solid contour lines with crosshatching in dark areas and stippling in mid-to-light areas.",
+    "Combine bold solid CONTOUR LINES with CROSSHATCHING in dark areas and STIPPLING dots in mid-to-light areas. All three techniques visible in the same image.",
 };
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -72,14 +70,6 @@ function CreatePage() {
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
 
-  // Post-generation edit knobs (client-side only, no re-generation)
-  const [editOpen, setEditOpen] = useState(false);
-  const [knobs, setKnobs] = useState<Knobs>(DEFAULT_KNOBS);
-  const [processedUrl, setProcessedUrl] = useState<string | null>(null);
-  // Pre-generation shading filter applied as a post-pass on the returned stencil.
-  const [preFilter, setPreFilter] = useState<ShadingKind>("none");
-  const [filteredStencil, setFilteredStencil] = useState<string | null>(null);
-
   useEffect(() => {
     const k = typeof window !== "undefined" ? localStorage.getItem(KEY_STORAGE) : null;
     if (k) setApiKey(k);
@@ -98,45 +88,10 @@ function CreatePage() {
     } catch { /* ignore */ }
   }, []);
 
-  // When the raw stencil OR pre-generation filter changes, recompute the
-  // filtered base image once. The 10-knob editor then derives from this.
-  useEffect(() => {
-    let cancelled = false;
-    if (!stencil) { setFilteredStencil(null); return; }
-    (async () => {
-      try {
-        const shaded = await applyShadingFilter(stencil, preFilter, photo);
-        if (cancelled) return;
-        const styled = await applyStyleTransform(shaded, style);
-        if (!cancelled) setFilteredStencil(styled);
-      } catch { /* keep previous */ }
-    })();
-    return () => { cancelled = true; };
-  }, [stencil, preFilter, photo, style]);
-
-  // Real-time editor: ONLY rerun the canvas pipeline when the user has
-  // actually changed a knob. With default knobs we display the untouched
-  // generated stencil — this is what produced the "May 27" perfect results.
-  const knobsTouched =
-    knobs.contrast !== DEFAULT_KNOBS.contrast ||
-    knobs.thickness !== DEFAULT_KNOBS.thickness;
-  useEffect(() => {
-    const base = filteredStencil ?? stencil;
-    if (!base || !knobsTouched) { setProcessedUrl(null); return; }
-    const signal = { cancelled: false };
-    const handle = setTimeout(async () => {
-      try {
-        const out = await composeStencil(base, knobs, signal);
-        if (!signal.cancelled) setProcessedUrl(out);
-      } catch { /* slider was bumped again; skip */ }
-    }, 60);
-    return () => { signal.cancelled = true; clearTimeout(handle); };
-  }, [filteredStencil, stencil, knobs, knobsTouched]);
-
   // Auto-save every new stencil to the local Storage Vault (IndexedDB).
   useEffect(() => {
     if (!stencil) return;
-    saveStencil({ stencil, photo, style, meta: { preFilter, intensity, knobs } }).catch(() => {});
+    saveStencil({ stencil, photo, style, meta: { intensity } }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stencil]);
 
@@ -216,7 +171,7 @@ function CreatePage() {
   }
 
   async function downloadUpscaled() {
-    const source = processedUrl ?? filteredStencil ?? stencil;
+    const source = stencil;
     if (!source) return;
     setExporting(true);
     try {
@@ -269,7 +224,7 @@ function CreatePage() {
               <Archive size={14} />
               <span className="hidden sm:inline">Vault</span>
             </Link>
-            <MasterSuite photo={photo} stencilUrl={processedUrl ?? filteredStencil ?? stencil} onReplacePhoto={(d) => { setStencil(null); setPhoto(d); }} />
+            <MasterSuite photo={photo} stencilUrl={stencil} onReplacePhoto={(d) => { setStencil(null); setPhoto(d); }} />
             <button
               onClick={() => setKeyOpen(true)}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
@@ -381,28 +336,6 @@ function CreatePage() {
 
         </section>
 
-        <section>
-          <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-2">Pre-generation shading filter</h2>
-          <div className="grid grid-cols-4 gap-2">
-            {([
-              { id: "none", label: "None", sub: "Default ink" },
-              { id: "whip", label: "Whip", sub: "Directional flick" },
-              { id: "pendulum", label: "Pendulum", sub: "Rocking swing" },
-              { id: "stipple", label: "Stipple", sub: "Pure dotwork" },
-            ] as const).map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setPreFilter(f.id as ShadingKind)}
-                className={`text-left p-2 rounded-xl border transition ${preFilter === f.id ? "border-primary bg-gradient-primary text-primary-foreground" : "border-border hover:border-primary/50"}`}
-              >
-                <div className="font-bold text-xs">{f.label}</div>
-                <div className={`text-[10px] ${preFilter === f.id ? "opacity-90" : "text-muted-foreground"}`}>{f.sub}</div>
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-muted-foreground mt-2">Applied to the generated stencil as a fully client-side pixel-math pass. Stack with the live editor knobs below.</p>
-        </section>
-
         <button
           onClick={generate}
           disabled={!photo || loading}
@@ -436,7 +369,7 @@ function CreatePage() {
                 />
               ) : null}
               <img
-                src={processedUrl ?? filteredStencil ?? stencil}
+                src={stencil}
                 alt="Stencil"
                 className="absolute inset-0 h-full w-full object-cover"
                 style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
@@ -457,42 +390,6 @@ function CreatePage() {
                 <ChevronsLeftRight size={18} />
               </div>
             </div>
-
-            <button
-              onClick={() => setEditOpen((v) => !v)}
-              className="w-full flex items-center justify-between p-3 rounded-2xl border border-border bg-card hover:border-primary/50 transition text-sm"
-            >
-              <span className="flex items-center gap-2 font-semibold">
-                <Wand2 size={16} /> Edit stencil (live, no re-generate)
-              </span>
-              <span className="text-muted-foreground">{editOpen ? "Hide" : "Show"}</span>
-            </button>
-
-            {editOpen ? (
-              <div className="p-4 rounded-2xl border border-border bg-card space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Real-time canvas knobs</div>
-                  <button
-                    onClick={() => setKnobs(DEFAULT_KNOBS)}
-                    className="text-[10px] text-primary hover:underline"
-                  >Reset all</button>
-                </div>
-                {KNOB_DEFS.map((d) => (
-                  <Knob
-                    key={d.key}
-                    label={d.label}
-                    value={knobs[d.key]}
-                    min={0}
-                    max={100}
-                    suffix="%"
-                    onChange={(v) => setKnobs((k) => ({ ...k, [d.key]: v }))}
-                    hint={d.hint}
-                  />
-                ))}
-
-                <p className="text-[10px] text-muted-foreground">Edits run live on top of your generated stencil. Reset to return to the original AI result.</p>
-              </div>
-            ) : null}
 
             <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
               <div className="text-sm font-semibold">Export resolution</div>
@@ -573,50 +470,6 @@ function CreatePage() {
   );
 }
 
-function Knob({
-  label,
-  value,
-  min,
-  max,
-  suffix,
-  onChange,
-  hint,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  suffix: string;
-  onChange: (v: number) => void;
-  hint?: string;
-}) {
-  return (
-    <div>
-      <div className="flex justify-between text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="gradient-text font-bold">
-          {value}
-          {suffix}
-        </span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full mt-1 accent-[oklch(0.64_0.26_303)]"
-      />
-      {hint ? <p className="text-[10px] text-muted-foreground mt-1">{hint}</p> : null}
-    </div>
-  );
-}
-
-const KNOB_DEFS: { key: keyof Knobs; label: string; hint: string }[] = [
-  { key: "contrast",    label: "Contrast",        hint: "Luminance cutoff between ink and paper." },
-  { key: "thickness",   label: "Line thickness",  hint: "Morphological dilate (>50) thickens; erode (<50) thins." },
-];
-
 function buildPrompt(o: { style: Style; intensity: number }) {
   // Bake the proven "May 27" defaults into the prompt so first-shot output is
   // gallery-grade without the user needing to touch sliders.
@@ -646,211 +499,3 @@ Overall shading density: ${Math.round(o.intensity * 100)}%.
 No text, no watermarks, no signatures, no frame, no background scenery.`;
 }
 
-// ---------- Client-side post-processing ----------
-
-async function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((res, rej) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => res(img);
-    img.onerror = rej;
-    img.src = src;
-  });
-}
-
-function makeCanvas(w: number, h: number) {
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  return c;
-}
-
-/**
- * Re-renders the stencil with adjustable density / threshold / shading style,
- * all client-side. The original generated stencil is never lost — this only
- * derives a new display image from it.
- */
-async function postProcessStencil(
-  src: string,
-  opts: { density: number; threshold: number; shadingStyle: "none" | "smooth" | "whip" | "pendulum" },
-): Promise<string> {
-  const img = await loadImage(src);
-  const W = Math.min(img.width, 1024);
-  const H = Math.round((W / img.width) * img.height);
-  const canvas = makeCanvas(W, H);
-  const ctx = canvas.getContext("2d")!;
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, W, H);
-  ctx.drawImage(img, 0, 0, W, H);
-
-  const data = ctx.getImageData(0, 0, W, H);
-  const px = data.data;
-
-  // Distance-from-white threshold. The generated stencil is purple ink on white,
-  // so "ink" pixels have a large distance from white and background pixels are
-  // near-white. Slider 50 = preserve everything that's visibly not-white.
-  // Higher threshold keeps only the darkest marks; lower keeps faint marks too.
-  // Density biases the cutoff further: >50 thickens (keeps more ink), <50 thins.
-  const baseCut = 30 - (opts.threshold - 50) * 0.5; // ~55..5
-  const densityBias = (opts.density - 50) / 50; // -1..+1
-  const cut = Math.max(4, baseCut - densityBias * 15);
-
-  const inkR = 0xa8, inkG = 0x55, inkB = 0xf7;
-  for (let i = 0; i < px.length; i += 4) {
-    const r = px[i], g = px[i + 1], b = px[i + 2];
-    // Manhattan distance from white — fast and robust for purple-on-white.
-    const dist = (255 - r) + (255 - g) + (255 - b);
-    if (dist > cut) {
-      px[i] = inkR; px[i + 1] = inkG; px[i + 2] = inkB; px[i + 3] = 255;
-    } else {
-      px[i] = 255; px[i + 1] = 255; px[i + 2] = 255; px[i + 3] = 255;
-    }
-  }
-  ctx.putImageData(data, 0, 0);
-
-  // Shading style overlays (operate only on already-inked regions via masking).
-  if (opts.shadingStyle === "smooth") {
-    // soft gradient: blur a copy then darken-blend
-    const tmp = makeCanvas(W, H);
-    const tctx = tmp.getContext("2d")!;
-    tctx.drawImage(canvas, 0, 0);
-    ctx.save();
-    ctx.globalAlpha = 0.55;
-    (ctx as any).filter = "blur(1.6px)";
-    ctx.drawImage(tmp, 0, 0);
-    (ctx as any).filter = "none";
-    ctx.restore();
-  } else if (opts.shadingStyle === "whip" || opts.shadingStyle === "pendulum") {
-    overlayShadingTexture(ctx, W, H, opts.shadingStyle, inkR, inkG, inkB);
-  }
-
-  return canvas.toDataURL("image/png");
-}
-
-function overlayShadingTexture(
-  ctx: CanvasRenderingContext2D,
-  W: number,
-  H: number,
-  kind: "whip" | "pendulum",
-  r: number, g: number, b: number,
-) {
-  // Mask = currently inked pixels.
-  const base = ctx.getImageData(0, 0, W, H);
-  const mask = new Uint8Array(W * H);
-  for (let i = 0, j = 0; i < base.data.length; i += 4, j++) {
-    mask[j] = base.data[i] < 250 ? 1 : 0;
-  }
-
-  const tex = makeCanvas(W, H);
-  const tctx = tex.getContext("2d")!;
-  tctx.fillStyle = `rgb(${r},${g},${b})`;
-
-  if (kind === "whip") {
-    // Spaced directional dot-work: dots along 30° lines, fading along the line.
-    const angle = (Math.PI / 180) * 30;
-    const dx = Math.cos(angle), dy = Math.sin(angle);
-    const spacing = 7;
-    for (let y = 0; y < H; y += spacing) {
-      for (let t = 0; t < W * 1.4; t += 3) {
-        const x = Math.round(t * dx + y);
-        const yy = Math.round(t * dy + y);
-        if (x < 0 || x >= W || yy < 0 || yy >= H) continue;
-        if (!mask[yy * W + x]) continue;
-        const fade = 1 - (t % 60) / 60;
-        tctx.globalAlpha = 0.35 + fade * 0.5;
-        tctx.beginPath();
-        tctx.arc(x, yy, 0.9 + fade * 0.8, 0, Math.PI * 2);
-        tctx.fill();
-      }
-    }
-  } else {
-    // Pendulum: tapered back-and-forth swing strokes.
-    const rowH = 10;
-    for (let y = 0; y < H; y += rowH) {
-      const phase = (y / rowH) % 2 === 0 ? 1 : -1;
-      tctx.beginPath();
-      let started = false;
-      for (let x = 0; x < W; x += 2) {
-        const yy = Math.round(y + Math.sin((x / W) * Math.PI * 6) * 2.2 * phase);
-        if (yy < 0 || yy >= H) continue;
-        if (!mask[yy * W + x]) { started = false; continue; }
-        if (!started) { tctx.moveTo(x, yy); started = true; } else { tctx.lineTo(x, yy); }
-      }
-      const taper = 0.6 + Math.random() * 0.8;
-      tctx.lineWidth = taper;
-      tctx.globalAlpha = 0.7;
-      tctx.strokeStyle = `rgb(${r},${g},${b})`;
-      tctx.stroke();
-    }
-  }
-  ctx.globalAlpha = 1;
-  ctx.drawImage(tex, 0, 0);
-}
-
-/**
- * Builds the Portrait Shading Map: broken topographic-style contour lines that
- * close around the dark / mid / light boundaries of the original photo, with a
- * semi-transparent tonal underlay inside the boundaries.
- */
-async function buildShadingMap(
-  stencilSrc: string,
-  photoSrc: string | null,
-  threshold: number,
-): Promise<string> {
-  const ref = await loadImage(photoSrc ?? stencilSrc);
-  const W = Math.min(ref.width, 800);
-  const H = Math.round((W / ref.width) * ref.height);
-  const src = makeCanvas(W, H);
-  const sctx = src.getContext("2d")!;
-  sctx.drawImage(ref, 0, 0, W, H);
-  const srcData = sctx.getImageData(0, 0, W, H).data;
-
-  // 3-tier tonal segmentation
-  const lum = new Uint8Array(W * H);
-  for (let i = 0, j = 0; i < srcData.length; i += 4, j++) {
-    lum[j] = (0.299 * srcData[i] + 0.587 * srcData[i + 1] + 0.114 * srcData[i + 2]) | 0;
-  }
-  const lo = 85 + (threshold - 50) * 0.8;
-  const hi = 170 + (threshold - 50) * 0.8;
-  const tier = new Uint8Array(W * H);
-  for (let i = 0; i < lum.length; i++) {
-    tier[i] = lum[i] < lo ? 0 : lum[i] < hi ? 1 : 2;
-  }
-
-  const out = makeCanvas(W, H);
-  const octx = out.getContext("2d")!;
-  octx.fillStyle = "#ffffff";
-  octx.fillRect(0, 0, W, H);
-
-  // Translucent tonal underlay inside the boundaries.
-  const underlay = octx.createImageData(W, H);
-  for (let j = 0, i = 0; j < tier.length; j++, i += 4) {
-    // Map tier -> ink alpha (dark=more, mid=some, light=none)
-    const a = tier[j] === 0 ? 90 : tier[j] === 1 ? 45 : 0;
-    underlay.data[i] = 0xa8;
-    underlay.data[i + 1] = 0x55;
-    underlay.data[i + 2] = 0xf7;
-    underlay.data[i + 3] = a;
-  }
-  octx.putImageData(underlay, 0, 0);
-
-  // Broken contour lines on tier boundaries (4-neighbour edge detect on tier map).
-  octx.fillStyle = "#A855F7";
-  for (let y = 1; y < H - 1; y++) {
-    for (let x = 1; x < W - 1; x++) {
-      const k = y * W + x;
-      const t = tier[k];
-      const edge =
-        tier[k - 1] !== t ||
-        tier[k + 1] !== t ||
-        tier[k - W] !== t ||
-        tier[k + W] !== t;
-      if (!edge) continue;
-      // "Broken" lines: probabilistic skip creates dashed contour look.
-      if (((x * 73856093) ^ (y * 19349663)) % 5 === 0) continue;
-      octx.fillRect(x, y, 1, 1);
-    }
-  }
-
-  return out.toDataURL("image/png");
-}
