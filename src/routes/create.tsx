@@ -224,7 +224,7 @@ function CreatePage() {
               <Archive size={14} />
               <span className="hidden sm:inline">Vault</span>
             </Link>
-            <MasterSuite photo={photo} stencilUrl={processedUrl ?? filteredStencil ?? stencil} onReplacePhoto={(d) => { setStencil(null); setPhoto(d); }} />
+            <MasterSuite photo={photo} stencilUrl={stencil} onReplacePhoto={(d) => { setStencil(null); setPhoto(d); }} />
             <button
               onClick={() => setKeyOpen(true)}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
@@ -336,28 +336,6 @@ function CreatePage() {
 
         </section>
 
-        <section>
-          <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-2">Pre-generation shading filter</h2>
-          <div className="grid grid-cols-4 gap-2">
-            {([
-              { id: "none", label: "None", sub: "Default ink" },
-              { id: "whip", label: "Whip", sub: "Directional flick" },
-              { id: "pendulum", label: "Pendulum", sub: "Rocking swing" },
-              { id: "stipple", label: "Stipple", sub: "Pure dotwork" },
-            ] as const).map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setPreFilter(f.id as ShadingKind)}
-                className={`text-left p-2 rounded-xl border transition ${preFilter === f.id ? "border-primary bg-gradient-primary text-primary-foreground" : "border-border hover:border-primary/50"}`}
-              >
-                <div className="font-bold text-xs">{f.label}</div>
-                <div className={`text-[10px] ${preFilter === f.id ? "opacity-90" : "text-muted-foreground"}`}>{f.sub}</div>
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-muted-foreground mt-2">Applied to the generated stencil as a fully client-side pixel-math pass. Stack with the live editor knobs below.</p>
-        </section>
-
         <button
           onClick={generate}
           disabled={!photo || loading}
@@ -391,7 +369,7 @@ function CreatePage() {
                 />
               ) : null}
               <img
-                src={processedUrl ?? filteredStencil ?? stencil}
+                src={stencil}
                 alt="Stencil"
                 className="absolute inset-0 h-full w-full object-cover"
                 style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
@@ -412,42 +390,6 @@ function CreatePage() {
                 <ChevronsLeftRight size={18} />
               </div>
             </div>
-
-            <button
-              onClick={() => setEditOpen((v) => !v)}
-              className="w-full flex items-center justify-between p-3 rounded-2xl border border-border bg-card hover:border-primary/50 transition text-sm"
-            >
-              <span className="flex items-center gap-2 font-semibold">
-                <Wand2 size={16} /> Edit stencil (live, no re-generate)
-              </span>
-              <span className="text-muted-foreground">{editOpen ? "Hide" : "Show"}</span>
-            </button>
-
-            {editOpen ? (
-              <div className="p-4 rounded-2xl border border-border bg-card space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Real-time canvas knobs</div>
-                  <button
-                    onClick={() => setKnobs(DEFAULT_KNOBS)}
-                    className="text-[10px] text-primary hover:underline"
-                  >Reset all</button>
-                </div>
-                {KNOB_DEFS.map((d) => (
-                  <Knob
-                    key={d.key}
-                    label={d.label}
-                    value={knobs[d.key]}
-                    min={0}
-                    max={100}
-                    suffix="%"
-                    onChange={(v) => setKnobs((k) => ({ ...k, [d.key]: v }))}
-                    hint={d.hint}
-                  />
-                ))}
-
-                <p className="text-[10px] text-muted-foreground">Edits run live on top of your generated stencil. Reset to return to the original AI result.</p>
-              </div>
-            ) : null}
 
             <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
               <div className="text-sm font-semibold">Export resolution</div>
