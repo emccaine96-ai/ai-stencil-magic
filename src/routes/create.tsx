@@ -470,50 +470,6 @@ function CreatePage() {
   );
 }
 
-function Knob({
-  label,
-  value,
-  min,
-  max,
-  suffix,
-  onChange,
-  hint,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  suffix: string;
-  onChange: (v: number) => void;
-  hint?: string;
-}) {
-  return (
-    <div>
-      <div className="flex justify-between text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="gradient-text font-bold">
-          {value}
-          {suffix}
-        </span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full mt-1 accent-[oklch(0.64_0.26_303)]"
-      />
-      {hint ? <p className="text-[10px] text-muted-foreground mt-1">{hint}</p> : null}
-    </div>
-  );
-}
-
-const KNOB_DEFS: { key: keyof Knobs; label: string; hint: string }[] = [
-  { key: "contrast",    label: "Contrast",        hint: "Luminance cutoff between ink and paper." },
-  { key: "thickness",   label: "Line thickness",  hint: "Morphological dilate (>50) thickens; erode (<50) thins." },
-];
-
 function buildPrompt(o: { style: Style; intensity: number }) {
   // Bake the proven "May 27" defaults into the prompt so first-shot output is
   // gallery-grade without the user needing to touch sliders.
