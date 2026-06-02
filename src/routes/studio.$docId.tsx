@@ -234,8 +234,7 @@ function StudioPage() {
       ctx.beginPath(); ctx.arc(0, -hh - 40 / f.scale, hs * 0.7, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
-  }, [hasSelection, antPhase, floating]);
-  // include symmetry in deps (re-declare callback)
+  }, [hasSelection, antPhase, floating, symmetry]);
 
   /* ---------- Pointer coords ---------- */
   function canvasCoords(e: React.PointerEvent<HTMLCanvasElement>): { x: number; y: number } {
