@@ -194,6 +194,7 @@ function StudioPage() {
     const ov = overlayRef.current; if (!ov) return;
     const ctx = ov.getContext("2d")!;
     ctx.clearRect(0, 0, ov.width, ov.height);
+    if (symmetry.mode !== "none") drawSymmetryGuides(ctx, symmetry, ov.width, ov.height);
     if (hasSelection && !floating) {
       const m = maskRef.current;
       // Trace outline using a 4-connected boundary scan, downsampled.
@@ -234,6 +235,7 @@ function StudioPage() {
       ctx.restore();
     }
   }, [hasSelection, antPhase, floating]);
+  // include symmetry in deps (re-declare callback)
 
   /* ---------- Pointer coords ---------- */
   function canvasCoords(e: React.PointerEvent<HTMLCanvasElement>): { x: number; y: number } {
