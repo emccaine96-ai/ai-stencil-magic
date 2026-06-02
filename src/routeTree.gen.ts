@@ -14,6 +14,7 @@ import { Route as CreateRouteImport } from './routes/create'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StudioDocIdRouteImport } from './routes/studio.$docId'
 import { Route as ApiGenerateStencilRouteImport } from './routes/api/generate-stencil'
+import { Route as ApiAiCopilotRouteImport } from './routes/api/ai-copilot'
 
 const VaultRoute = VaultRouteImport.update({
   id: '/vault',
@@ -40,11 +41,17 @@ const ApiGenerateStencilRoute = ApiGenerateStencilRouteImport.update({
   path: '/api/generate-stencil',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAiCopilotRoute = ApiAiCopilotRouteImport.update({
+  id: '/api/ai-copilot',
+  path: '/api/ai-copilot',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
   '/vault': typeof VaultRoute
+  '/api/ai-copilot': typeof ApiAiCopilotRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
   '/studio/$docId': typeof StudioDocIdRoute
 }
@@ -52,6 +59,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
   '/vault': typeof VaultRoute
+  '/api/ai-copilot': typeof ApiAiCopilotRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
   '/studio/$docId': typeof StudioDocIdRoute
 }
@@ -60,6 +68,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
   '/vault': typeof VaultRoute
+  '/api/ai-copilot': typeof ApiAiCopilotRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
   '/studio/$docId': typeof StudioDocIdRoute
 }
@@ -69,15 +78,23 @@ export interface FileRouteTypes {
     | '/'
     | '/create'
     | '/vault'
+    | '/api/ai-copilot'
     | '/api/generate-stencil'
     | '/studio/$docId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/create' | '/vault' | '/api/generate-stencil' | '/studio/$docId'
+  to:
+    | '/'
+    | '/create'
+    | '/vault'
+    | '/api/ai-copilot'
+    | '/api/generate-stencil'
+    | '/studio/$docId'
   id:
     | '__root__'
     | '/'
     | '/create'
     | '/vault'
+    | '/api/ai-copilot'
     | '/api/generate-stencil'
     | '/studio/$docId'
   fileRoutesById: FileRoutesById
@@ -86,6 +103,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CreateRoute: typeof CreateRoute
   VaultRoute: typeof VaultRoute
+  ApiAiCopilotRoute: typeof ApiAiCopilotRoute
   ApiGenerateStencilRoute: typeof ApiGenerateStencilRoute
   StudioDocIdRoute: typeof StudioDocIdRoute
 }
@@ -127,6 +145,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiGenerateStencilRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ai-copilot': {
+      id: '/api/ai-copilot'
+      path: '/api/ai-copilot'
+      fullPath: '/api/ai-copilot'
+      preLoaderRoute: typeof ApiAiCopilotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -134,9 +159,20 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CreateRoute: CreateRoute,
   VaultRoute: VaultRoute,
+  ApiAiCopilotRoute: ApiAiCopilotRoute,
   ApiGenerateStencilRoute: ApiGenerateStencilRoute,
   StudioDocIdRoute: StudioDocIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
