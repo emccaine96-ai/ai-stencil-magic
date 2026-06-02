@@ -294,13 +294,14 @@ function StudioPage() {
       : estimatePressureFromVelocity(null, p.x, p.y, e.timeStamp);
     const sp = smootherRef.current.push(p.x, p.y, rawPressure, e.timeStamp);
     setPressure(sp.pressure);
-    const sc = beginStroke(tctx, brush);
+    const mp = mirroredPoints({ x: sp.x, y: sp.y }, symmetry, CANVAS_W, CANVAS_H);
+    const scs = mp.map(() => beginStroke(tctx, brush));
     if (layer.alphaLock && brush.id !== "eraser" && target === lc) {
       tctx.globalCompositeOperation = "source-atop";
     }
     const before = lc.getContext("2d")!.getImageData(0, 0, lc.width, lc.height);
-    strokeRef.current = { sc, prev: sp, before, target };
-    strokeTo(sc, sp.x, sp.y, sp.pressure);
+    strokeRef.current = { scs, prev: sp, before, target };
+    mp.forEach((q, i) => strokeTo(scs[i], q.x, q.y, sp.pressure));
     compose();
   }
 
@@ -365,13 +366,15 @@ function StudioPage() {
         ? (ev as PointerEvent).pressure
         : estimatePressureFromVelocity(s.prev, cx, cy, ev.timeStamp);
       const sp = smootherRef.current.push(cx, cy, rawPressure, ev.timeStamp);
-      strokeTo(s.sc, sp.x, sp.y, sp.pressure);
+      const mp = mirroredPoints({ x: sp.x, y: sp.y }, symmetry, CANVAS_W, CANVAS_H);
+      mp.forEach((q, i) => { if (s.scs[i]) strokeTo(s.scs[i], q.x, q.y, sp.pressure); });
       s.prev = sp;
       setPressure(sp.pressure);
     }
     if (!evts.length) {
       const sp = smootherRef.current.push(p.x, p.y, e.pressure || 0.5, e.timeStamp);
-      strokeTo(s.sc, sp.x, sp.y, sp.pressure);
+      const mp = mirroredPoints({ x: sp.x, y: sp.y }, symmetry, CANVAS_W, CANVAS_H);
+      mp.forEach((q, i) => { if (s.scs[i]) strokeTo(s.scs[i], q.x, q.y, sp.pressure); });
       s.prev = sp;
     }
     compose();
@@ -394,7 +397,7 @@ function StudioPage() {
     }
 
     const s = strokeRef.current; if (!s || !state) return;
-    endStroke(s.sc);
+    s.scs.forEach(endStroke);
     const layer = state.layers.find(l => l.id === state.activeLayerId);
     if (layer) {
       const lc = layerCanvases.current.get(layer.id);
