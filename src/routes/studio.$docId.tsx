@@ -733,7 +733,7 @@ function StudioPage() {
         <button onClick={() => save("Manual save")} className="px-2 py-1 rounded bg-gradient-primary text-primary-foreground font-semibold flex items-center gap-1">
           <Save size={12} /> {saving ? "Saving…" : dirty ? "Save" : "Saved"}
         </button>
-        <button onClick={downloadPng} className="p-1.5 rounded hover:bg-muted" aria-label="Download"><Download size={14} /></button>
+        <button onClick={() => setExportOpen(true)} className="p-1.5 rounded hover:bg-muted" aria-label="Export"><Download size={14} /></button>
       </header>
 
       {/* Tool bar (selections & transform) */}
@@ -778,6 +778,33 @@ function StudioPage() {
             <button onClick={cancelTransform} className="px-2 py-1 rounded bg-muted font-semibold flex items-center gap-1"><X size={13} /> Cancel</button>
           </>
         )}
+        <div className="w-px h-5 bg-border mx-1" />
+        <label className="flex items-center gap-1">
+          <FlipHorizontal2 size={13} className="text-muted-foreground" />
+          <select
+            value={symmetry.mode}
+            onChange={(e) => setSymmetry({ ...symmetry, mode: e.target.value as SymmetryMode })}
+            className="bg-background border border-border rounded px-1.5 py-0.5"
+            title="Symmetry"
+          >
+            <option value="none">No symmetry</option>
+            <option value="x">Mirror ↔</option>
+            <option value="y">Mirror ↕</option>
+            <option value="xy">Mirror quad</option>
+            <option value="radial">Radial</option>
+          </select>
+          {symmetry.mode === "radial" && (
+            <input
+              type="number" min={2} max={16} value={symmetry.radialCount}
+              onChange={(e) => setSymmetry({ ...symmetry, radialCount: Number(e.target.value) })}
+              className="w-12 bg-background border border-border rounded px-1 py-0.5"
+            />
+          )}
+        </label>
+        <ToolBtn onClick={() => setShowReference(s => !s)} icon={<ImageIcon size={13} />} label="Reference" active={showReference} />
+        <ToolBtn onClick={() => setFiltersOpen(true)} icon={<Sliders size={13} />} label="Filters" />
+        <ToolBtn onClick={flattenVisible} icon={<Layers2 size={13} />} label="Flatten" />
+        <ToolBtn onClick={() => setExportOpen(true)} icon={<Sparkles size={13} />} label="Export" />
       </div>
 
       {/* Main area */}
