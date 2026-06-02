@@ -5,6 +5,7 @@ import {
   Layers as LayersIcon, Brush as BrushIcon, Download, ChevronUp, ChevronDown,
   Square, Circle, Lasso, Wand2, Move, Scissors, Copy as CopyIcon, ClipboardPaste,
   RotateCcw, FlipHorizontal, FlipVertical, X, Check,
+  Sparkles, Image as ImageIcon, FlipHorizontal2, Sliders, Layers2,
 } from "lucide-react";
 import {
   getDocument, saveDocument, makeThumbnail,
@@ -18,6 +19,10 @@ import {
   magicWand, featherMask, maskBounds, maskToImageData,
   type SelectionMask,
 } from "@/lib/selection";
+import { DEFAULT_SYMMETRY, drawSymmetryGuides, mirroredPoints, type SymmetryConfig, type SymmetryMode } from "@/lib/symmetry";
+import { ReferencePanel } from "@/components/studio/ReferencePanel";
+import { ExportModal } from "@/components/studio/ExportModal";
+import { FiltersModal } from "@/components/studio/FiltersModal";
 
 export const Route = createFileRoute("/studio/$docId")({
   head: () => ({
@@ -80,6 +85,11 @@ function StudioPage() {
   const [hasSelection, setHasSelection] = useState(false);
   const [antPhase, setAntPhase] = useState(0);
   const [floating, setFloating] = useState<FloatingTransform | null>(null);
+  const [symmetry, setSymmetry] = useState<SymmetryConfig>(DEFAULT_SYMMETRY);
+  const [showReference, setShowReference] = useState(false);
+  const [referenceSrc, setReferenceSrc] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const composedRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -91,7 +101,7 @@ function StudioPage() {
   const maskRef = useRef<SelectionMask>(createMask(CANVAS_W, CANVAS_H));
   const clipboardRef = useRef<HTMLCanvasElement | null>(null);
   const smootherRef = useRef(new InputSmoother());
-  const strokeRef = useRef<{ sc: StrokeContext; prev: SmoothedPoint | null; before: ImageData; target: HTMLCanvasElement } | null>(null);
+  const strokeRef = useRef<{ scs: StrokeContext[]; prev: SmoothedPoint | null; before: ImageData; target: HTMLCanvasElement } | null>(null);
   const historyRef = useRef<HistoryEntry[]>([]);
   const futureRef = useRef<HistoryEntry[]>([]);
 
@@ -184,6 +194,7 @@ function StudioPage() {
     const ov = overlayRef.current; if (!ov) return;
     const ctx = ov.getContext("2d")!;
     ctx.clearRect(0, 0, ov.width, ov.height);
+    if (symmetry.mode !== "none") drawSymmetryGuides(ctx, symmetry, ov.width, ov.height);
     if (hasSelection && !floating) {
       const m = maskRef.current;
       // Trace outline using a 4-connected boundary scan, downsampled.
@@ -223,7 +234,7 @@ function StudioPage() {
       ctx.beginPath(); ctx.arc(0, -hh - 40 / f.scale, hs * 0.7, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
-  }, [hasSelection, antPhase, floating]);
+  }, [hasSelection, antPhase, floating, symmetry]);
 
   /* ---------- Pointer coords ---------- */
   function canvasCoords(e: React.PointerEvent<HTMLCanvasElement>): { x: number; y: number } {
@@ -284,13 +295,14 @@ function StudioPage() {
       : estimatePressureFromVelocity(null, p.x, p.y, e.timeStamp);
     const sp = smootherRef.current.push(p.x, p.y, rawPressure, e.timeStamp);
     setPressure(sp.pressure);
-    const sc = beginStroke(tctx, brush);
+    const mp = mirroredPoints({ x: sp.x, y: sp.y }, symmetry, CANVAS_W, CANVAS_H);
+    const scs = mp.map(() => beginStroke(tctx, brush));
     if (layer.alphaLock && brush.id !== "eraser" && target === lc) {
       tctx.globalCompositeOperation = "source-atop";
     }
     const before = lc.getContext("2d")!.getImageData(0, 0, lc.width, lc.height);
-    strokeRef.current = { sc, prev: sp, before, target };
-    strokeTo(sc, sp.x, sp.y, sp.pressure);
+    strokeRef.current = { scs, prev: sp, before, target };
+    mp.forEach((q, i) => strokeTo(scs[i], q.x, q.y, sp.pressure));
     compose();
   }
 
@@ -355,13 +367,15 @@ function StudioPage() {
         ? (ev as PointerEvent).pressure
         : estimatePressureFromVelocity(s.prev, cx, cy, ev.timeStamp);
       const sp = smootherRef.current.push(cx, cy, rawPressure, ev.timeStamp);
-      strokeTo(s.sc, sp.x, sp.y, sp.pressure);
+      const mp = mirroredPoints({ x: sp.x, y: sp.y }, symmetry, CANVAS_W, CANVAS_H);
+      mp.forEach((q, i) => { if (s.scs[i]) strokeTo(s.scs[i], q.x, q.y, sp.pressure); });
       s.prev = sp;
       setPressure(sp.pressure);
     }
     if (!evts.length) {
       const sp = smootherRef.current.push(p.x, p.y, e.pressure || 0.5, e.timeStamp);
-      strokeTo(s.sc, sp.x, sp.y, sp.pressure);
+      const mp = mirroredPoints({ x: sp.x, y: sp.y }, symmetry, CANVAS_W, CANVAS_H);
+      mp.forEach((q, i) => { if (s.scs[i]) strokeTo(s.scs[i], q.x, q.y, sp.pressure); });
       s.prev = sp;
     }
     compose();
@@ -384,7 +398,7 @@ function StudioPage() {
     }
 
     const s = strokeRef.current; if (!s || !state) return;
-    endStroke(s.sc);
+    s.scs.forEach(endStroke);
     const layer = state.layers.find(l => l.id === state.activeLayerId);
     if (layer) {
       const lc = layerCanvases.current.get(layer.id);
@@ -650,6 +664,52 @@ function StudioPage() {
     a.click();
   }
 
+  /* ---------- Flatten visible layers ---------- */
+  function flattenVisible() {
+    if (!state) return;
+    const visible = state.layers.filter(l => l.visible);
+    if (visible.length < 2) return;
+    const merged = document.createElement("canvas");
+    merged.width = state.width; merged.height = state.height;
+    const ctx = merged.getContext("2d")!;
+    for (const l of visible) {
+      const lc = layerCanvases.current.get(l.id); if (!lc) continue;
+      ctx.globalAlpha = l.opacity;
+      ctx.globalCompositeOperation = l.blendMode as GlobalCompositeOperation;
+      ctx.drawImage(lc, 0, 0);
+    }
+    const newId = uuidv4();
+    layerCanvases.current.set(newId, merged);
+    for (const l of visible) layerCanvases.current.delete(l.id);
+    const kept = state.layers.filter(l => !l.visible);
+    const flatLayer: LayerState = { id: newId, name: "Flattened", visible: true, locked: false, alphaLock: false, clipping: false, opacity: 1, blendMode: "normal", dataUrl: "" };
+    const layers = [...kept, flatLayer];
+    setState({ ...state, layers, activeLayerId: newId });
+    setDirty(true);
+  }
+
+  /* ---------- Apply filter result back to active layer ---------- */
+  function applyFiltered(out: HTMLCanvasElement) {
+    if (!state) { setFiltersOpen(false); return; }
+    const layer = state.layers.find(l => l.id === state.activeLayerId); if (!layer) { setFiltersOpen(false); return; }
+    const lc = layerCanvases.current.get(layer.id); if (!lc) { setFiltersOpen(false); return; }
+    const ctx = lc.getContext("2d")!;
+    const before = ctx.getImageData(0, 0, lc.width, lc.height);
+    ctx.clearRect(0, 0, lc.width, lc.height);
+    ctx.drawImage(out, 0, 0);
+    const after = ctx.getImageData(0, 0, lc.width, lc.height);
+    historyRef.current.push({ layerId: layer.id, before, after });
+    futureRef.current = [];
+    setFiltersOpen(false);
+    setDirty(true);
+    compose();
+  }
+
+  function getActiveLayerCanvas(): HTMLCanvasElement | null {
+    if (!state) return null;
+    return layerCanvases.current.get(state.activeLayerId) ?? null;
+  }
+
   /* ---------- Render ---------- */
   if (!doc || !state) {
     return <div className="min-h-screen bg-background text-foreground grid place-items-center text-sm text-muted-foreground">Loading editor…</div>;
@@ -673,7 +733,7 @@ function StudioPage() {
         <button onClick={() => save("Manual save")} className="px-2 py-1 rounded bg-gradient-primary text-primary-foreground font-semibold flex items-center gap-1">
           <Save size={12} /> {saving ? "Saving…" : dirty ? "Save" : "Saved"}
         </button>
-        <button onClick={downloadPng} className="p-1.5 rounded hover:bg-muted" aria-label="Download"><Download size={14} /></button>
+        <button onClick={() => setExportOpen(true)} className="p-1.5 rounded hover:bg-muted" aria-label="Export"><Download size={14} /></button>
       </header>
 
       {/* Tool bar (selections & transform) */}
@@ -718,6 +778,33 @@ function StudioPage() {
             <button onClick={cancelTransform} className="px-2 py-1 rounded bg-muted font-semibold flex items-center gap-1"><X size={13} /> Cancel</button>
           </>
         )}
+        <div className="w-px h-5 bg-border mx-1" />
+        <label className="flex items-center gap-1">
+          <FlipHorizontal2 size={13} className="text-muted-foreground" />
+          <select
+            value={symmetry.mode}
+            onChange={(e) => setSymmetry({ ...symmetry, mode: e.target.value as SymmetryMode })}
+            className="bg-background border border-border rounded px-1.5 py-0.5"
+            title="Symmetry"
+          >
+            <option value="none">No symmetry</option>
+            <option value="x">Mirror ↔</option>
+            <option value="y">Mirror ↕</option>
+            <option value="xy">Mirror quad</option>
+            <option value="radial">Radial</option>
+          </select>
+          {symmetry.mode === "radial" && (
+            <input
+              type="number" min={2} max={16} value={symmetry.radialCount}
+              onChange={(e) => setSymmetry({ ...symmetry, radialCount: Number(e.target.value) })}
+              className="w-12 bg-background border border-border rounded px-1 py-0.5"
+            />
+          )}
+        </label>
+        <ToolBtn onClick={() => setShowReference(s => !s)} icon={<ImageIcon size={13} />} label="Reference" active={showReference} />
+        <ToolBtn onClick={() => setFiltersOpen(true)} icon={<Sliders size={13} />} label="Filters" />
+        <ToolBtn onClick={flattenVisible} icon={<Layers2 size={13} />} label="Flatten" />
+        <ToolBtn onClick={() => setExportOpen(true)} icon={<Sparkles size={13} />} label="Export" />
       </div>
 
       {/* Main area */}
@@ -799,6 +886,23 @@ function StudioPage() {
           </div>
         )}
       </div>
+
+      {showReference && (
+        <ReferencePanel src={referenceSrc} onSrcChange={setReferenceSrc} onClose={() => setShowReference(false)} />
+      )}
+
+      {exportOpen && composedRef.current && (
+        <ExportModal canvas={composedRef.current} defaultName={doc.name || "stencil"} onClose={() => setExportOpen(false)} />
+      )}
+
+      {filtersOpen && getActiveLayerCanvas() && (
+        <FiltersModal
+          sourceCanvas={getActiveLayerCanvas()!}
+          selectionMask={hasSelection ? maskRef.current.data : undefined}
+          onCancel={() => setFiltersOpen(false)}
+          onApply={applyFiltered}
+        />
+      )}
     </div>
   );
 }
