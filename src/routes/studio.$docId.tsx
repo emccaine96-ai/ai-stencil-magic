@@ -5,6 +5,7 @@ import {
   Layers as LayersIcon, Brush as BrushIcon, Download, ChevronUp, ChevronDown,
   Square, Circle, Lasso, Wand2, Move, Scissors, Copy as CopyIcon, ClipboardPaste,
   RotateCcw, FlipHorizontal, FlipVertical, X, Check,
+  Sparkles, Image as ImageIcon, FlipHorizontal2, Sliders, Layers2,
 } from "lucide-react";
 import {
   getDocument, saveDocument, makeThumbnail,
@@ -18,6 +19,10 @@ import {
   magicWand, featherMask, maskBounds, maskToImageData,
   type SelectionMask,
 } from "@/lib/selection";
+import { DEFAULT_SYMMETRY, drawSymmetryGuides, mirroredPoints, type SymmetryConfig, type SymmetryMode } from "@/lib/symmetry";
+import { ReferencePanel } from "@/components/studio/ReferencePanel";
+import { ExportModal } from "@/components/studio/ExportModal";
+import { FiltersModal } from "@/components/studio/FiltersModal";
 
 export const Route = createFileRoute("/studio/$docId")({
   head: () => ({
