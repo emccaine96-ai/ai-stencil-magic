@@ -23,6 +23,7 @@ import { DEFAULT_SYMMETRY, drawSymmetryGuides, mirroredPoints, type SymmetryConf
 import { ReferencePanel } from "@/components/studio/ReferencePanel";
 import { ExportModal } from "@/components/studio/ExportModal";
 import { FiltersModal } from "@/components/studio/FiltersModal";
+import { AICopilotModal } from "@/components/studio/AICopilotModal";
 
 export const Route = createFileRoute("/studio/$docId")({
   head: () => ({
@@ -90,6 +91,7 @@ function StudioPage() {
   const [referenceSrc, setReferenceSrc] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
 
   const composedRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -805,6 +807,7 @@ function StudioPage() {
         <ToolBtn onClick={() => setFiltersOpen(true)} icon={<Sliders size={13} />} label="Filters" />
         <ToolBtn onClick={flattenVisible} icon={<Layers2 size={13} />} label="Flatten" />
         <ToolBtn onClick={() => setExportOpen(true)} icon={<Sparkles size={13} />} label="Export" />
+        <ToolBtn onClick={() => setAiOpen(true)} icon={<Wand2 size={13} />} label="AI" />
       </div>
 
       {/* Main area */}
@@ -901,6 +904,31 @@ function StudioPage() {
           selectionMask={hasSelection ? maskRef.current.data : undefined}
           onCancel={() => setFiltersOpen(false)}
           onApply={applyFiltered}
+        />
+      )}
+
+      {aiOpen && composedRef.current && (
+        <AICopilotModal
+          sourceImage={composedRef.current.toDataURL("image/png")}
+          onClose={() => setAiOpen(false)}
+          onApply={(image, asNew) => {
+            const img = new Image();
+            img.onload = () => {
+              if (asNew) {
+                addLayer();
+              }
+              const layer = state?.layers.find(l => l.id === state.activeLayerId);
+              const lc = layer ? layerCanvases.current.get(layer.id) : null;
+              if (lc) {
+                const lctx = lc.getContext("2d")!;
+                if (!asNew) lctx.clearRect(0, 0, lc.width, lc.height);
+                lctx.drawImage(img, 0, 0, lc.width, lc.height);
+                setDirty(true);
+              }
+              setAiOpen(false);
+            };
+            img.src = image;
+          }}
         />
       )}
     </div>
