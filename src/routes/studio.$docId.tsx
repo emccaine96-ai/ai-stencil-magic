@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   ChevronLeft, Save, Undo2, Redo2, Eye, EyeOff, Lock, Unlock, Plus, Trash2,
   Layers as LayersIcon, Brush as BrushIcon, Download, ChevronUp, ChevronDown,
+  Square, Circle, Lasso, Wand2, Move, Scissors, Copy as CopyIcon, ClipboardPaste,
+  RotateCcw, FlipHorizontal, FlipVertical, X, Check,
 } from "lucide-react";
 import {
   getDocument, saveDocument, makeThumbnail,
@@ -11,12 +13,17 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import { InputSmoother, estimatePressureFromVelocity, type SmoothedPoint } from "@/lib/kalman";
 import { beginStroke, endStroke, strokeTo, DEFAULTS, BRUSH_LABELS, type BrushId, type BrushSettings, type StrokeContext } from "@/lib/brushes";
+import {
+  createMask, clearMask, invertMask, fillRect, fillEllipse, fillPolygon,
+  magicWand, featherMask, maskBounds, maskToImageData,
+  type SelectionMask,
+} from "@/lib/selection";
 
 export const Route = createFileRoute("/studio/$docId")({
   head: () => ({
     meta: [
       { title: "PrimalCanvas Studio — PrimalPrint AI" },
-      { name: "description", content: "Procreate-inspired stencil editor: pressure-sensitive brushes, layers, blend modes, version history. Built for Android." },
+      { name: "description", content: "Procreate-inspired stencil editor: pressure-sensitive brushes, layers, selections, free transform." },
     ],
   }),
   component: StudioPage,
@@ -32,8 +39,24 @@ const BLEND_MODES: BlendMode[] = [
   "hue", "saturation", "color", "luminosity",
 ];
 
-// History entry: snapshot of the active layer's bitmap before a stroke.
+type Tool = "brush" | "rect" | "ellipse" | "lasso" | "wand" | "transform";
+type SelectOp = "replace" | "add" | "subtract";
+
 type HistoryEntry = { layerId: string; before: ImageData; after: ImageData };
+
+type FloatingTransform = {
+  /** Source canvas containing the cut pixels (already mask-applied). */
+  src: HTMLCanvasElement;
+  /** Original bbox the cut came from. */
+  origin: { x: number; y: number; w: number; h: number };
+  tx: number; ty: number;       // additional translation
+  scale: number; rotation: number; // rotation in radians
+  flipX: boolean; flipY: boolean;
+  /** Layer ID the floating selection belongs to (so commit returns it home). */
+  layerId: string;
+  /** Pre-cut layer snapshot so cancel restores. */
+  beforeCut: ImageData;
+};
 
 function StudioPage() {
   const { docId } = useParams({ from: "/studio/$docId" });
@@ -50,16 +73,32 @@ function StudioPage() {
   const [showBrushes, setShowBrushes] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [tool, setTool] = useState<Tool>("brush");
+  const [selectOp, setSelectOp] = useState<SelectOp>("replace");
+  const [wandTolerance, setWandTolerance] = useState(32);
+  const [featherRadius, setFeatherRadius] = useState(0);
+  const [hasSelection, setHasSelection] = useState(false);
+  const [antPhase, setAntPhase] = useState(0);
+  const [floating, setFloating] = useState<FloatingTransform | null>(null);
 
   const composedRef = useRef<HTMLCanvasElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   // layerId -> offscreen canvas
   const layerCanvases = useRef<Map<string, HTMLCanvasElement>>(new Map());
+  const scratchRef = useRef<HTMLCanvasElement | null>(null); // per-stroke scratch when selection active
+  const maskRef = useRef<SelectionMask>(createMask(CANVAS_W, CANVAS_H));
+  const clipboardRef = useRef<HTMLCanvasElement | null>(null);
   const smootherRef = useRef(new InputSmoother());
-  const strokeRef = useRef<{ sc: StrokeContext; prev: SmoothedPoint | null; before: ImageData } | null>(null);
+  const strokeRef = useRef<{ sc: StrokeContext; prev: SmoothedPoint | null; before: ImageData; target: HTMLCanvasElement } | null>(null);
   const historyRef = useRef<HistoryEntry[]>([]);
   const futureRef = useRef<HistoryEntry[]>([]);
+
+  // Selection drag state
+  const selDragRef = useRef<{ start: { x: number; y: number }; lasso: number[] } | null>(null);
+  // Transform drag state
+  const tfmDragRef = useRef<{ mode: "move" | "scale" | "rotate"; sx: number; sy: number; startTx: number; startTy: number; startScale: number; startRot: number } | null>(null);
 
   const brush: BrushSettings = useMemo(() => ({
     ...DEFAULTS[activeBrushId],
@@ -78,7 +117,6 @@ function StudioPage() {
       setDoc(d);
       const initial = await ensureEditorState(d);
       if (!alive) return;
-      // Build offscreen layer canvases
       for (const layer of initial.layers) {
         const c = await dataUrlToCanvas(layer.dataUrl, initial.width, initial.height);
         layerCanvases.current.set(layer.id, c);
@@ -87,6 +125,13 @@ function StudioPage() {
     })();
     return () => { alive = false; };
   }, [docId, navigate]);
+
+  /* ---------- Marching-ants animation tick ---------- */
+  useEffect(() => {
+    if (!hasSelection && !floating) return;
+    const id = window.setInterval(() => setAntPhase(p => (p + 1) % 12), 90);
+    return () => window.clearInterval(id);
+  }, [hasSelection, floating]);
 
   /* ---------- Render composite ---------- */
 
@@ -103,9 +148,30 @@ function StudioPage() {
       ctx.globalAlpha = layer.opacity;
       ctx.globalCompositeOperation = layer.blendMode as GlobalCompositeOperation;
       ctx.drawImage(lc, 0, 0);
+      // Live preview of scratch on its layer
+      if (scratchRef.current && strokeRef.current && layer.id === state.activeLayerId) {
+        // already drawn; scratch will be baked into layer on stroke end
+        const preview = makeMaskedPreview(scratchRef.current, maskRef.current);
+        if (preview) ctx.drawImage(preview, 0, 0);
+      }
+    }
+    // Floating transform preview
+    if (floating && floating.layerId === state.activeLayerId) {
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "source-over";
+      const f = floating;
+      const cx = f.origin.x + f.origin.w / 2 + f.tx;
+      const cy = f.origin.y + f.origin.h / 2 + f.ty;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(f.rotation);
+      ctx.scale(f.scale * (f.flipX ? -1 : 1), f.scale * (f.flipY ? -1 : 1));
+      ctx.drawImage(f.src, -f.origin.w / 2, -f.origin.h / 2);
+      ctx.restore();
     }
     ctx.restore();
-  }, [state]);
+    drawOverlay();
+  }, [state, floating, hasSelection, antPhase]);
 
   useEffect(() => { compose(); }, [compose]);
 
@@ -113,8 +179,53 @@ function StudioPage() {
     smootherRef.current.setSmoothing(smoothing);
   }, [smoothing]);
 
-  /* ---------- Pointer handlers ---------- */
+  /* ---------- Overlay: marching ants + transform handles ---------- */
+  const drawOverlay = useCallback(() => {
+    const ov = overlayRef.current; if (!ov) return;
+    const ctx = ov.getContext("2d")!;
+    ctx.clearRect(0, 0, ov.width, ov.height);
+    if (hasSelection && !floating) {
+      const m = maskRef.current;
+      // Trace outline using a 4-connected boundary scan, downsampled.
+      const step = 3;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.lineDashOffset = -antPhase;
+      ctx.strokeStyle = "#000";
+      drawAnts(ctx, m, step);
+      ctx.strokeStyle = "#fff";
+      ctx.lineDashOffset = -antPhase + 5;
+      drawAnts(ctx, m, step);
+      ctx.setLineDash([]);
+    }
+    if (floating) {
+      const f = floating;
+      const cx = f.origin.x + f.origin.w / 2 + f.tx;
+      const cy = f.origin.y + f.origin.h / 2 + f.ty;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(f.rotation);
+      ctx.scale(f.scale, f.scale);
+      const hw = f.origin.w / 2, hh = f.origin.h / 2;
+      ctx.lineWidth = 2 / f.scale;
+      ctx.setLineDash([8 / f.scale, 5 / f.scale]);
+      ctx.lineDashOffset = -antPhase;
+      ctx.strokeStyle = "#A855F7";
+      ctx.strokeRect(-hw, -hh, hw * 2, hh * 2);
+      ctx.setLineDash([]);
+      // Handles
+      const hs = 14 / f.scale;
+      ctx.fillStyle = "#A855F7";
+      const corners: Array<[number, number]> = [[-hw, -hh], [hw, -hh], [-hw, hh], [hw, hh]];
+      for (const [x, y] of corners) ctx.fillRect(x - hs / 2, y - hs / 2, hs, hs);
+      // Rotation handle
+      ctx.beginPath(); ctx.moveTo(0, -hh); ctx.lineTo(0, -hh - 40 / f.scale); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, -hh - 40 / f.scale, hs * 0.7, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  }, [hasSelection, antPhase, floating]);
 
+  /* ---------- Pointer coords ---------- */
   function canvasCoords(e: React.PointerEvent<HTMLCanvasElement>): { x: number; y: number } {
     const cv = composedRef.current!;
     const r = cv.getBoundingClientRect();
@@ -124,36 +235,122 @@ function StudioPage() {
     };
   }
 
+  /* ---------- Pointer handlers ---------- */
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
     if (!state) return;
+    (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+    const p = canvasCoords(e);
+
+    if (tool === "transform" && floating) {
+      tfmDragRef.current = pickTransformHandle(floating, p);
+      return;
+    }
+
+    if (tool === "rect" || tool === "ellipse") {
+      selDragRef.current = { start: p, lasso: [] };
+      return;
+    }
+    if (tool === "lasso") {
+      selDragRef.current = { start: p, lasso: [p.x, p.y] };
+      return;
+    }
+    if (tool === "wand") {
+      // Sample from composite (visual) so user clicks "what they see"
+      runWand(p);
+      return;
+    }
+
+    // Brush
     const layer = state.layers.find(l => l.id === state.activeLayerId);
     if (!layer || layer.locked) return;
-    (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
     const lc = layerCanvases.current.get(layer.id); if (!lc) return;
-    const lctx = lc.getContext("2d")!;
+
+    // Decide target: scratch if selection active, otherwise layer.
+    let target: HTMLCanvasElement = lc;
+    if (hasSelection) {
+      if (!scratchRef.current || scratchRef.current.width !== lc.width) {
+        const s = document.createElement("canvas"); s.width = lc.width; s.height = lc.height;
+        scratchRef.current = s;
+      }
+      const sctx = scratchRef.current.getContext("2d")!;
+      sctx.clearRect(0, 0, scratchRef.current.width, scratchRef.current.height);
+      target = scratchRef.current;
+    }
+    const tctx = target.getContext("2d")!;
     smootherRef.current.reset();
     smootherRef.current.setSmoothing(smoothing);
-    const { x, y } = canvasCoords(e);
-    const rawPressure = e.pressure > 0 && e.pointerType !== "mouse" ? e.pressure : estimatePressureFromVelocity(null, x, y, e.timeStamp);
-    const sp = smootherRef.current.push(x, y, rawPressure, e.timeStamp);
+    const rawPressure = e.pressure > 0 && e.pointerType !== "mouse"
+      ? e.pressure
+      : estimatePressureFromVelocity(null, p.x, p.y, e.timeStamp);
+    const sp = smootherRef.current.push(p.x, p.y, rawPressure, e.timeStamp);
     setPressure(sp.pressure);
-    const sc = beginStroke(lctx, brush);
-    if (layer.alphaLock && brush.id !== "eraser") {
-      lctx.globalCompositeOperation = "source-atop";
+    const sc = beginStroke(tctx, brush);
+    if (layer.alphaLock && brush.id !== "eraser" && target === lc) {
+      tctx.globalCompositeOperation = "source-atop";
     }
-    const before = lctx.getImageData(0, 0, lc.width, lc.height);
-    strokeRef.current = { sc, prev: sp, before };
+    const before = lc.getContext("2d")!.getImageData(0, 0, lc.width, lc.height);
+    strokeRef.current = { sc, prev: sp, before, target };
     strokeTo(sc, sp.x, sp.y, sp.pressure);
     compose();
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (!state) return;
+    const p = canvasCoords(e);
+
+    if (tool === "transform" && floating && tfmDragRef.current) {
+      const d = tfmDragRef.current;
+      if (d.mode === "move") {
+        setFloating({ ...floating, tx: d.startTx + (p.x - d.sx), ty: d.startTy + (p.y - d.sy) });
+      } else if (d.mode === "scale") {
+        const cx = floating.origin.x + floating.origin.w / 2 + floating.tx;
+        const cy = floating.origin.y + floating.origin.h / 2 + floating.ty;
+        const initial = Math.hypot(d.sx - cx, d.sy - cy);
+        const now = Math.hypot(p.x - cx, p.y - cy);
+        const ns = Math.max(0.05, d.startScale * (now / Math.max(1, initial)));
+        setFloating({ ...floating, scale: ns });
+      } else if (d.mode === "rotate") {
+        const cx = floating.origin.x + floating.origin.w / 2 + floating.tx;
+        const cy = floating.origin.y + floating.origin.h / 2 + floating.ty;
+        const a0 = Math.atan2(d.sy - cy, d.sx - cx);
+        const a1 = Math.atan2(p.y - cy, p.x - cx);
+        setFloating({ ...floating, rotation: d.startRot + (a1 - a0) });
+      }
+      return;
+    }
+
+    if (selDragRef.current) {
+      if (tool === "lasso") selDragRef.current.lasso.push(p.x, p.y);
+      // Live overlay preview
+      const ov = overlayRef.current; if (!ov) return;
+      const ctx = ov.getContext("2d")!;
+      ctx.clearRect(0, 0, ov.width, ov.height);
+      ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeStyle = "#A855F7";
+      if (tool === "rect") {
+        const s = selDragRef.current.start;
+        ctx.strokeRect(Math.min(s.x, p.x), Math.min(s.y, p.y), Math.abs(p.x - s.x), Math.abs(p.y - s.y));
+      } else if (tool === "ellipse") {
+        const s = selDragRef.current.start;
+        ctx.beginPath();
+        ctx.ellipse((s.x + p.x) / 2, (s.y + p.y) / 2, Math.abs(p.x - s.x) / 2, Math.abs(p.y - s.y) / 2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (tool === "lasso") {
+        const pts = selDragRef.current.lasso;
+        ctx.beginPath();
+        ctx.moveTo(pts[0], pts[1]);
+        for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      return;
+    }
+
     const s = strokeRef.current; if (!s) return;
-    const { x, y } = canvasCoords(e);
     const evts = e.nativeEvent.getCoalescedEvents?.() ?? [e.nativeEvent];
     for (const ev of evts) {
-      const cx = ((ev.clientX - composedRef.current!.getBoundingClientRect().left) / composedRef.current!.getBoundingClientRect().width) * CANVAS_W;
-      const cy = ((ev.clientY - composedRef.current!.getBoundingClientRect().top) / composedRef.current!.getBoundingClientRect().height) * CANVAS_H;
+      const r = composedRef.current!.getBoundingClientRect();
+      const cx = ((ev.clientX - r.left) / r.width) * CANVAS_W;
+      const cy = ((ev.clientY - r.top) / r.height) * CANVAS_H;
       const rawPressure = (ev as PointerEvent).pressure > 0 && (ev as PointerEvent).pointerType !== "mouse"
         ? (ev as PointerEvent).pressure
         : estimatePressureFromVelocity(s.prev, cx, cy, ev.timeStamp);
@@ -162,22 +359,41 @@ function StudioPage() {
       s.prev = sp;
       setPressure(sp.pressure);
     }
-    // also commit the final native point
     if (!evts.length) {
-      const sp = smootherRef.current.push(x, y, e.pressure || 0.5, e.timeStamp);
+      const sp = smootherRef.current.push(p.x, p.y, e.pressure || 0.5, e.timeStamp);
       strokeTo(s.sc, sp.x, sp.y, sp.pressure);
       s.prev = sp;
     }
     compose();
   }
 
-  function onPointerUp() {
+  function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (tfmDragRef.current) { tfmDragRef.current = null; return; }
+
+    if (selDragRef.current) {
+      const p = canvasCoords(e);
+      const start = selDragRef.current.start;
+      const m = applySelectOp(maskRef.current, selectOp);
+      if (tool === "rect") fillRect(m, start.x, start.y, p.x, p.y);
+      else if (tool === "ellipse") fillEllipse(m, start.x, start.y, p.x, p.y);
+      else if (tool === "lasso") fillPolygon(m, selDragRef.current.lasso);
+      if (featherRadius > 0) featherMask(m, featherRadius);
+      finalizeMask(m);
+      selDragRef.current = null;
+      return;
+    }
+
     const s = strokeRef.current; if (!s || !state) return;
     endStroke(s.sc);
     const layer = state.layers.find(l => l.id === state.activeLayerId);
     if (layer) {
       const lc = layerCanvases.current.get(layer.id);
       if (lc) {
+        // If we painted into scratch, bake it into the layer with mask applied.
+        if (s.target !== lc && scratchRef.current) {
+          bakeScratchToLayer(lc, scratchRef.current, maskRef.current, brush.id === "eraser");
+          scratchRef.current.getContext("2d")!.clearRect(0, 0, scratchRef.current.width, scratchRef.current.height);
+        }
         const after = lc.getContext("2d")!.getImageData(0, 0, lc.width, lc.height);
         historyRef.current.push({ layerId: layer.id, before: s.before, after });
         if (historyRef.current.length > 60) historyRef.current.shift();
@@ -186,10 +402,146 @@ function StudioPage() {
     }
     strokeRef.current = null;
     setDirty(true);
+    compose();
+  }
+
+  /* ---------- Wand ---------- */
+  function runWand(p: { x: number; y: number }) {
+    if (!state) return;
+    const layer = state.layers.find(l => l.id === state.activeLayerId);
+    if (!layer) return;
+    const lc = layerCanvases.current.get(layer.id); if (!lc) return;
+    const img = lc.getContext("2d")!.getImageData(0, 0, lc.width, lc.height);
+    const m = applySelectOp(maskRef.current, selectOp);
+    magicWand(m, img, Math.round(p.x), Math.round(p.y), wandTolerance, true);
+    if (featherRadius > 0) featherMask(m, featherRadius);
+    finalizeMask(m);
+  }
+
+  /* ---------- Selection ops ---------- */
+  function applySelectOp(prev: SelectionMask, op: SelectOp): SelectionMask {
+    if (op === "replace") {
+      const m = createMask(prev.width, prev.height);
+      maskRef.current = m;
+      return m;
+    }
+    if (op === "add") return prev;
+    // subtract: invert work mask, then we'll AND result at finalize
+    const m = createMask(prev.width, prev.height);
+    maskRef.current = m;
+    // store original to subtract from
+    (m as SelectionMask & { _baseSub?: Uint8ClampedArray })._baseSub = new Uint8ClampedArray(prev.data);
+    return m;
+  }
+  function finalizeMask(m: SelectionMask) {
+    const sub = (m as SelectionMask & { _baseSub?: Uint8ClampedArray })._baseSub;
+    if (sub) {
+      for (let i = 0; i < m.data.length; i++) m.data[i] = Math.max(0, sub[i] - m.data[i]);
+    }
+    let any = false; for (let i = 0; i < m.data.length; i += 64) if (m.data[i]) { any = true; break; }
+    if (!any) for (let i = 0; i < m.data.length; i++) if (m.data[i]) { any = true; break; }
+    setHasSelection(any);
+    setDirty(true);
+    compose();
+  }
+  function deselect() {
+    clearMask(maskRef.current);
+    setHasSelection(false);
+    setFloating(null);
+    compose();
+  }
+  function invertSelection() {
+    if (!hasSelection) { for (let i = 0; i < maskRef.current.data.length; i++) maskRef.current.data[i] = 255; }
+    else invertMask(maskRef.current);
+    setHasSelection(true);
+    compose();
+  }
+  function selectAll() {
+    for (let i = 0; i < maskRef.current.data.length; i++) maskRef.current.data[i] = 255;
+    setHasSelection(true);
+    compose();
+  }
+
+  /* ---------- Cut / Copy / Paste ---------- */
+  function copySelection() {
+    if (!hasSelection || !state) return;
+    const layer = state.layers.find(l => l.id === state.activeLayerId); if (!layer) return;
+    const lc = layerCanvases.current.get(layer.id); if (!lc) return;
+    const bounds = maskBounds(maskRef.current); if (!bounds) return;
+    const cut = extractMasked(lc, maskRef.current, bounds);
+    clipboardRef.current = cut;
+  }
+  function cutSelection() {
+    if (!hasSelection || !state) return;
+    copySelection();
+    const layer = state.layers.find(l => l.id === state.activeLayerId)!;
+    const lc = layerCanvases.current.get(layer.id)!;
+    const before = lc.getContext("2d")!.getImageData(0, 0, lc.width, lc.height);
+    eraseByMask(lc, maskRef.current);
+    historyRef.current.push({ layerId: layer.id, before, after: lc.getContext("2d")!.getImageData(0, 0, lc.width, lc.height) });
+    setDirty(true);
+    compose();
+  }
+  async function pasteClipboard() {
+    if (!clipboardRef.current || !state) return;
+    const id = uuidv4();
+    const c = document.createElement("canvas"); c.width = state.width; c.height = state.height;
+    c.getContext("2d")!.drawImage(clipboardRef.current, (state.width - clipboardRef.current.width) / 2, (state.height - clipboardRef.current.height) / 2);
+    layerCanvases.current.set(id, c);
+    const newLayer: LayerState = {
+      id, name: "Pasted", visible: true, locked: false, alphaLock: false, clipping: false, opacity: 1, blendMode: "normal", dataUrl: "",
+    };
+    setState({ ...state, layers: [...state.layers, newLayer], activeLayerId: id });
+    setDirty(true);
+  }
+
+  /* ---------- Transform ---------- */
+  function startTransform() {
+    if (!hasSelection || !state) return;
+    const layer = state.layers.find(l => l.id === state.activeLayerId); if (!layer) return;
+    const lc = layerCanvases.current.get(layer.id); if (!lc) return;
+    const bounds = maskBounds(maskRef.current); if (!bounds) return;
+    const before = lc.getContext("2d")!.getImageData(0, 0, lc.width, lc.height);
+    const src = extractMasked(lc, maskRef.current, bounds);
+    eraseByMask(lc, maskRef.current);
+    setFloating({
+      src, origin: bounds, tx: 0, ty: 0, scale: 1, rotation: 0,
+      flipX: false, flipY: false, layerId: layer.id, beforeCut: before,
+    });
+    setTool("transform");
+    compose();
+  }
+  function commitTransform() {
+    if (!floating || !state) return;
+    const layer = state.layers.find(l => l.id === floating.layerId); if (!layer) return;
+    const lc = layerCanvases.current.get(layer.id); if (!lc) return;
+    const ctx = lc.getContext("2d")!;
+    const before = ctx.getImageData(0, 0, lc.width, lc.height);
+    const f = floating;
+    const cx = f.origin.x + f.origin.w / 2 + f.tx;
+    const cy = f.origin.y + f.origin.h / 2 + f.ty;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(f.rotation);
+    ctx.scale(f.scale * (f.flipX ? -1 : 1), f.scale * (f.flipY ? -1 : 1));
+    ctx.drawImage(f.src, -f.origin.w / 2, -f.origin.h / 2);
+    ctx.restore();
+    historyRef.current.push({ layerId: layer.id, before, after: ctx.getImageData(0, 0, lc.width, lc.height) });
+    setFloating(null);
+    setTool("brush");
+    setDirty(true);
+    compose();
+  }
+  function cancelTransform() {
+    if (!floating) return;
+    const lc = layerCanvases.current.get(floating.layerId);
+    if (lc) lc.getContext("2d")!.putImageData(floating.beforeCut, 0, 0);
+    setFloating(null);
+    setTool("brush");
+    compose();
   }
 
   /* ---------- Undo / redo ---------- */
-
   function undo() {
     const h = historyRef.current.pop(); if (!h) return;
     const lc = layerCanvases.current.get(h.layerId); if (!lc) return;
@@ -208,7 +560,6 @@ function StudioPage() {
   }
 
   /* ---------- Layer ops ---------- */
-
   function addLayer() {
     if (!state) return;
     const id = uuidv4();
@@ -222,7 +573,6 @@ function StudioPage() {
     setState({ ...state, layers: [...state.layers, newLayer], activeLayerId: id });
     setDirty(true);
   }
-
   function deleteLayer(id: string) {
     if (!state || state.layers.length <= 1) return;
     layerCanvases.current.delete(id);
@@ -230,13 +580,11 @@ function StudioPage() {
     setState({ ...state, layers, activeLayerId: layers[0].id });
     setDirty(true);
   }
-
   function updateLayer(id: string, patch: Partial<LayerState>) {
     if (!state) return;
     setState({ ...state, layers: state.layers.map(l => l.id === id ? { ...l, ...patch } : l) });
     setDirty(true);
   }
-
   function moveLayer(id: string, dir: -1 | 1) {
     if (!state) return;
     const i = state.layers.findIndex(l => l.id === id);
@@ -249,12 +597,10 @@ function StudioPage() {
   }
 
   /* ---------- Save / autosave ---------- */
-
   const save = useCallback(async (changes: string) => {
     if (!doc || !state || saving) return;
     setSaving(true);
     try {
-      // Serialise layers + grab thumbnail
       const layers = state.layers.map(l => ({
         ...l, dataUrl: layerCanvases.current.get(l.id)?.toDataURL("image/png") ?? "",
       }));
@@ -282,11 +628,20 @@ function StudioPage() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save("Manual save"); }
+      else if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save("Manual save"); }
+      else if ((e.metaKey || e.ctrlKey) && e.key === "a") { e.preventDefault(); selectAll(); }
+      else if ((e.metaKey || e.ctrlKey) && e.key === "d") { e.preventDefault(); deselect(); }
+      else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "i") { e.preventDefault(); invertSelection(); }
+      else if ((e.metaKey || e.ctrlKey) && e.key === "x") { e.preventDefault(); cutSelection(); }
+      else if ((e.metaKey || e.ctrlKey) && e.key === "c") { e.preventDefault(); copySelection(); }
+      else if ((e.metaKey || e.ctrlKey) && e.key === "v") { e.preventDefault(); pasteClipboard(); }
+      else if ((e.metaKey || e.ctrlKey) && e.key === "t") { e.preventDefault(); startTransform(); }
+      else if (e.key === "Enter" && floating) { e.preventDefault(); commitTransform(); }
+      else if (e.key === "Escape" && floating) { e.preventDefault(); cancelTransform(); }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [save]);
+  }, [save, floating, hasSelection]);
 
   function downloadPng() {
     const a = document.createElement("a");
@@ -296,12 +651,9 @@ function StudioPage() {
   }
 
   /* ---------- Render ---------- */
-
   if (!doc || !state) {
     return <div className="min-h-screen bg-background text-foreground grid place-items-center text-sm text-muted-foreground">Loading editor…</div>;
   }
-
-  const activeLayer = state.layers.find(l => l.id === state.activeLayerId)!;
 
   return (
     <div className="min-h-screen h-screen flex flex-col bg-background text-foreground overflow-hidden touch-none">
@@ -324,6 +676,50 @@ function StudioPage() {
         <button onClick={downloadPng} className="p-1.5 rounded hover:bg-muted" aria-label="Download"><Download size={14} /></button>
       </header>
 
+      {/* Tool bar (selections & transform) */}
+      <div className="shrink-0 bg-card/70 border-b border-border px-2 py-1.5 flex items-center gap-1 text-[11px] overflow-x-auto">
+        <ToolBtn active={tool === "brush"}     onClick={() => setTool("brush")}      icon={<BrushIcon size={13} />} label="Brush" />
+        <ToolBtn active={tool === "rect"}      onClick={() => setTool("rect")}       icon={<Square size={13} />}    label="Rect" />
+        <ToolBtn active={tool === "ellipse"}   onClick={() => setTool("ellipse")}    icon={<Circle size={13} />}    label="Ellipse" />
+        <ToolBtn active={tool === "lasso"}     onClick={() => setTool("lasso")}      icon={<Lasso size={13} />}     label="Lasso" />
+        <ToolBtn active={tool === "wand"}      onClick={() => setTool("wand")}       icon={<Wand2 size={13} />}     label="Wand" />
+        <div className="w-px h-5 bg-border mx-1" />
+        {(tool === "rect" || tool === "ellipse" || tool === "lasso" || tool === "wand") && (
+          <>
+            <select value={selectOp} onChange={(e) => setSelectOp(e.target.value as SelectOp)} className="bg-background border border-border rounded px-1.5 py-0.5">
+              <option value="replace">Replace</option>
+              <option value="add">Add</option>
+              <option value="subtract">Subtract</option>
+            </select>
+            {tool === "wand" && (
+              <label className="flex items-center gap-1">Tol
+                <input type="range" min={1} max={120} value={wandTolerance} onChange={(e) => setWandTolerance(Number(e.target.value))} className="w-16 accent-primary" />
+                <span className="tabular-nums w-6">{wandTolerance}</span>
+              </label>
+            )}
+            <label className="flex items-center gap-1">Feather
+              <input type="range" min={0} max={20} value={featherRadius} onChange={(e) => setFeatherRadius(Number(e.target.value))} className="w-16 accent-primary" />
+              <span className="tabular-nums w-5">{featherRadius}</span>
+            </label>
+          </>
+        )}
+        <div className="w-px h-5 bg-border mx-1" />
+        <ToolBtn onClick={invertSelection} icon={<RotateCcw size={13} />} label="Invert" disabled={!hasSelection} />
+        <ToolBtn onClick={deselect}        icon={<X size={13} />} label="Deselect" disabled={!hasSelection && !floating} />
+        <ToolBtn onClick={cutSelection}    icon={<Scissors size={13} />} label="Cut" disabled={!hasSelection} />
+        <ToolBtn onClick={copySelection}   icon={<CopyIcon size={13} />} label="Copy" disabled={!hasSelection} />
+        <ToolBtn onClick={pasteClipboard}  icon={<ClipboardPaste size={13} />} label="Paste" disabled={!clipboardRef.current} />
+        <ToolBtn onClick={startTransform}  icon={<Move size={13} />} label="Transform" disabled={!hasSelection || !!floating} />
+        {floating && (
+          <>
+            <ToolBtn onClick={() => setFloating({ ...floating, flipX: !floating.flipX })} icon={<FlipHorizontal size={13} />} label="Flip H" />
+            <ToolBtn onClick={() => setFloating({ ...floating, flipY: !floating.flipY })} icon={<FlipVertical size={13} />} label="Flip V" />
+            <button onClick={commitTransform} className="px-2 py-1 rounded bg-gradient-primary text-primary-foreground font-semibold flex items-center gap-1"><Check size={13} /> Apply</button>
+            <button onClick={cancelTransform} className="px-2 py-1 rounded bg-muted font-semibold flex items-center gap-1"><X size={13} /> Cancel</button>
+          </>
+        )}
+      </div>
+
       {/* Main area */}
       <div className="flex-1 min-h-0 flex">
         {/* Brush rail (left) */}
@@ -331,8 +727,8 @@ function StudioPage() {
           {(Object.keys(DEFAULTS) as BrushId[]).map(id => (
             <button
               key={id}
-              onClick={() => { setActiveBrushId(id); setBrushOverrides({}); }}
-              className={`h-12 grid place-items-center text-[10px] ${activeBrushId === id ? "bg-primary/15 text-primary border-l-2 border-primary" : "hover:bg-muted"}`}
+              onClick={() => { setActiveBrushId(id); setBrushOverrides({}); setTool("brush"); }}
+              className={`h-12 grid place-items-center text-[10px] ${activeBrushId === id && tool === "brush" ? "bg-primary/15 text-primary border-l-2 border-primary" : "hover:bg-muted"}`}
               title={BRUSH_LABELS[id]}
             >
               <BrushIcon size={16} />
@@ -342,18 +738,24 @@ function StudioPage() {
 
         {/* Canvas */}
         <div ref={wrapRef} className="flex-1 min-w-0 relative bg-muted/30 overflow-auto grid place-items-center p-2">
-          <canvas
-            ref={composedRef}
-            width={CANVAS_W}
-            height={CANVAS_H}
-            className="bg-white shadow-2xl rounded touch-none max-w-full max-h-full"
-            style={{ width: "min(100%, 100vh)", aspectRatio: "1 / 1" }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-          />
-          {/* Pressure HUD */}
+          <div className="relative" style={{ width: "min(100%, 100vh)", aspectRatio: "1 / 1" }}>
+            <canvas
+              ref={composedRef}
+              width={CANVAS_W}
+              height={CANVAS_H}
+              className="bg-white shadow-2xl rounded touch-none w-full h-full block"
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+            />
+            <canvas
+              ref={overlayRef}
+              width={CANVAS_W}
+              height={CANVAS_H}
+              className="absolute inset-0 w-full h-full pointer-events-none"
+            />
+          </div>
           <div className="absolute top-3 left-3 bg-card/85 backdrop-blur rounded-full px-2.5 py-1 text-[10px] flex items-center gap-1.5 border border-border">
             <span className="text-muted-foreground">Pressure</span>
             <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
@@ -362,7 +764,7 @@ function StudioPage() {
           </div>
         </div>
 
-        {/* Right panel: brush + layers */}
+        {/* Right panel */}
         <aside className="hidden lg:flex w-72 border-l border-border bg-card flex-col overflow-y-auto">
           <BrushPanel brush={brush} setOverrides={setBrushOverrides} color={color} setColor={setColor} smoothing={smoothing} setSmoothing={setSmoothing} />
           <LayersPanel state={state} setState={setState} setDirty={setDirty} updateLayer={updateLayer} addLayer={addLayer} deleteLayer={deleteLayer} moveLayer={moveLayer} />
@@ -383,7 +785,7 @@ function StudioPage() {
           <div className="border-t border-border max-h-[55vh] overflow-y-auto">
             <div className="grid grid-cols-3 gap-1 p-2">
               {(Object.keys(DEFAULTS) as BrushId[]).map(id => (
-                <button key={id} onClick={() => { setActiveBrushId(id); setBrushOverrides({}); }} className={`py-2 rounded text-[11px] font-semibold ${activeBrushId === id ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                <button key={id} onClick={() => { setActiveBrushId(id); setBrushOverrides({}); setTool("brush"); }} className={`py-2 rounded text-[11px] font-semibold ${activeBrushId === id ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
                   {BRUSH_LABELS[id]}
                 </button>
               ))}
@@ -402,6 +804,18 @@ function StudioPage() {
 }
 
 /* ---------- Subcomponents ---------- */
+
+function ToolBtn(props: { active?: boolean; onClick: () => void; icon: React.ReactNode; label: string; disabled?: boolean }) {
+  return (
+    <button
+      onClick={props.onClick}
+      disabled={props.disabled}
+      className={`px-2 py-1 rounded flex items-center gap-1 whitespace-nowrap ${props.active ? "bg-primary text-primary-foreground" : "hover:bg-muted"} ${props.disabled ? "opacity-40 cursor-not-allowed" : ""}`}
+    >
+      {props.icon}<span className="hidden sm:inline">{props.label}</span>
+    </button>
+  );
+}
 
 function BrushPanel(props: {
   brush: BrushSettings;
@@ -429,6 +843,7 @@ function BrushPanel(props: {
       <Slider label="Scatter" value={brush.scatter} min={0} max={40} step={0.5} onChange={(v) => set("scatter", v)} suffix="px" />
       <Slider label="Pressure → Size" value={brush.pressureSize * 100} min={0} max={100} step={1} onChange={(v) => set("pressureSize", v / 100)} suffix="%" />
       <Slider label="Pressure → Opacity" value={brush.pressureOpacity * 100} min={0} max={100} step={1} onChange={(v) => set("pressureOpacity", v / 100)} suffix="%" />
+      <Slider label="Pressure Curve" value={brush.pressureCurve * 100} min={30} max={300} step={5} onChange={(v) => set("pressureCurve", v / 100)} suffix="%" />
       <Slider label="Stabiliser" value={smoothing * 100} min={0} max={100} step={1} onChange={(v) => setSmoothing(v / 100)} suffix="%" />
     </div>
   );
@@ -456,9 +871,7 @@ function LayersPanel(props: {
   moveLayer: (id: string, dir: -1 | 1) => void;
 }) {
   const { state, updateLayer, addLayer, deleteLayer, moveLayer } = props;
-  function setActive(id: string) {
-    props.setState({ ...state, activeLayerId: id });
-  }
+  function setActive(id: string) { props.setState({ ...state, activeLayerId: id }); }
   return (
     <div className="flex-1 p-2 text-xs">
       <div className="flex items-center justify-between p-1">
@@ -563,4 +976,109 @@ async function fitImageToDataUrl(url: string, w: number, h: number): Promise<str
     img.onerror = () => res(blankPng(w, h));
     img.src = url;
   });
+}
+
+/* --- Bake scratch (selection-clipped) onto layer --- */
+
+let _maskCanvas: HTMLCanvasElement | null = null;
+function maskAsCanvas(m: SelectionMask): HTMLCanvasElement {
+  if (!_maskCanvas || _maskCanvas.width !== m.width) {
+    _maskCanvas = document.createElement("canvas");
+    _maskCanvas.width = m.width; _maskCanvas.height = m.height;
+  }
+  _maskCanvas.getContext("2d")!.putImageData(maskToImageData(m), 0, 0);
+  return _maskCanvas;
+}
+
+function bakeScratchToLayer(layer: HTMLCanvasElement, scratch: HTMLCanvasElement, mask: SelectionMask, eraser: boolean) {
+  // Apply mask to scratch first (destination-in)
+  const sctx = scratch.getContext("2d")!;
+  sctx.save();
+  sctx.globalCompositeOperation = "destination-in";
+  sctx.drawImage(maskAsCanvas(mask), 0, 0);
+  sctx.restore();
+  // Composite onto layer
+  const lctx = layer.getContext("2d")!;
+  lctx.save();
+  lctx.globalCompositeOperation = eraser ? "destination-out" : "source-over";
+  lctx.drawImage(scratch, 0, 0);
+  lctx.restore();
+}
+
+function makeMaskedPreview(scratch: HTMLCanvasElement, mask: SelectionMask): HTMLCanvasElement | null {
+  // Build a temporary clone with mask applied for live preview only.
+  const c = document.createElement("canvas"); c.width = scratch.width; c.height = scratch.height;
+  const ctx = c.getContext("2d")!;
+  ctx.drawImage(scratch, 0, 0);
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.drawImage(maskAsCanvas(mask), 0, 0);
+  return c;
+}
+
+function extractMasked(layer: HTMLCanvasElement, mask: SelectionMask, bounds: { x: number; y: number; w: number; h: number }): HTMLCanvasElement {
+  const c = document.createElement("canvas"); c.width = bounds.w; c.height = bounds.h;
+  const ctx = c.getContext("2d")!;
+  ctx.drawImage(layer, -bounds.x, -bounds.y);
+  // Multiply by mask alpha, restricted to bounds
+  const img = ctx.getImageData(0, 0, bounds.w, bounds.h);
+  for (let y = 0; y < bounds.h; y++) {
+    for (let x = 0; x < bounds.w; x++) {
+      const mIdx = (y + bounds.y) * mask.width + (x + bounds.x);
+      const i = (y * bounds.w + x) * 4;
+      img.data[i + 3] = Math.round((img.data[i + 3] * mask.data[mIdx]) / 255);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+function eraseByMask(layer: HTMLCanvasElement, mask: SelectionMask) {
+  const ctx = layer.getContext("2d")!;
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.drawImage(maskAsCanvas(mask), 0, 0);
+  ctx.restore();
+}
+
+/* --- Marching-ants outline draw --- */
+function drawAnts(ctx: CanvasRenderingContext2D, m: SelectionMask, step: number) {
+  const w = m.width, h = m.height;
+  ctx.beginPath();
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      const v = m.data[y * w + x] > 127;
+      const l = x > 0 ? m.data[y * w + (x - step >= 0 ? x - step : 0)] > 127 : false;
+      const u = y > 0 ? m.data[(y - step >= 0 ? y - step : 0) * w + x] > 127 : false;
+      if (v !== l) { ctx.moveTo(x, y); ctx.lineTo(x, y + step); }
+      if (v !== u) { ctx.moveTo(x, y); ctx.lineTo(x + step, y); }
+    }
+  }
+  ctx.stroke();
+}
+
+/* --- Transform handle picking --- */
+function pickTransformHandle(f: FloatingTransform, p: { x: number; y: number }) {
+  const cx = f.origin.x + f.origin.w / 2 + f.tx;
+  const cy = f.origin.y + f.origin.h / 2 + f.ty;
+  // Inverse-transform p into floating local space
+  const dx = p.x - cx, dy = p.y - cy;
+  const ca = Math.cos(-f.rotation), sa = Math.sin(-f.rotation);
+  const lx = (dx * ca - dy * sa) / f.scale;
+  const ly = (dx * sa + dy * ca) / f.scale;
+  const hw = f.origin.w / 2, hh = f.origin.h / 2;
+  const hs = 30; // generous picking margin
+  // Rotation handle
+  if (Math.hypot(lx, ly + hh + 40) < hs) return { mode: "rotate" as const, sx: p.x, sy: p.y, startTx: f.tx, startTy: f.ty, startScale: f.scale, startRot: f.rotation };
+  // Corner = scale
+  const corners: Array<[number, number]> = [[-hw, -hh], [hw, -hh], [-hw, hh], [hw, hh]];
+  for (const [cxh, cyh] of corners) {
+    if (Math.abs(lx - cxh) < hs && Math.abs(ly - cyh) < hs) {
+      return { mode: "scale" as const, sx: p.x, sy: p.y, startTx: f.tx, startTy: f.ty, startScale: f.scale, startRot: f.rotation };
+    }
+  }
+  // Inside bbox = move
+  if (Math.abs(lx) < hw && Math.abs(ly) < hh) {
+    return { mode: "move" as const, sx: p.x, sy: p.y, startTx: f.tx, startTy: f.ty, startScale: f.scale, startRot: f.rotation };
+  }
+  return null;
 }
