@@ -92,6 +92,7 @@ function StudioPage() {
   const [showReference, setShowReference] = useState(false);
   const [referenceSrc, setReferenceSrc] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
 
