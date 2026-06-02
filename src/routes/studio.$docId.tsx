@@ -85,6 +85,11 @@ function StudioPage() {
   const [hasSelection, setHasSelection] = useState(false);
   const [antPhase, setAntPhase] = useState(0);
   const [floating, setFloating] = useState<FloatingTransform | null>(null);
+  const [symmetry, setSymmetry] = useState<SymmetryConfig>(DEFAULT_SYMMETRY);
+  const [showReference, setShowReference] = useState(false);
+  const [referenceSrc, setReferenceSrc] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const composedRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -96,7 +101,7 @@ function StudioPage() {
   const maskRef = useRef<SelectionMask>(createMask(CANVAS_W, CANVAS_H));
   const clipboardRef = useRef<HTMLCanvasElement | null>(null);
   const smootherRef = useRef(new InputSmoother());
-  const strokeRef = useRef<{ sc: StrokeContext; prev: SmoothedPoint | null; before: ImageData; target: HTMLCanvasElement } | null>(null);
+  const strokeRef = useRef<{ scs: StrokeContext[]; prev: SmoothedPoint | null; before: ImageData; target: HTMLCanvasElement } | null>(null);
   const historyRef = useRef<HistoryEntry[]>([]);
   const futureRef = useRef<HistoryEntry[]>([]);
 
