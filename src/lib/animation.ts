@@ -40,5 +40,8 @@ export async function exportGif(frames: { canvas: HTMLCanvasElement; duration: n
     gif.writeFrame(indexed, width, height, { palette, delay: Math.max(20, Math.round(duration)) });
   }
   gif.finish();
-  return new Blob([gif.bytes()], { type: "image/gif" });
+  const bytes = gif.bytes();
+  const buf = new Uint8Array(bytes.byteLength);
+  buf.set(bytes);
+  return new Blob([buf.buffer], { type: "image/gif" });
 }
