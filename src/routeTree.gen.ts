@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as StudioDocIdRouteImport } from './routes/studio.$docId'
 import { Route as ApiGenerateStencilRouteImport } from './routes/api/generate-stencil'
 
 const VaultRoute = VaultRouteImport.update({
@@ -29,6 +30,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StudioDocIdRoute = StudioDocIdRouteImport.update({
+  id: '/studio/$docId',
+  path: '/studio/$docId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiGenerateStencilRoute = ApiGenerateStencilRouteImport.update({
   id: '/api/generate-stencil',
   path: '/api/generate-stencil',
@@ -40,12 +46,14 @@ export interface FileRoutesByFullPath {
   '/create': typeof CreateRoute
   '/vault': typeof VaultRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
+  '/studio/$docId': typeof StudioDocIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
   '/vault': typeof VaultRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
+  '/studio/$docId': typeof StudioDocIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,25 @@ export interface FileRoutesById {
   '/create': typeof CreateRoute
   '/vault': typeof VaultRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
+  '/studio/$docId': typeof StudioDocIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/create' | '/vault' | '/api/generate-stencil'
+  fullPaths:
+    | '/'
+    | '/create'
+    | '/vault'
+    | '/api/generate-stencil'
+    | '/studio/$docId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/create' | '/vault' | '/api/generate-stencil'
-  id: '__root__' | '/' | '/create' | '/vault' | '/api/generate-stencil'
+  to: '/' | '/create' | '/vault' | '/api/generate-stencil' | '/studio/$docId'
+  id:
+    | '__root__'
+    | '/'
+    | '/create'
+    | '/vault'
+    | '/api/generate-stencil'
+    | '/studio/$docId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +87,7 @@ export interface RootRouteChildren {
   CreateRoute: typeof CreateRoute
   VaultRoute: typeof VaultRoute
   ApiGenerateStencilRoute: typeof ApiGenerateStencilRoute
+  StudioDocIdRoute: typeof StudioDocIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -92,6 +113,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/studio/$docId': {
+      id: '/studio/$docId'
+      path: '/studio/$docId'
+      fullPath: '/studio/$docId'
+      preLoaderRoute: typeof StudioDocIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/generate-stencil': {
       id: '/api/generate-stencil'
       path: '/api/generate-stencil'
@@ -107,6 +135,7 @@ const rootRouteChildren: RootRouteChildren = {
   CreateRoute: CreateRoute,
   VaultRoute: VaultRoute,
   ApiGenerateStencilRoute: ApiGenerateStencilRoute,
+  StudioDocIdRoute: StudioDocIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
