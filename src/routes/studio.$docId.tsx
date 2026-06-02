@@ -24,6 +24,8 @@ import { ReferencePanel } from "@/components/studio/ReferencePanel";
 import { ExportModal } from "@/components/studio/ExportModal";
 import { FiltersModal } from "@/components/studio/FiltersModal";
 import { AICopilotModal } from "@/components/studio/AICopilotModal";
+import { PublishGalleryModal } from "@/components/studio/PublishGalleryModal";
+import { Share2 } from "lucide-react";
 
 export const Route = createFileRoute("/studio/$docId")({
   head: () => ({
@@ -736,6 +738,7 @@ function StudioPage() {
           <Save size={12} /> {saving ? "Saving…" : dirty ? "Save" : "Saved"}
         </button>
         <button onClick={() => setExportOpen(true)} className="p-1.5 rounded hover:bg-muted" aria-label="Export"><Download size={14} /></button>
+        <button onClick={() => setPublishOpen(true)} className="p-1.5 rounded hover:bg-muted" aria-label="Publish to Gallery"><Share2 size={14} /></button>
       </header>
 
       {/* Tool bar (selections & transform) */}
