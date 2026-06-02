@@ -248,9 +248,11 @@ export function endStroke(sc: StrokeContext) {
 /** Place stamps along the segment from previous → (x,y,pressure). */
 export function strokeTo(sc: StrokeContext, x: number, y: number, pressure: number) {
   const b = sc.brush;
-  const pSize = 1 - b.pressureSize + b.pressureSize * pressure;
+  // Apply per-brush pressure curve (gamma).
+  const pAdj = Math.pow(Math.max(0, Math.min(1, pressure)), b.pressureCurve || 1);
+  const pSize = 1 - b.pressureSize + b.pressureSize * pAdj;
   const radius = Math.max(0.5, (b.size * pSize) / 2);
-  const pOp = 1 - b.pressureOpacity + b.pressureOpacity * pressure;
+  const pOp = 1 - b.pressureOpacity + b.pressureOpacity * pAdj;
   const stampAlpha = Math.min(1, b.opacity * b.flow * pOp);
   const spacing = Math.max(0.5, b.spacing * radius * 2);
 
@@ -283,6 +285,7 @@ function paintStamp(sc: StrokeContext, x: number, y: number, radius: number, alp
   const jx = b.scatter ? (Math.random() - 0.5) * b.scatter : 0;
   const jy = b.scatter ? (Math.random() - 0.5) * b.scatter : 0;
   const angle = b.id === "crosshatch" ? sc.angle + Math.PI / 4 :
+                b.id === "calligraphy" ? sc.angle :
                 b.rotationJitter ? Math.random() * Math.PI * 2 :
                 sc.angle;
   const stamp = buildStamp(b, radius, angle);
