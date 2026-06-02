@@ -902,6 +902,19 @@ function StudioPage() {
         <ExportModal canvas={composedRef.current} defaultName={doc.name || "stencil"} onClose={() => setExportOpen(false)} />
       )}
 
+      {publishOpen && composedRef.current && doc && state && (
+        <PublishGalleryModal
+          defaultTitle={doc.name || "Untitled"}
+          thumbnail={composedRef.current.toDataURL("image/png")}
+          payload={doc}
+          onClose={() => setPublishOpen(false)}
+          onPublished={(postId) => {
+            setPublishOpen(false);
+            navigate({ to: "/gallery/$postId", params: { postId } });
+          }}
+        />
+      )}
+
       {filtersOpen && getActiveLayerCanvas() && (
         <FiltersModal
           sourceCanvas={getActiveLayerCanvas()!}
