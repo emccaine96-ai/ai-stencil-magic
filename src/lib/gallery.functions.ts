@@ -67,7 +67,7 @@ export const deletePost = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-/* ---------- Public read helpers (use browser client; RLS allows anon read) ---------- */
+/* ---------- Public read helpers (browser client; RLS allows anon read) ---------- */
 export type GalleryListItem = {
   id: string;
   user_id: string;
@@ -104,44 +104,4 @@ export async function hasLiked(postId: string, userId: string | null) {
   const { data } = await browserSupabase.from("gallery_likes")
     .select("post_id").eq("post_id", postId).eq("user_id", userId).maybeSingle();
   return !!data;
-}
-
-/* ---------- Brush packs ---------- */
-const PackInput = z.object({
-  name: z.string().min(1).max(80),
-  description: z.string().max(500).optional().nullable(),
-  cover: z.string().max(2_000_000).nullable().optional(),
-  brushes: z.unknown(),
-});
-export const publishBrushPack = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => PackInput.parse(i))
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const { data: row, error } = await supabase.from("brush_packs").insert({
-      user_id: userId,
-      name: data.name, description: data.description ?? null,
-      cover: data.cover ?? null, brushes: data.brushes as any,
-    }).select("id").single();
-    if (error) throw new Error(error.message);
-    return row;
-  });
-
-export async function listBrushPacks() {
-  const { data, error } = await browserSupabase.from("brush_packs")
-    .select("id,user_id,name,description,cover,downloads,created_at")
-    .order("downloads", { ascending: false }).limit(60);
-  if (error) throw new Error(error.message);
-  return data ?? [];
-}
-
-export async function downloadBrushPack(id: string) {
-  const { data, error } = await browserSupabase.from("brush_packs")
-    .select("*").eq("id", id).maybeSingle();
-  if (error) throw new Error(error.message);
-  if (data) {
-    await browserSupabase.from("brush_packs")
-      .update({ downloads: (data.downloads ?? 0) + 1 }).eq("id", id);
-  }
-  return data;
 }
