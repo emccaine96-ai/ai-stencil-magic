@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      brush_packs: {
+        Row: {
+          brushes: Json
+          cover: string | null
+          created_at: string
+          description: string | null
+          downloads: number
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          brushes: Json
+          cover?: string | null
+          created_at?: string
+          description?: string | null
+          downloads?: number
+          id?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          brushes?: Json
+          cover?: string | null
+          created_at?: string
+          description?: string | null
+          downloads?: number
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       cloud_documents: {
         Row: {
           created_at: string
@@ -49,6 +85,92 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      gallery_likes: {
+        Row: {
+          created_at: string
+          post_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          post_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          post_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gallery_likes_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "gallery_posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gallery_posts: {
+        Row: {
+          created_at: string
+          description: string | null
+          doc_id: string | null
+          id: string
+          likes_count: number
+          payload: Json
+          remix_of: string | null
+          tags: string[]
+          thumbnail: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          doc_id?: string | null
+          id?: string
+          likes_count?: number
+          payload: Json
+          remix_of?: string | null
+          tags?: string[]
+          thumbnail?: string | null
+          title?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          doc_id?: string | null
+          id?: string
+          likes_count?: number
+          payload?: Json
+          remix_of?: string | null
+          tags?: string[]
+          thumbnail?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gallery_posts_doc_id_fkey"
+            columns: ["doc_id"]
+            isOneToOne: false
+            referencedRelation: "cloud_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gallery_posts_remix_of_fkey"
+            columns: ["remix_of"]
+            isOneToOne: false
+            referencedRelation: "gallery_posts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

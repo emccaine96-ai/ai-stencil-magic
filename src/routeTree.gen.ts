@@ -10,17 +10,30 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VaultRouteImport } from './routes/vault'
+import { Route as PluginsRouteImport } from './routes/plugins'
+import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StudioDocIdRouteImport } from './routes/studio.$docId'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
+import { Route as GalleryPostIdRouteImport } from './routes/gallery.$postId'
 import { Route as ApiGenerateStencilRouteImport } from './routes/api/generate-stencil'
 import { Route as ApiAiCopilotRouteImport } from './routes/api/ai-copilot'
 
 const VaultRoute = VaultRouteImport.update({
   id: '/vault',
   path: '/vault',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PluginsRoute = PluginsRouteImport.update({
+  id: '/plugins',
+  path: '/plugins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GalleryRoute = GalleryRouteImport.update({
+  id: '/gallery',
+  path: '/gallery',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CreateRoute = CreateRouteImport.update({
@@ -48,6 +61,11 @@ const ShareTokenRoute = ShareTokenRouteImport.update({
   path: '/share/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GalleryPostIdRoute = GalleryPostIdRouteImport.update({
+  id: '/$postId',
+  path: '/$postId',
+  getParentRoute: () => GalleryRoute,
+} as any)
 const ApiGenerateStencilRoute = ApiGenerateStencilRouteImport.update({
   id: '/api/generate-stencil',
   path: '/api/generate-stencil',
@@ -63,9 +81,12 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
+  '/gallery': typeof GalleryRouteWithChildren
+  '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
   '/api/ai-copilot': typeof ApiAiCopilotRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
+  '/gallery/$postId': typeof GalleryPostIdRoute
   '/share/$token': typeof ShareTokenRoute
   '/studio/$docId': typeof StudioDocIdRoute
 }
@@ -73,9 +94,12 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
+  '/gallery': typeof GalleryRouteWithChildren
+  '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
   '/api/ai-copilot': typeof ApiAiCopilotRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
+  '/gallery/$postId': typeof GalleryPostIdRoute
   '/share/$token': typeof ShareTokenRoute
   '/studio/$docId': typeof StudioDocIdRoute
 }
@@ -84,9 +108,12 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
+  '/gallery': typeof GalleryRouteWithChildren
+  '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
   '/api/ai-copilot': typeof ApiAiCopilotRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
+  '/gallery/$postId': typeof GalleryPostIdRoute
   '/share/$token': typeof ShareTokenRoute
   '/studio/$docId': typeof StudioDocIdRoute
 }
@@ -96,9 +123,12 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/create'
+    | '/gallery'
+    | '/plugins'
     | '/vault'
     | '/api/ai-copilot'
     | '/api/generate-stencil'
+    | '/gallery/$postId'
     | '/share/$token'
     | '/studio/$docId'
   fileRoutesByTo: FileRoutesByTo
@@ -106,9 +136,12 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/create'
+    | '/gallery'
+    | '/plugins'
     | '/vault'
     | '/api/ai-copilot'
     | '/api/generate-stencil'
+    | '/gallery/$postId'
     | '/share/$token'
     | '/studio/$docId'
   id:
@@ -116,9 +149,12 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/create'
+    | '/gallery'
+    | '/plugins'
     | '/vault'
     | '/api/ai-copilot'
     | '/api/generate-stencil'
+    | '/gallery/$postId'
     | '/share/$token'
     | '/studio/$docId'
   fileRoutesById: FileRoutesById
@@ -127,6 +163,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
   CreateRoute: typeof CreateRoute
+  GalleryRoute: typeof GalleryRouteWithChildren
+  PluginsRoute: typeof PluginsRoute
   VaultRoute: typeof VaultRoute
   ApiAiCopilotRoute: typeof ApiAiCopilotRoute
   ApiGenerateStencilRoute: typeof ApiGenerateStencilRoute
@@ -141,6 +179,20 @@ declare module '@tanstack/react-router' {
       path: '/vault'
       fullPath: '/vault'
       preLoaderRoute: typeof VaultRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plugins': {
+      id: '/plugins'
+      path: '/plugins'
+      fullPath: '/plugins'
+      preLoaderRoute: typeof PluginsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/gallery': {
+      id: '/gallery'
+      path: '/gallery'
+      fullPath: '/gallery'
+      preLoaderRoute: typeof GalleryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/create': {
@@ -178,6 +230,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/gallery/$postId': {
+      id: '/gallery/$postId'
+      path: '/$postId'
+      fullPath: '/gallery/$postId'
+      preLoaderRoute: typeof GalleryPostIdRouteImport
+      parentRoute: typeof GalleryRoute
+    }
     '/api/generate-stencil': {
       id: '/api/generate-stencil'
       path: '/api/generate-stencil'
@@ -195,10 +254,23 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface GalleryRouteChildren {
+  GalleryPostIdRoute: typeof GalleryPostIdRoute
+}
+
+const GalleryRouteChildren: GalleryRouteChildren = {
+  GalleryPostIdRoute: GalleryPostIdRoute,
+}
+
+const GalleryRouteWithChildren =
+  GalleryRoute._addFileChildren(GalleryRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   CreateRoute: CreateRoute,
+  GalleryRoute: GalleryRouteWithChildren,
+  PluginsRoute: PluginsRoute,
   VaultRoute: VaultRoute,
   ApiAiCopilotRoute: ApiAiCopilotRoute,
   ApiGenerateStencilRoute: ApiGenerateStencilRoute,

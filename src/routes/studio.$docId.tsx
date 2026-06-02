@@ -24,6 +24,8 @@ import { ReferencePanel } from "@/components/studio/ReferencePanel";
 import { ExportModal } from "@/components/studio/ExportModal";
 import { FiltersModal } from "@/components/studio/FiltersModal";
 import { AICopilotModal } from "@/components/studio/AICopilotModal";
+import { PublishGalleryModal } from "@/components/studio/PublishGalleryModal";
+import { Share2 } from "lucide-react";
 
 export const Route = createFileRoute("/studio/$docId")({
   head: () => ({
@@ -90,6 +92,7 @@ function StudioPage() {
   const [showReference, setShowReference] = useState(false);
   const [referenceSrc, setReferenceSrc] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
 
@@ -736,6 +739,7 @@ function StudioPage() {
           <Save size={12} /> {saving ? "Saving…" : dirty ? "Save" : "Saved"}
         </button>
         <button onClick={() => setExportOpen(true)} className="p-1.5 rounded hover:bg-muted" aria-label="Export"><Download size={14} /></button>
+        <button onClick={() => setPublishOpen(true)} className="p-1.5 rounded hover:bg-muted" aria-label="Publish to Gallery"><Share2 size={14} /></button>
       </header>
 
       {/* Tool bar (selections & transform) */}
@@ -896,6 +900,19 @@ function StudioPage() {
 
       {exportOpen && composedRef.current && (
         <ExportModal canvas={composedRef.current} defaultName={doc.name || "stencil"} onClose={() => setExportOpen(false)} />
+      )}
+
+      {publishOpen && composedRef.current && doc && state && (
+        <PublishGalleryModal
+          defaultTitle={doc.name || "Untitled"}
+          thumbnail={composedRef.current.toDataURL("image/png")}
+          payload={doc}
+          onClose={() => setPublishOpen(false)}
+          onPublished={(postId) => {
+            setPublishOpen(false);
+            navigate({ to: "/gallery/$postId", params: { postId } });
+          }}
+        />
       )}
 
       {filtersOpen && getActiveLayerCanvas() && (
