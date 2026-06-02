@@ -10,7 +10,12 @@ export type BrushId =
   | "stipple"
   | "wet-ink"
   | "eraser"
-  | "charcoal";
+  | "charcoal"
+  | "marker"
+  | "calligraphy"
+  | "spray"
+  | "ink-pen"
+  | "noise-grain";
 
 export type BrushSettings = {
   id: BrushId;
@@ -23,19 +28,26 @@ export type BrushSettings = {
   rotationJitter: number; // 0..1
   pressureSize: number;   // 0..1 — how much pressure scales size
   pressureOpacity: number; // 0..1
+  /** Gamma applied to raw pressure: <1 boosts light touch, >1 demands force. */
+  pressureCurve: number;
   color: string;          // hex
 };
 
 export const DEFAULTS: Record<BrushId, Omit<BrushSettings, "color">> = {
-  "hard-round":   { id: "hard-round",   size: 18, opacity: 1.0, flow: 1.0, spacing: 0.05, hardness: 0.95, scatter: 0, rotationJitter: 0, pressureSize: 0.85, pressureOpacity: 0.3 },
-  "soft-airbrush":{ id: "soft-airbrush",size: 80, opacity: 0.35,flow: 0.4, spacing: 0.05, hardness: 0.1,  scatter: 0, rotationJitter: 0, pressureSize: 0.6,  pressureOpacity: 0.9 },
-  "fine-liner":   { id: "fine-liner",   size: 4,  opacity: 1.0, flow: 1.0, spacing: 0.04, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.15, pressureOpacity: 0.9 },
-  "dotwork":      { id: "dotwork",      size: 22, opacity: 1.0, flow: 1.0, spacing: 0.4,  hardness: 1.0,  scatter: 4, rotationJitter: 1, pressureSize: 0.5,  pressureOpacity: 0.4 },
-  "crosshatch":   { id: "crosshatch",   size: 28, opacity: 0.9, flow: 0.9, spacing: 0.2,  hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.4,  pressureOpacity: 0.5 },
-  "stipple":      { id: "stipple",      size: 30, opacity: 0.9, flow: 0.6, spacing: 0.15, hardness: 1.0,  scatter: 6, rotationJitter: 1, pressureSize: 0.4,  pressureOpacity: 0.6 },
-  "wet-ink":      { id: "wet-ink",      size: 30, opacity: 1.0, flow: 0.7, spacing: 0.03, hardness: 0.6,  scatter: 0, rotationJitter: 0, pressureSize: 0.7,  pressureOpacity: 0.3 },
-  "eraser":       { id: "eraser",       size: 32, opacity: 1.0, flow: 1.0, spacing: 0.05, hardness: 0.8,  scatter: 0, rotationJitter: 0, pressureSize: 0.8,  pressureOpacity: 0.5 },
-  "charcoal":     { id: "charcoal",     size: 36, opacity: 0.85,flow: 0.7, spacing: 0.08, hardness: 0.7,  scatter: 3, rotationJitter: 1, pressureSize: 0.6,  pressureOpacity: 0.7 },
+  "hard-round":   { id: "hard-round",   size: 18, opacity: 1.0, flow: 1.0, spacing: 0.05, hardness: 0.95, scatter: 0, rotationJitter: 0, pressureSize: 0.85, pressureOpacity: 0.3, pressureCurve: 1.0 },
+  "soft-airbrush":{ id: "soft-airbrush",size: 80, opacity: 0.35,flow: 0.4, spacing: 0.05, hardness: 0.1,  scatter: 0, rotationJitter: 0, pressureSize: 0.6,  pressureOpacity: 0.9, pressureCurve: 0.7 },
+  "fine-liner":   { id: "fine-liner",   size: 4,  opacity: 1.0, flow: 1.0, spacing: 0.04, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.15, pressureOpacity: 0.9, pressureCurve: 1.0 },
+  "dotwork":      { id: "dotwork",      size: 22, opacity: 1.0, flow: 1.0, spacing: 0.4,  hardness: 1.0,  scatter: 4, rotationJitter: 1, pressureSize: 0.5,  pressureOpacity: 0.4, pressureCurve: 1.0 },
+  "crosshatch":   { id: "crosshatch",   size: 28, opacity: 0.9, flow: 0.9, spacing: 0.2,  hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.4,  pressureOpacity: 0.5, pressureCurve: 1.0 },
+  "stipple":      { id: "stipple",      size: 30, opacity: 0.9, flow: 0.6, spacing: 0.15, hardness: 1.0,  scatter: 6, rotationJitter: 1, pressureSize: 0.4,  pressureOpacity: 0.6, pressureCurve: 1.0 },
+  "wet-ink":      { id: "wet-ink",      size: 30, opacity: 1.0, flow: 0.7, spacing: 0.03, hardness: 0.6,  scatter: 0, rotationJitter: 0, pressureSize: 0.7,  pressureOpacity: 0.3, pressureCurve: 1.2 },
+  "eraser":       { id: "eraser",       size: 32, opacity: 1.0, flow: 1.0, spacing: 0.05, hardness: 0.8,  scatter: 0, rotationJitter: 0, pressureSize: 0.8,  pressureOpacity: 0.5, pressureCurve: 1.0 },
+  "charcoal":     { id: "charcoal",     size: 36, opacity: 0.85,flow: 0.7, spacing: 0.08, hardness: 0.7,  scatter: 3, rotationJitter: 1, pressureSize: 0.6,  pressureOpacity: 0.7, pressureCurve: 1.0 },
+  "marker":       { id: "marker",       size: 26, opacity: 0.55,flow: 0.5, spacing: 0.04, hardness: 0.85, scatter: 0, rotationJitter: 0, pressureSize: 0.25, pressureOpacity: 0.2, pressureCurve: 1.0 },
+  "calligraphy":  { id: "calligraphy",  size: 24, opacity: 1.0, flow: 1.0, spacing: 0.03, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.9,  pressureOpacity: 0.2, pressureCurve: 0.8 },
+  "spray":        { id: "spray",        size: 60, opacity: 0.9, flow: 0.25,spacing: 0.08, hardness: 1.0,  scatter: 0, rotationJitter: 1, pressureSize: 0.5,  pressureOpacity: 0.6, pressureCurve: 1.0 },
+  "ink-pen":      { id: "ink-pen",      size: 6,  opacity: 1.0, flow: 1.0, spacing: 0.03, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.95, pressureOpacity: 0.1, pressureCurve: 1.4 },
+  "noise-grain":  { id: "noise-grain",  size: 44, opacity: 0.7, flow: 0.6, spacing: 0.12, hardness: 1.0,  scatter: 2, rotationJitter: 1, pressureSize: 0.4,  pressureOpacity: 0.6, pressureCurve: 1.0 },
 };
 
 export const BRUSH_LABELS: Record<BrushId, string> = {
@@ -48,6 +60,11 @@ export const BRUSH_LABELS: Record<BrushId, string> = {
   "wet-ink": "Wet Ink",
   "eraser": "Eraser",
   "charcoal": "Charcoal",
+  "marker": "Marker",
+  "calligraphy": "Calligraphy",
+  "spray": "Spray",
+  "ink-pen": "Ink Pen",
+  "noise-grain": "Noise Grain",
 };
 
 function rgb(hex: string): [number, number, number] {
@@ -126,6 +143,71 @@ export function buildStamp(b: BrushSettings, radius: number, angle: number): HTM
     ctx.putImageData(img, 0, 0);
     return c;
   }
+  if (b.id === "calligraphy") {
+    // Flat oblique nib — ellipse rotated 45°.
+    ctx.translate(cx, cy);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius, Math.max(0.6, radius * 0.32), 0, 0, Math.PI * 2);
+    ctx.fill();
+    return c;
+  }
+  if (b.id === "marker") {
+    const grad = ctx.createRadialGradient(cx, cy, radius * 0.6, cx, cy, radius);
+    grad.addColorStop(0, `rgba(${r},${g},${bl},0.95)`);
+    grad.addColorStop(0.85, `rgba(${r},${g},${bl},0.55)`);
+    grad.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    return c;
+  }
+  if (b.id === "spray") {
+    const dots = 18 + Math.floor(radius * 1.3);
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    for (let i = 0; i < dots; i++) {
+      const a = Math.random() * Math.PI * 2;
+      // Bias toward outer ring for proper spray cone.
+      const rr = Math.sqrt(Math.random()) * radius;
+      const dx = cx + Math.cos(a) * rr;
+      const dy = cy + Math.sin(a) * rr;
+      ctx.globalAlpha = 0.35 + Math.random() * 0.5;
+      ctx.beginPath();
+      ctx.arc(dx, dy, 0.4 + Math.random() * 1.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    return c;
+  }
+  if (b.id === "ink-pen") {
+    // Pure hard nib — crisp solid disc, no falloff.
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    return c;
+  }
+  if (b.id === "noise-grain") {
+    // Disc filled with high-frequency noise — perfect for tonal shading.
+    ctx.fillStyle = `rgba(${r},${g},${bl},0.0)`;
+    ctx.fillRect(0, 0, d, d);
+    const img = ctx.createImageData(d, d);
+    for (let y = 0; y < d; y++) {
+      for (let x = 0; x < d; x++) {
+        const dx = x - cx, dy = y - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist > radius) continue;
+        const falloff = 1 - dist / radius;
+        const a = Math.random() < falloff * 0.85 ? Math.floor(160 + Math.random() * 95) : 0;
+        const i = (y * d + x) * 4;
+        img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = bl; img.data[i + 3] = a;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+  }
   // Soft/hard round + fine-liner + wet-ink + eraser all use a radial falloff.
   const hardness = b.hardness;
   const grad = ctx.createRadialGradient(cx, cy, radius * hardness, cx, cy, radius);
@@ -166,9 +248,11 @@ export function endStroke(sc: StrokeContext) {
 /** Place stamps along the segment from previous → (x,y,pressure). */
 export function strokeTo(sc: StrokeContext, x: number, y: number, pressure: number) {
   const b = sc.brush;
-  const pSize = 1 - b.pressureSize + b.pressureSize * pressure;
+  // Apply per-brush pressure curve (gamma).
+  const pAdj = Math.pow(Math.max(0, Math.min(1, pressure)), b.pressureCurve || 1);
+  const pSize = 1 - b.pressureSize + b.pressureSize * pAdj;
   const radius = Math.max(0.5, (b.size * pSize) / 2);
-  const pOp = 1 - b.pressureOpacity + b.pressureOpacity * pressure;
+  const pOp = 1 - b.pressureOpacity + b.pressureOpacity * pAdj;
   const stampAlpha = Math.min(1, b.opacity * b.flow * pOp);
   const spacing = Math.max(0.5, b.spacing * radius * 2);
 
@@ -201,6 +285,7 @@ function paintStamp(sc: StrokeContext, x: number, y: number, radius: number, alp
   const jx = b.scatter ? (Math.random() - 0.5) * b.scatter : 0;
   const jy = b.scatter ? (Math.random() - 0.5) * b.scatter : 0;
   const angle = b.id === "crosshatch" ? sc.angle + Math.PI / 4 :
+                b.id === "calligraphy" ? sc.angle :
                 b.rotationJitter ? Math.random() * Math.PI * 2 :
                 sc.angle;
   const stamp = buildStamp(b, radius, angle);
