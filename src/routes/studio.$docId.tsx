@@ -664,6 +664,52 @@ function StudioPage() {
     a.click();
   }
 
+  /* ---------- Flatten visible layers ---------- */
+  function flattenVisible() {
+    if (!state) return;
+    const visible = state.layers.filter(l => l.visible);
+    if (visible.length < 2) return;
+    const merged = document.createElement("canvas");
+    merged.width = state.width; merged.height = state.height;
+    const ctx = merged.getContext("2d")!;
+    for (const l of visible) {
+      const lc = layerCanvases.current.get(l.id); if (!lc) continue;
+      ctx.globalAlpha = l.opacity;
+      ctx.globalCompositeOperation = l.blendMode as GlobalCompositeOperation;
+      ctx.drawImage(lc, 0, 0);
+    }
+    const newId = uuidv4();
+    layerCanvases.current.set(newId, merged);
+    for (const l of visible) layerCanvases.current.delete(l.id);
+    const kept = state.layers.filter(l => !l.visible);
+    const flatLayer: LayerState = { id: newId, name: "Flattened", visible: true, locked: false, alphaLock: false, clipping: false, opacity: 1, blendMode: "normal", dataUrl: "" };
+    const layers = [...kept, flatLayer];
+    setState({ ...state, layers, activeLayerId: newId });
+    setDirty(true);
+  }
+
+  /* ---------- Apply filter result back to active layer ---------- */
+  function applyFiltered(out: HTMLCanvasElement) {
+    if (!state) { setFiltersOpen(false); return; }
+    const layer = state.layers.find(l => l.id === state.activeLayerId); if (!layer) { setFiltersOpen(false); return; }
+    const lc = layerCanvases.current.get(layer.id); if (!lc) { setFiltersOpen(false); return; }
+    const ctx = lc.getContext("2d")!;
+    const before = ctx.getImageData(0, 0, lc.width, lc.height);
+    ctx.clearRect(0, 0, lc.width, lc.height);
+    ctx.drawImage(out, 0, 0);
+    const after = ctx.getImageData(0, 0, lc.width, lc.height);
+    historyRef.current.push({ layerId: layer.id, before, after });
+    futureRef.current = [];
+    setFiltersOpen(false);
+    setDirty(true);
+    compose();
+  }
+
+  function getActiveLayerCanvas(): HTMLCanvasElement | null {
+    if (!state) return null;
+    return layerCanvases.current.get(state.activeLayerId) ?? null;
+  }
+
   /* ---------- Render ---------- */
   if (!doc || !state) {
     return <div className="min-h-screen bg-background text-foreground grid place-items-center text-sm text-muted-foreground">Loading editor…</div>;
