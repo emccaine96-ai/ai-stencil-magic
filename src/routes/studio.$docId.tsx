@@ -906,6 +906,31 @@ function StudioPage() {
           onApply={applyFiltered}
         />
       )}
+
+      {aiOpen && composedRef.current && (
+        <AICopilotModal
+          sourceImage={composedRef.current.toDataURL("image/png")}
+          onClose={() => setAiOpen(false)}
+          onApply={(image, asNew) => {
+            const img = new Image();
+            img.onload = () => {
+              if (asNew) {
+                addLayer();
+              }
+              const layer = state?.layers.find(l => l.id === state.activeLayerId);
+              const lc = layer ? layerCanvases.current.get(layer.id) : null;
+              if (lc) {
+                const lctx = lc.getContext("2d")!;
+                if (!asNew) lctx.clearRect(0, 0, lc.width, lc.height);
+                lctx.drawImage(img, 0, 0, lc.width, lc.height);
+                setDirty(true);
+              }
+              setAiOpen(false);
+            };
+            img.src = image;
+          }}
+        />
+      )}
     </div>
   );
 }
