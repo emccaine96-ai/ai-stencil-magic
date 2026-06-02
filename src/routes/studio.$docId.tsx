@@ -886,6 +886,23 @@ function StudioPage() {
           </div>
         )}
       </div>
+
+      {showReference && (
+        <ReferencePanel src={referenceSrc} onSrcChange={setReferenceSrc} onClose={() => setShowReference(false)} />
+      )}
+
+      {exportOpen && composedRef.current && (
+        <ExportModal canvas={composedRef.current} defaultName={doc.name || "stencil"} onClose={() => setExportOpen(false)} />
+      )}
+
+      {filtersOpen && getActiveLayerCanvas() && (
+        <FiltersModal
+          sourceCanvas={getActiveLayerCanvas()!}
+          selectionMask={hasSelection ? maskRef.current.data : undefined}
+          onCancel={() => setFiltersOpen(false)}
+          onApply={applyFiltered}
+        />
+      )}
     </div>
   );
 }
