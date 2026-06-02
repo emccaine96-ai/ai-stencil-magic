@@ -48,7 +48,7 @@ function PostPage() {
         id: uuidv4(),
         name: (post.title || "Untitled") + " (remix)",
         createdAt: Date.now(),
-        updatedAt: Date.now(),
+        lastEdited: Date.now(),
       };
       await saveDocument(newDoc);
       navigate({ to: "/studio/$docId", params: { docId: newDoc.id } });
