@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as PluginsRouteImport } from './routes/plugins'
+import { Route as NodesRouteImport } from './routes/nodes'
 import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as AuthRouteImport } from './routes/auth'
@@ -29,6 +30,11 @@ const VaultRoute = VaultRouteImport.update({
 const PluginsRoute = PluginsRouteImport.update({
   id: '/plugins',
   path: '/plugins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NodesRoute = NodesRouteImport.update({
+  id: '/nodes',
+  path: '/nodes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GalleryRoute = GalleryRouteImport.update({
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
+  '/nodes': typeof NodesRoute
   '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
   '/api/ai-copilot': typeof ApiAiCopilotRoute
@@ -95,6 +102,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
+  '/nodes': typeof NodesRoute
   '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
   '/api/ai-copilot': typeof ApiAiCopilotRoute
@@ -109,6 +117,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
+  '/nodes': typeof NodesRoute
   '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
   '/api/ai-copilot': typeof ApiAiCopilotRoute
@@ -124,6 +133,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/create'
     | '/gallery'
+    | '/nodes'
     | '/plugins'
     | '/vault'
     | '/api/ai-copilot'
@@ -137,6 +147,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/create'
     | '/gallery'
+    | '/nodes'
     | '/plugins'
     | '/vault'
     | '/api/ai-copilot'
@@ -150,6 +161,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/create'
     | '/gallery'
+    | '/nodes'
     | '/plugins'
     | '/vault'
     | '/api/ai-copilot'
@@ -164,6 +176,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   CreateRoute: typeof CreateRoute
   GalleryRoute: typeof GalleryRouteWithChildren
+  NodesRoute: typeof NodesRoute
   PluginsRoute: typeof PluginsRoute
   VaultRoute: typeof VaultRoute
   ApiAiCopilotRoute: typeof ApiAiCopilotRoute
@@ -186,6 +199,13 @@ declare module '@tanstack/react-router' {
       path: '/plugins'
       fullPath: '/plugins'
       preLoaderRoute: typeof PluginsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/nodes': {
+      id: '/nodes'
+      path: '/nodes'
+      fullPath: '/nodes'
+      preLoaderRoute: typeof NodesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gallery': {
@@ -270,6 +290,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   CreateRoute: CreateRoute,
   GalleryRoute: GalleryRouteWithChildren,
+  NodesRoute: NodesRoute,
   PluginsRoute: PluginsRoute,
   VaultRoute: VaultRoute,
   ApiAiCopilotRoute: ApiAiCopilotRoute,
@@ -280,13 +301,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
