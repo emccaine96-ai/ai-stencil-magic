@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as PluginsRouteImport } from './routes/plugins'
 import { Route as NodesRouteImport } from './routes/nodes'
+import { Route as GpuCanvasRouteImport } from './routes/gpu-canvas'
 import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as AuthRouteImport } from './routes/auth'
@@ -35,6 +36,11 @@ const PluginsRoute = PluginsRouteImport.update({
 const NodesRoute = NodesRouteImport.update({
   id: '/nodes',
   path: '/nodes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GpuCanvasRoute = GpuCanvasRouteImport.update({
+  id: '/gpu-canvas',
+  path: '/gpu-canvas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GalleryRoute = GalleryRouteImport.update({
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
+  '/gpu-canvas': typeof GpuCanvasRoute
   '/nodes': typeof NodesRoute
   '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
+  '/gpu-canvas': typeof GpuCanvasRoute
   '/nodes': typeof NodesRoute
   '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
@@ -117,6 +125,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
+  '/gpu-canvas': typeof GpuCanvasRoute
   '/nodes': typeof NodesRoute
   '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
@@ -133,6 +142,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/create'
     | '/gallery'
+    | '/gpu-canvas'
     | '/nodes'
     | '/plugins'
     | '/vault'
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/create'
     | '/gallery'
+    | '/gpu-canvas'
     | '/nodes'
     | '/plugins'
     | '/vault'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/create'
     | '/gallery'
+    | '/gpu-canvas'
     | '/nodes'
     | '/plugins'
     | '/vault'
@@ -176,6 +188,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   CreateRoute: typeof CreateRoute
   GalleryRoute: typeof GalleryRouteWithChildren
+  GpuCanvasRoute: typeof GpuCanvasRoute
   NodesRoute: typeof NodesRoute
   PluginsRoute: typeof PluginsRoute
   VaultRoute: typeof VaultRoute
@@ -206,6 +219,13 @@ declare module '@tanstack/react-router' {
       path: '/nodes'
       fullPath: '/nodes'
       preLoaderRoute: typeof NodesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/gpu-canvas': {
+      id: '/gpu-canvas'
+      path: '/gpu-canvas'
+      fullPath: '/gpu-canvas'
+      preLoaderRoute: typeof GpuCanvasRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gallery': {
@@ -290,6 +310,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   CreateRoute: CreateRoute,
   GalleryRoute: GalleryRouteWithChildren,
+  GpuCanvasRoute: GpuCanvasRoute,
   NodesRoute: NodesRoute,
   PluginsRoute: PluginsRoute,
   VaultRoute: VaultRoute,
@@ -301,3 +322,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
