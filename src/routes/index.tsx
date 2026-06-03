@@ -52,6 +52,7 @@ function Header() {
           <Link to="/gallery" className="py-2">Community Gallery</Link>
           <Link to="/plugins" className="py-2">Plugins</Link>
           <Link to="/nodes" className="py-2">Vector Node Editor</Link>
+          <Link to="/gpu-canvas" className="py-2">GPU Canvas (4K²)</Link>
         </div>
       ) : null}
     </header>
