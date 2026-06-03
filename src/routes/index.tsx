@@ -51,6 +51,7 @@ function Header() {
           <Link to="/vault" className="py-2 text-primary font-semibold">Saved Generations / Storage Vault</Link>
           <Link to="/gallery" className="py-2">Community Gallery</Link>
           <Link to="/plugins" className="py-2">Plugins</Link>
+          <Link to="/nodes" className="py-2">Vector Node Editor</Link>
         </div>
       ) : null}
     </header>
