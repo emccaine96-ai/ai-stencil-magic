@@ -141,5 +141,5 @@ export function exportPSD(width: number, height: number, layers: Layer[], compos
   const planes = planarRGBA(composited);
   w.raw(planes.r); w.raw(planes.g); w.raw(planes.b); w.raw(planes.a);
 
-  return new Blob([w.build()], { type: "image/vnd.adobe.photoshop" });
+  return new Blob([w.build() as BlobPart], { type: "image/vnd.adobe.photoshop" });
 }

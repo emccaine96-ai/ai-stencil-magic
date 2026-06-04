@@ -34,7 +34,7 @@ function b64ToBytes(b64: string): Uint8Array {
 
 async function importEcdsaKey(b64: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
-    "spki", b64ToBytes(b64),
+    "spki", b64ToBytes(b64) as BufferSource,
     { name: "ECDSA", namedCurve: "P-256" },
     false, ["verify"]
   );
@@ -55,7 +55,7 @@ export async function verifyPlugin(p: SignedPlugin): Promise<{ valid: boolean; r
     const key = await importEcdsaKey(pubB64);
     const digest = await pluginDigest(p.manifest);
     const sig = b64ToBytes(p.signature);
-    const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, sig, digest);
+    const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, sig as BufferSource, digest as BufferSource);
     return ok ? { valid: true } : { valid: false, reason: "Signature mismatch" };
   } catch (e) {
     return { valid: false, reason: String(e) };

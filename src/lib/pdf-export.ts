@@ -57,5 +57,5 @@ export async function exportPDF(canvas: HTMLCanvasElement, opts: {
   }
   write(`trailer\n<< /Size 7 /Root 1 0 R /Info 6 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
 
-  return new Blob(chunks, { type: "application/pdf" });
+  return new Blob(chunks as BlobPart[], { type: "application/pdf" });
 }
