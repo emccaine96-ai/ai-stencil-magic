@@ -15,6 +15,7 @@ import { Route as NodesRouteImport } from './routes/nodes'
 import { Route as GpuCanvasRouteImport } from './routes/gpu-canvas'
 import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as CreateRouteImport } from './routes/create'
+import { Route as BrushesRouteImport } from './routes/brushes'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StudioDocIdRouteImport } from './routes/studio.$docId'
@@ -51,6 +52,11 @@ const GalleryRoute = GalleryRouteImport.update({
 const CreateRoute = CreateRouteImport.update({
   id: '/create',
   path: '/create',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BrushesRoute = BrushesRouteImport.update({
+  id: '/brushes',
+  path: '/brushes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -92,6 +98,7 @@ const ApiAiCopilotRoute = ApiAiCopilotRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/brushes': typeof BrushesRoute
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
   '/gpu-canvas': typeof GpuCanvasRoute
@@ -107,6 +114,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/brushes': typeof BrushesRoute
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
   '/gpu-canvas': typeof GpuCanvasRoute
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/brushes': typeof BrushesRoute
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
   '/gpu-canvas': typeof GpuCanvasRoute
@@ -140,6 +149,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/brushes'
     | '/create'
     | '/gallery'
     | '/gpu-canvas'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/brushes'
     | '/create'
     | '/gallery'
     | '/gpu-canvas'
@@ -170,6 +181,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/auth'
+    | '/brushes'
     | '/create'
     | '/gallery'
     | '/gpu-canvas'
@@ -186,6 +198,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
+  BrushesRoute: typeof BrushesRoute
   CreateRoute: typeof CreateRoute
   GalleryRoute: typeof GalleryRouteWithChildren
   GpuCanvasRoute: typeof GpuCanvasRoute
@@ -240,6 +253,13 @@ declare module '@tanstack/react-router' {
       path: '/create'
       fullPath: '/create'
       preLoaderRoute: typeof CreateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/brushes': {
+      id: '/brushes'
+      path: '/brushes'
+      fullPath: '/brushes'
+      preLoaderRoute: typeof BrushesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -308,6 +328,7 @@ const GalleryRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
+  BrushesRoute: BrushesRoute,
   CreateRoute: CreateRoute,
   GalleryRoute: GalleryRouteWithChildren,
   GpuCanvasRoute: GpuCanvasRoute,
