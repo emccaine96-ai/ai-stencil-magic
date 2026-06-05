@@ -112,6 +112,7 @@ function BrushPlayground() {
         <h1 className="font-semibold">Brush Studio</h1>
         <span className="text-xs text-muted-foreground hidden sm:inline">— 27 professional brushes with tilt & pressure</span>
         <div className="flex-1" />
+        <Link to="/help" className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted hidden sm:inline-block">Help</Link>
         <input type="color" value={color} onChange={(e) => setColor(e.target.value)} aria-label="color" className="w-8 h-8 rounded" />
         <button onClick={clearCanvas} className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted">Clear</button>
       </header>
