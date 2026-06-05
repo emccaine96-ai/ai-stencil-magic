@@ -54,6 +54,7 @@ function Header() {
           <Link to="/nodes" className="py-2">Vector Node Editor</Link>
           <Link to="/gpu-canvas" className="py-2">GPU Canvas (4K²)</Link>
           <Link to="/brushes" className="py-2">Brush Studio (27 brushes)</Link>
+          <Link to="/help" className="py-2 text-primary font-semibold">Help & Instructions</Link>
         </div>
       ) : null}
     </header>
