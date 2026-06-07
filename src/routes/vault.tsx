@@ -286,6 +286,13 @@ function VaultPage() {
           </section>
         </div>
       </main>
+      {editing && (
+        <VaultProcreateEditor
+          doc={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); refresh(); }}
+        />
+      )}
     </div>
   );
 }
