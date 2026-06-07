@@ -6,7 +6,7 @@ import {
   Square, Circle, Lasso, Wand2, Move, Scissors, Copy as CopyIcon, ClipboardPaste,
   RotateCcw, FlipHorizontal, FlipVertical, X, Check,
   Sparkles, Image as ImageIcon, FlipHorizontal2, Sliders, Layers2,
-  HelpCircle, MousePointer2, Cpu, Palette as PaletteIcon,
+  HelpCircle,
 } from "lucide-react";
 import {
   getDocument, saveDocument, makeThumbnail,
@@ -742,9 +742,6 @@ function StudioPage() {
         <button onClick={() => setExportOpen(true)} className="p-1.5 rounded hover:bg-muted" aria-label="Export"><Download size={14} /></button>
         <button onClick={() => setPublishOpen(true)} className="p-1.5 rounded hover:bg-muted" aria-label="Publish to Gallery"><Share2 size={14} /></button>
         <div className="w-px h-5 bg-border mx-1" />
-        <Link to="/brushes" className="p-1.5 rounded hover:bg-muted" aria-label="Brush Studio" title="Brush Studio (27 pro brushes)"><PaletteIcon size={14} /></Link>
-        <Link to="/nodes" className="p-1.5 rounded hover:bg-muted hidden sm:inline-flex" aria-label="Vector Node Editor" title="Vector Node Editor"><MousePointer2 size={14} /></Link>
-        <Link to="/gpu-canvas" className="p-1.5 rounded hover:bg-muted hidden sm:inline-flex" aria-label="GPU Canvas 4K" title="GPU Canvas (4096²)"><Cpu size={14} /></Link>
         <Link to="/help" className="p-1.5 rounded hover:bg-muted" aria-label="Help & Instructions" title="Help & Instructions"><HelpCircle size={14} /></Link>
       </header>
 

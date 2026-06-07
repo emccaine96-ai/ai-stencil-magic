@@ -35,8 +35,8 @@ const SECTIONS: Section[] = [
         <p>PrimalCanvas 2.0 is a full painting studio tailored for Android tablets and phones, with Apple-Pencil-class pressure and tilt handling on any compatible stylus (S-Pen, USI 2.0, Wacom, capacitive).</p>
         <ol className="list-decimal ml-5 space-y-2">
           <li><b>Create a document</b> — tap <i>Create Stencil</i> on the home page or open the <Link to="/vault" className="text-primary underline">Vault</Link> and start a new canvas.</li>
-          <li><b>Choose canvas size</b> — defaults to 1536×1536. Use the <Link to="/gpu-canvas" className="text-primary underline">GPU Canvas</Link> for huge 4096×4096 work.</li>
-          <li><b>Pick a brush</b> — open the <Link to="/brushes" className="text-primary underline">Brush Studio</Link> for the full pro library (27 brushes, more via plugins).</li>
+          <li><b>Choose canvas size</b> — defaults to 1536×1536. The unified vault editor scales up to 4096×4096 on capable devices.</li>
+          <li><b>Pick a brush</b> — open the brush drawer inside the vault editor for the full 200+ pro brush library.</li>
           <li><b>Paint, layer, refine, export</b> — every step is non-destructive and autosaves every 25 seconds to the local IndexedDB vault.</li>
         </ol>
       </div>
@@ -179,7 +179,7 @@ const SECTIONS: Section[] = [
     icon: MousePointer2,
     blurb: "Convert freehand to Bézier and reshape at infinite resolution.",
     body: (
-      <p className="text-sm">Open the <Link to="/nodes" className="text-primary underline">Vector Node Editor</Link>. Draw a stroke, then drag anchors and handles to refine — RDP simplification and Bézier fitting run automatically. Export to crisp SVG or 1-bit PNG for stencil printers.</p>
+      <p className="text-sm">Toggle <b>Mesh Warp</b> inside the vault editor to expose a 4×4 vector grid. Drag handles to bend, skew or stretch the stencil using bilinear interpolation — perfect for shaping designs to body contours.</p>
     ),
   },
   {
@@ -291,9 +291,7 @@ function HelpPage() {
             through every feature.
           </p>
           <div className="flex flex-wrap gap-2 pt-2">
-            <Link to="/brushes" className="text-xs px-3 py-1.5 rounded-full bg-primary text-primary-foreground">Open Brush Studio</Link>
-            <Link to="/gpu-canvas" className="text-xs px-3 py-1.5 rounded-full border border-border hover:bg-muted">GPU Canvas</Link>
-            <Link to="/nodes" className="text-xs px-3 py-1.5 rounded-full border border-border hover:bg-muted">Vector Nodes</Link>
+            <Link to="/vault" className="text-xs px-3 py-1.5 rounded-full bg-primary text-primary-foreground">Open Vault Editor</Link>
             <Link to="/plugins" className="text-xs px-3 py-1.5 rounded-full border border-border hover:bg-muted">Plugins</Link>
           </div>
         </section>

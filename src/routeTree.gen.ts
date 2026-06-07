@@ -11,12 +11,9 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as PluginsRouteImport } from './routes/plugins'
-import { Route as NodesRouteImport } from './routes/nodes'
 import { Route as HelpRouteImport } from './routes/help'
-import { Route as GpuCanvasRouteImport } from './routes/gpu-canvas'
 import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as CreateRouteImport } from './routes/create'
-import { Route as BrushesRouteImport } from './routes/brushes'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StudioDocIdRouteImport } from './routes/studio.$docId'
@@ -35,19 +32,9 @@ const PluginsRoute = PluginsRouteImport.update({
   path: '/plugins',
   getParentRoute: () => rootRouteImport,
 } as any)
-const NodesRoute = NodesRouteImport.update({
-  id: '/nodes',
-  path: '/nodes',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const HelpRoute = HelpRouteImport.update({
   id: '/help',
   path: '/help',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GpuCanvasRoute = GpuCanvasRouteImport.update({
-  id: '/gpu-canvas',
-  path: '/gpu-canvas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GalleryRoute = GalleryRouteImport.update({
@@ -58,11 +45,6 @@ const GalleryRoute = GalleryRouteImport.update({
 const CreateRoute = CreateRouteImport.update({
   id: '/create',
   path: '/create',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BrushesRoute = BrushesRouteImport.update({
-  id: '/brushes',
-  path: '/brushes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -104,12 +86,9 @@ const ApiAiCopilotRoute = ApiAiCopilotRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/brushes': typeof BrushesRoute
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
-  '/gpu-canvas': typeof GpuCanvasRoute
   '/help': typeof HelpRoute
-  '/nodes': typeof NodesRoute
   '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
   '/api/ai-copilot': typeof ApiAiCopilotRoute
@@ -121,12 +100,9 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/brushes': typeof BrushesRoute
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
-  '/gpu-canvas': typeof GpuCanvasRoute
   '/help': typeof HelpRoute
-  '/nodes': typeof NodesRoute
   '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
   '/api/ai-copilot': typeof ApiAiCopilotRoute
@@ -139,12 +115,9 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/brushes': typeof BrushesRoute
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
-  '/gpu-canvas': typeof GpuCanvasRoute
   '/help': typeof HelpRoute
-  '/nodes': typeof NodesRoute
   '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
   '/api/ai-copilot': typeof ApiAiCopilotRoute
@@ -158,12 +131,9 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
-    | '/brushes'
     | '/create'
     | '/gallery'
-    | '/gpu-canvas'
     | '/help'
-    | '/nodes'
     | '/plugins'
     | '/vault'
     | '/api/ai-copilot'
@@ -175,12 +145,9 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
-    | '/brushes'
     | '/create'
     | '/gallery'
-    | '/gpu-canvas'
     | '/help'
-    | '/nodes'
     | '/plugins'
     | '/vault'
     | '/api/ai-copilot'
@@ -192,12 +159,9 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/auth'
-    | '/brushes'
     | '/create'
     | '/gallery'
-    | '/gpu-canvas'
     | '/help'
-    | '/nodes'
     | '/plugins'
     | '/vault'
     | '/api/ai-copilot'
@@ -210,12 +174,9 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
-  BrushesRoute: typeof BrushesRoute
   CreateRoute: typeof CreateRoute
   GalleryRoute: typeof GalleryRouteWithChildren
-  GpuCanvasRoute: typeof GpuCanvasRoute
   HelpRoute: typeof HelpRoute
-  NodesRoute: typeof NodesRoute
   PluginsRoute: typeof PluginsRoute
   VaultRoute: typeof VaultRoute
   ApiAiCopilotRoute: typeof ApiAiCopilotRoute
@@ -240,25 +201,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PluginsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/nodes': {
-      id: '/nodes'
-      path: '/nodes'
-      fullPath: '/nodes'
-      preLoaderRoute: typeof NodesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/help': {
       id: '/help'
       path: '/help'
       fullPath: '/help'
       preLoaderRoute: typeof HelpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/gpu-canvas': {
-      id: '/gpu-canvas'
-      path: '/gpu-canvas'
-      fullPath: '/gpu-canvas'
-      preLoaderRoute: typeof GpuCanvasRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gallery': {
@@ -273,13 +220,6 @@ declare module '@tanstack/react-router' {
       path: '/create'
       fullPath: '/create'
       preLoaderRoute: typeof CreateRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/brushes': {
-      id: '/brushes'
-      path: '/brushes'
-      fullPath: '/brushes'
-      preLoaderRoute: typeof BrushesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -348,12 +288,9 @@ const GalleryRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
-  BrushesRoute: BrushesRoute,
   CreateRoute: CreateRoute,
   GalleryRoute: GalleryRouteWithChildren,
-  GpuCanvasRoute: GpuCanvasRoute,
   HelpRoute: HelpRoute,
-  NodesRoute: NodesRoute,
   PluginsRoute: PluginsRoute,
   VaultRoute: VaultRoute,
   ApiAiCopilotRoute: ApiAiCopilotRoute,
@@ -364,3 +301,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

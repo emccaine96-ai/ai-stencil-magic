@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft, Download, Trash2, Inbox, Wand2, Search, LayoutGrid, List as ListIcon,
@@ -10,6 +10,7 @@ import {
   moveDocumentToFolder, exportBackup, importBackup, saveDocument,
   type DocumentData, type Folder, type BackupBundle,
 } from "@/lib/localDB";
+import { VaultProcreateEditor } from "@/components/vault/VaultProcreateEditor";
 
 export const Route = createFileRoute("/vault")({
   head: () => ({
@@ -25,8 +26,8 @@ type SortKey = "newest" | "oldest" | "name";
 type ViewMode = "grid" | "list";
 
 function VaultPage() {
-  const navigate = useNavigate();
   const [docs, setDocs] = useState<DocumentData[] | null>(null);
+  const [editing, setEditing] = useState<DocumentData | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [search, setSearch] = useState("");
   const [view, setView] = useState<ViewMode>("grid");
@@ -104,7 +105,7 @@ function VaultPage() {
   }
 
   function openInStudio(d: DocumentData) {
-    navigate({ to: "/studio/$docId", params: { docId: d.id } });
+    setEditing(d);
   }
 
   async function onDropDoc(docId: string, folderId: string | null) {
@@ -285,6 +286,13 @@ function VaultPage() {
           </section>
         </div>
       </main>
+      {editing && (
+        <VaultProcreateEditor
+          doc={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); refresh(); }}
+        />
+      )}
     </div>
   );
 }
