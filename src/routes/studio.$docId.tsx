@@ -6,7 +6,7 @@ import {
   Square, Circle, Lasso, Wand2, Move, Scissors, Copy as CopyIcon, ClipboardPaste,
   RotateCcw, FlipHorizontal, FlipVertical, X, Check,
   Sparkles, Image as ImageIcon, FlipHorizontal2, Sliders, Layers2,
-  HelpCircle, MousePointer2, Cpu, Palette as PaletteIcon,
+  HelpCircle,
 } from "lucide-react";
 import {
   getDocument, saveDocument, makeThumbnail,
