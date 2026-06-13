@@ -123,6 +123,8 @@ type Layer = {
 
 type Tool = "paint" | "smudge" | "erase";
 type EditMode = "none" | "warp" | "push" | "inflate" | "deflate";
+type SelectionMode = "none" | "freehand" | "rectangle" | "ellipse" | "auto";
+type SelectionShape = { type: SelectionMode; x: number; y: number; w: number; h: number; points?: { x: number; y: number }[] } | null;
 type PanelKey = null | "actions" | "adjustments" | "selections" | "transform" | "layers" | "color" | "brushes";
 
 const COLOR_SWATCHES = [
@@ -150,9 +152,13 @@ export function VaultProcreateEditor({
   const [size, setSize] = useState(35);            // 0..100
   const [opacity, setOpacity] = useState(100);     // 0..100
   const [color, setColor] = useState("#111111");
-  const [activeBrushId, setActiveBrushId] = useState("sketching-1");
-  const [activeCat, setActiveCat] = useState<Cat>("Sketching");
+  const [activeBrushId, setActiveBrushId] = useState(FALLBACK_BRUSH_ID);
+  const [activeCat, setActiveCat] = useState<Cat>("Liners");
   const [panel, setPanel] = useState<PanelKey>(null);
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>("none");
+  const [selection, setSelection] = useState<SelectionShape>(null);
+  const [eyedropper, setEyedropper] = useState(false);
+  const [mirrorView, setMirrorView] = useState(false);
   const [saving, setSaving] = useState(false);
   const [rightHand, setRightHand] = useState(false); // sidebar default left
   const [hideUI, setHideUI] = useState(false);
@@ -161,7 +167,7 @@ export function VaultProcreateEditor({
   const [, force] = useState(0);
 
   const brushes = useMemo(buildBrushLibrary, []);
-  const brush = useMemo(() => brushes.find(b => b.id === activeBrushId) ?? brushes[0], [brushes, activeBrushId]);
+  const brush = useMemo(() => resolveBrush(brushes, activeBrushId), [brushes, activeBrushId]);
 
   // Mesh warp grid
   const meshRef = useRef<{ x: number; y: number }[]>(buildMesh());
