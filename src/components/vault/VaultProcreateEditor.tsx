@@ -764,9 +764,9 @@ export function VaultProcreateEditor({
 
       {/* ============================ Top-right: Painting Tools ============================ */}
       <div className="absolute top-3 right-3 z-20 flex items-center gap-3 px-2 py-1.5 rounded-lg bg-black/40 backdrop-blur-md border border-white/10">
-        <TopBtn onClick={() => { setTool("paint"); setEditMode("none"); setPanel(p => p === "brushes" ? null : "brushes"); }} label="Paint" icon={<BrushIcon size={16} />} active={tool === "paint" && editMode === "none"} />
-        <TopBtn onClick={() => { setTool("smudge"); setEditMode("none"); }} label="Smudge" icon={<Droplet size={16} />} active={tool === "smudge"} />
-        <TopBtn onClick={() => { setTool("erase"); setEditMode("none"); }} label="Erase" icon={<Eraser size={16} />} active={tool === "erase"} />
+        <TopBtn onClick={() => { setTool("paint"); setEditMode("none"); setSelectionMode("none"); setPanel(p => p === "brushes" ? null : "brushes"); }} label="Paint" icon={<BrushIcon size={16} />} active={tool === "paint" && editMode === "none"} />
+        <TopBtn onClick={() => { setTool("smudge"); setEditMode("none"); setSelectionMode("none"); }} label="Smudge" icon={<Droplet size={16} />} active={tool === "smudge"} />
+        <TopBtn onClick={() => { setTool("erase"); setEditMode("none"); setSelectionMode("none"); }} label="Erase" icon={<Eraser size={16} />} active={tool === "erase"} />
         <TopBtn onClick={() => setPanel(p => p === "layers" ? null : "layers")} label="Layers" icon={<LayersIcon size={16} />} active={panel === "layers"} />
         <button
           onClick={() => setPanel(p => p === "color" ? null : "color")}
@@ -923,13 +923,13 @@ export function VaultProcreateEditor({
               </button>
             ))}
           </div>
-          <div className="text-[10px] text-white/40 mb-1">{brushes.filter(b => b.category === activeCat).length} in {activeCat}</div>
+          <div className="text-[10px] text-white/40 mb-1">{brushes.filter(b => b.category === activeCat).length} in {activeCat} · active {brush.label}</div>
           <div className="grid grid-cols-2 gap-1.5 overflow-y-auto" style={{ maxHeight: "calc(100vh - 240px)" }}>
             {brushes.filter(b => b.category === activeCat).map(b => (
-              <button key={b.id} onClick={() => setActiveBrushId(b.id)}
+              <button key={b.id} onClick={() => chooseBrush(b)}
                 className={`text-left p-2 rounded border text-white ${activeBrushId === b.id ? "border-[#A855F7] bg-[#A855F7]/15" : "border-white/10 bg-white/5 hover:bg-white/10"}`}>
                 <div className="text-[11px] font-semibold truncate">{b.name}</div>
-                <div className="text-[9px] text-white/50">size {b.size} · flow {b.flow.toFixed(2)} · hard {b.hardness.toFixed(2)}</div>
+                <div className="text-[9px] text-white/50">#{b.index} · {b.texture.replace(/-/g, " ")} · size {b.size} · flow {b.flow.toFixed(2)}</div>
               </button>
             ))}
           </div>
