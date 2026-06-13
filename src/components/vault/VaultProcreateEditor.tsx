@@ -451,6 +451,30 @@ export function VaultProcreateEditor({
 
   function brushPx() { return Math.max(1, Math.round((size / 100) * 240)); }
 
+  function beginGesture() {
+    const pts = [...activePointersRef.current.values()].slice(0, 2);
+    const distance = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    gestureRef.current = { distance, centerX: (pts[0].x + pts[1].x) / 2, centerY: (pts[0].y + pts[1].y) / 2, scale: view.scale, x: view.x, y: view.y };
+  }
+
+  function updateGesture() {
+    const start = gestureRef.current; if (!start) { beginGesture(); return; }
+    const pts = [...activePointersRef.current.values()].slice(0, 2);
+    const distance = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    const centerX = (pts[0].x + pts[1].x) / 2, centerY = (pts[0].y + pts[1].y) / 2;
+    setView({
+      scale: clamp(start.scale * (distance / Math.max(1, start.distance)), 0.35, 6),
+      x: start.x + (centerX - start.centerX) / 2,
+      y: start.y + (centerY - start.centerY) / 2,
+    });
+  }
+
+  function sampleColor(x: number, y: number) {
+    redraw();
+    const data = canvasRef.current!.getContext("2d")!.getImageData(clamp(Math.floor(x), 0, 1023), clamp(Math.floor(y), 0, 1023), 1, 1).data;
+    setColor(`#${[data[0], data[1], data[2]].map(v => v.toString(16).padStart(2, "0")).join("")}`);
+  }
+
   /* ---------- Brush stamping (paint / smudge / erase) ---------- */
   function stamp(p: P) {
     const L = activeLayer(); if (!L) return;
@@ -464,8 +488,10 @@ export function VaultProcreateEditor({
     const jx = (Math.random() - 0.5) * radius * brush.jitter;
     const jy = (Math.random() - 0.5) * radius * brush.jitter;
     const cx = p.x + jx, cy = p.y + jy;
+    if (selection && !pointInSelection(cx, cy, selection)) return;
 
     ctx.save();
+    applySelectionClip(ctx, selection);
     if (L.alphaLock) ctx.globalCompositeOperation = "source-atop";
 
     if (tool === "erase") {
@@ -491,11 +517,7 @@ export function VaultProcreateEditor({
     } else {
       ctx.globalAlpha = alpha;
       ctx.translate(cx, cy); ctx.rotate(angle);
-      const g = ctx.createRadialGradient(0, 0, major * brush.hardness, 0, 0, major);
-      g.addColorStop(0, color);
-      g.addColorStop(1, hexA(color, 0));
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.ellipse(0, 0, major, minor, 0, 0, Math.PI * 2); ctx.fill();
+      renderBrushDab(ctx, brush, color, major, minor, p.pressure);
     }
     ctx.restore();
   }
