@@ -475,6 +475,38 @@ export function VaultProcreateEditor({
     setColor(`#${[data[0], data[1], data[2]].map(v => v.toString(16).padStart(2, "0")).join("")}`);
   }
 
+  function chooseBrush(next: BrushPreset) {
+    setActiveBrushId(next.id);
+    setActiveCat(next.category);
+    setSize(clamp(Math.round((next.size / 120) * 100), 3, 100));
+    setTool("paint");
+    setEditMode("none");
+  }
+
+  function autoSelect(x: number, y: number) {
+    const cv = canvasRef.current!, ctx = cv.getContext("2d")!;
+    const data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    const sx = clamp(Math.floor(x), 0, cv.width - 1), sy = clamp(Math.floor(y), 0, cv.height - 1);
+    const start = (sy * cv.width + sx) * 4;
+    const target = [data[start], data[start + 1], data[start + 2]];
+    const visited = new Uint8Array(cv.width * cv.height);
+    const stack = [[sx, sy]];
+    let minX = sx, maxX = sx, minY = sy, maxY = sy, checked = 0;
+    while (stack.length && checked < 180000) {
+      const [px, py] = stack.pop()!;
+      if (px < 0 || py < 0 || px >= cv.width || py >= cv.height) continue;
+      const pi = py * cv.width + px; if (visited[pi]) continue;
+      visited[pi] = 1; checked++;
+      const di = pi * 4;
+      const delta = Math.abs(data[di] - target[0]) + Math.abs(data[di + 1] - target[1]) + Math.abs(data[di + 2] - target[2]);
+      if (delta > 82) continue;
+      minX = Math.min(minX, px); maxX = Math.max(maxX, px); minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+      stack.push([px + 3, py], [px - 3, py], [px, py + 3], [px, py - 3]);
+    }
+    setSelection({ type: "auto", x: minX, y: minY, w: maxX - minX, h: maxY - minY });
+    drawOverlay();
+  }
+
   /* ---------- Brush stamping (paint / smudge / erase) ---------- */
   function stamp(p: P) {
     const L = activeLayer(); if (!L) return;
