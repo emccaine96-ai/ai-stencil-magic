@@ -734,6 +734,7 @@ export function VaultProcreateEditor({
     >
       {/* ============================ Canvas Stage ============================ */}
       <div className="relative" style={{ width: "min(92vw, 92vh)", height: "min(92vw, 92vh)", transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${mirrorView ? -view.scale : view.scale}, ${view.scale})`, transition: activePointersRef.current.size >= 2 ? "none" : "transform 120ms ease-out" }}>
+        <canvas ref={webglRef} className="absolute inset-0 w-full h-full pointer-events-none opacity-0" aria-hidden="true" />
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full rounded-md shadow-2xl bg-white"
@@ -835,6 +836,7 @@ export function VaultProcreateEditor({
           <Row label="Right-hand interface"><Toggle on={rightHand} onChange={setRightHand} /></Row>
           <Row label="Brush cursor"><Toggle on={brushCursor} onChange={setBrushCursor} /></Row>
           <Row label="Mirror canvas view"><Toggle on={mirrorView} onChange={setMirrorView} /></Row>
+          <Row label="Android render core"><span className="text-[10px] text-white/60">{renderBackend}</span></Row>
           <Row label="Full Screen"><Toggle on={hideUI} onChange={setHideUI} /></Row>
           <button onClick={() => setView({ scale: 1, x: 0, y: 0 })} className="mt-2 w-full py-2 rounded bg-white/5 hover:bg-white/10 text-xs text-white">Reset Zoom / Pan</button>
           <div className="mt-3 text-[11px] text-white/50 leading-relaxed">
