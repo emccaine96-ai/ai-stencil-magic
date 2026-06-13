@@ -145,6 +145,9 @@ export function VaultProcreateEditor({
 
   const undoStackRef = useRef<ImageData[]>([]);
   const redoStackRef = useRef<ImageData[]>([]);
+  const selectionDragRef = useRef<{ start: P; points: { x: number; y: number }[] } | null>(null);
+  const activePointersRef = useRef(new Map<number, P>());
+  const gestureRef = useRef<{ distance: number; centerX: number; centerY: number; scale: number; x: number; y: number } | null>(null);
 
   const [ready, setReady] = useState(false);
   const [tool, setTool] = useState<Tool>("paint");
@@ -159,6 +162,7 @@ export function VaultProcreateEditor({
   const [selection, setSelection] = useState<SelectionShape>(null);
   const [eyedropper, setEyedropper] = useState(false);
   const [mirrorView, setMirrorView] = useState(false);
+  const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
   const [saving, setSaving] = useState(false);
   const [rightHand, setRightHand] = useState(false); // sidebar default left
   const [hideUI, setHideUI] = useState(false);
