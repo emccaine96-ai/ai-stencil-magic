@@ -372,6 +372,15 @@ export function VaultProcreateEditor({
     if (e.pointerType === "pen") strokeRef.current.penActive = true;
     (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
     const p = readPointer(e);
+    activePointersRef.current.set(e.pointerId, p);
+    if (activePointersRef.current.size >= 2) { beginGesture(); return; }
+    if (eyedropper) { sampleColor(p.x, p.y); setEyedropper(false); return; }
+    if (selectionMode !== "none") {
+      selectionDragRef.current = { start: p, points: [{ x: p.x, y: p.y }] };
+      setSelection({ type: selectionMode, x: p.x, y: p.y, w: 1, h: 1, points: selectionMode === "freehand" ? [{ x: p.x, y: p.y }] : undefined });
+      drawOverlay();
+      return;
+    }
     if (editMode === "warp") {
       const cv = canvasRef.current!;
       strokeRef.current.warpNode = pickMeshNode(meshRef.current, p.x / cv.width, p.y / cv.height);
@@ -385,7 +394,19 @@ export function VaultProcreateEditor({
 
   function onMove(e: React.PointerEvent<HTMLCanvasElement>) {
     const p = readPointer(e);
+    activePointersRef.current.set(e.pointerId, p);
     setCursorPos({ x: p.x, y: p.y });
+    if (activePointersRef.current.size >= 2) { updateGesture(); return; }
+    if (selectionDragRef.current) {
+      const s = selectionDragRef.current.start;
+      const points = [...selectionDragRef.current.points, { x: p.x, y: p.y }];
+      selectionDragRef.current.points = points;
+      setSelection(selectionMode === "freehand"
+        ? { type: "freehand", x: s.x, y: s.y, w: p.x - s.x, h: p.y - s.y, points }
+        : { type: selectionMode, x: s.x, y: s.y, w: p.x - s.x, h: p.y - s.y });
+      drawOverlay();
+      return;
+    }
     if (editMode === "warp") {
       const idx = strokeRef.current.warpNode; if (idx == null) return;
       const cv = canvasRef.current!;
@@ -418,7 +439,10 @@ export function VaultProcreateEditor({
   }
 
   function onUp(e: React.PointerEvent<HTMLCanvasElement>) {
+    activePointersRef.current.delete(e.pointerId);
+    if (activePointersRef.current.size < 2) gestureRef.current = null;
     if (e.pointerType === "pen") setTimeout(() => { strokeRef.current.penActive = false; }, 250);
+    if (selectionDragRef.current) { selectionDragRef.current = null; drawOverlay(); return; }
     if (editMode === "warp" && strokeRef.current.warpNode != null) snapshotForUndo();
     else if (strokeRef.current.last) snapshotForUndo();
     strokeRef.current.last = null;
