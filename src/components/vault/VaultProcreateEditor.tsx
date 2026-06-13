@@ -26,17 +26,22 @@ import { saveDocument, makeThumbnail, type DocumentData } from "@/lib/localDB";
 /* ============================ Brush library ============================ */
 
 const BRUSH_CATEGORIES = [
-  "Sketching", "Inking", "Drawing", "Painting", "Airbrushing",
-  "Calligraphy", "Textures", "Organic", "Abstract", "Tattoo",
+  "Liners", "Whip Shading", "Pendulum", "Stipple", "Airbrush",
+  "Magnums", "Charcoal", "Sketch", "Calligraphy", "Wash",
 ] as const;
 type Cat = typeof BRUSH_CATEGORIES[number];
+type BrushTexture =
+  | "round-liner" | "whip-taper" | "pendulum-swing" | "stipple-dot" | "soft-air"
+  | "magnum-rake" | "charcoal-grain" | "pencil-sketch" | "chisel-calligraphy" | "wet-wash";
 
 export type BrushPreset = {
-  id: string; name: string; category: Cat;
+  id: string; index: number; name: string; category: Cat; texture: BrushTexture;
   size: number; flow: number; hardness: number; spacing: number;
   jitter: number; rotJitter: number; pressureSize: number;
-  tiltSensitivity: number;
+  tiltSensitivity: number; label: string;
 };
+
+const FALLBACK_BRUSH_ID = "liners-1";
 
 function seededRng(seed: number) {
   let s = seed | 0;
@@ -48,29 +53,50 @@ export function buildBrushLibrary(): BrushPreset[] {
   const out: BrushPreset[] = [];
   const perCat = 50;
   const sizeBase: Record<Cat, number> = {
-    Sketching: 6, Inking: 5, Drawing: 8, Painting: 26, Airbrushing: 60,
-    Calligraphy: 18, Textures: 32, Organic: 30, Abstract: 40, Tattoo: 7,
+    Liners: 5, "Whip Shading": 13, Pendulum: 18, Stipple: 16, Airbrush: 72,
+    Magnums: 22, Charcoal: 30, Sketch: 7, Calligraphy: 20, Wash: 64,
   };
   const hardBase: Record<Cat, number> = {
-    Sketching: 0.75, Inking: 1.0, Drawing: 0.85, Painting: 0.55, Airbrushing: 0.08,
-    Calligraphy: 0.95, Textures: 0.7, Organic: 0.5, Abstract: 0.4, Tattoo: 1.0,
+    Liners: 1, "Whip Shading": 0.72, Pendulum: 0.64, Stipple: 0.92, Airbrush: 0.05,
+    Magnums: 0.84, Charcoal: 0.42, Sketch: 0.78, Calligraphy: 0.96, Wash: 0.12,
+  };
+  const textureBase: Record<Cat, BrushTexture> = {
+    Liners: "round-liner", "Whip Shading": "whip-taper", Pendulum: "pendulum-swing",
+    Stipple: "stipple-dot", Airbrush: "soft-air", Magnums: "magnum-rake",
+    Charcoal: "charcoal-grain", Sketch: "pencil-sketch", Calligraphy: "chisel-calligraphy", Wash: "wet-wash",
+  };
+  const nameBase: Record<Cat, string[]> = {
+    Liners: ["1 Round Liner", "3 Round Liner", "5 Tight Liner", "Bugpin Liner", "Sculpt Line"],
+    "Whip Shading": ["Soft Whip", "Pepper Whip", "Curve Whip", "Taper Sweep", "Flick Shader"],
+    Pendulum: ["Pendulum Shade", "Swing Fill", "Arc Shader", "Needle Swing", "Soft Pendulum"],
+    Stipple: ["Fine Stipple", "Dust Stipple", "Bold Dot", "Pepper Dot", "Packed Stipple"],
+    Airbrush: ["Soft Air", "Cloud Mist", "Velvet Spray", "Halo Spray", "Skin Fade"],
+    Magnums: ["7 Curved Mag", "11 Soft Mag", "15 Flat Mag", "Bugpin Mag", "Stacked Mag"],
+    Charcoal: ["Vine Charcoal", "Powder Grain", "Compressed Edge", "Soot Block", "Rough Carbon"],
+    Sketch: ["HB Pencil", "Blue Layout", "Graphite Tilt", "Needle Sketch", "Fine Draft"],
+    Calligraphy: ["Chisel Script", "Blade Letter", "Tilt Broad", "Ink Ribbon", "Edge Flourish"],
+    Wash: ["Grey Wash", "Diluted Ink", "Water Bloom", "Soft Glaze", "Skin Tone Wash"],
   };
   BRUSH_CATEGORIES.forEach((cat, ci) => {
     const rng = seededRng(7919 + ci * 131);
     for (let i = 0; i < perCat; i++) {
       const r1 = rng(), r2 = rng(), r3 = rng(), r4 = rng(), r5 = rng();
+      const variant = nameBase[cat][i % nameBase[cat].length];
       out.push({
-        id: `${cat.toLowerCase()}-${i + 1}`,
-        name: `${cat} ${String(i + 1).padStart(2, "0")}`,
+        id: `${cat.toLowerCase().replace(/\s+/g, "-")}-${i + 1}`,
+        index: ci * perCat + i + 1,
+        name: `${variant} ${String(i + 1).padStart(2, "0")}`,
         category: cat,
+        texture: textureBase[cat],
         size: Math.round(sizeBase[cat] * (0.5 + r1 * 1.8)),
         flow: 0.35 + r2 * 0.65,
         hardness: Math.min(1, Math.max(0.05, hardBase[cat] + (r3 - 0.5) * 0.4)),
-        spacing: 0.04 + r4 * 0.14 + (cat === "Textures" || cat === "Abstract" ? 0.2 : 0),
-        jitter: cat === "Organic" || cat === "Abstract" || cat === "Textures" ? 0.2 + r1 * 0.7 : r1 * 0.12,
-        rotJitter: cat === "Textures" || cat === "Abstract" ? r2 : r2 * 0.2,
-        pressureSize: cat === "Tattoo" || cat === "Inking" ? 0.2 + r3 * 0.5 : 0.55 + r3 * 0.45,
-        tiltSensitivity: cat === "Calligraphy" || cat === "Sketching" ? 0.6 + r5 * 0.4 : r5 * 0.4,
+        spacing: cat === "Stipple" ? 0.35 + r4 * 0.35 : cat === "Airbrush" || cat === "Wash" ? 0.12 + r4 * 0.18 : 0.04 + r4 * 0.12,
+        jitter: cat === "Stipple" || cat === "Charcoal" || cat === "Wash" ? 0.3 + r1 * 0.75 : r1 * 0.16,
+        rotJitter: cat === "Pendulum" || cat === "Charcoal" ? 0.35 + r2 * 0.65 : r2 * 0.18,
+        pressureSize: cat === "Liners" || cat === "Calligraphy" ? 0.12 + r3 * 0.35 : 0.5 + r3 * 0.5,
+        tiltSensitivity: cat === "Calligraphy" || cat === "Sketch" || cat === "Charcoal" ? 0.65 + r5 * 0.35 : r5 * 0.45,
+        label: `#${ci * perCat + i + 1} · ${cat} · ${textureBase[cat].replace(/-/g, " ")}`,
       });
     }
   });
@@ -97,6 +123,8 @@ type Layer = {
 
 type Tool = "paint" | "smudge" | "erase";
 type EditMode = "none" | "warp" | "push" | "inflate" | "deflate";
+type SelectionMode = "none" | "freehand" | "rectangle" | "ellipse" | "auto";
+type SelectionShape = { type: SelectionMode; x: number; y: number; w: number; h: number; points?: { x: number; y: number }[] } | null;
 type PanelKey = null | "actions" | "adjustments" | "selections" | "transform" | "layers" | "color" | "brushes";
 
 const COLOR_SWATCHES = [
@@ -114,9 +142,13 @@ export function VaultProcreateEditor({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
+  const webglRef = useRef<HTMLCanvasElement>(null);
 
   const undoStackRef = useRef<ImageData[]>([]);
   const redoStackRef = useRef<ImageData[]>([]);
+  const selectionDragRef = useRef<{ start: P; points: { x: number; y: number }[] } | null>(null);
+  const activePointersRef = useRef(new Map<number, P>());
+  const gestureRef = useRef<{ distance: number; centerX: number; centerY: number; scale: number; x: number; y: number } | null>(null);
 
   const [ready, setReady] = useState(false);
   const [tool, setTool] = useState<Tool>("paint");
@@ -124,9 +156,15 @@ export function VaultProcreateEditor({
   const [size, setSize] = useState(35);            // 0..100
   const [opacity, setOpacity] = useState(100);     // 0..100
   const [color, setColor] = useState("#111111");
-  const [activeBrushId, setActiveBrushId] = useState("sketching-1");
-  const [activeCat, setActiveCat] = useState<Cat>("Sketching");
+  const [activeBrushId, setActiveBrushId] = useState(FALLBACK_BRUSH_ID);
+  const [activeCat, setActiveCat] = useState<Cat>("Liners");
   const [panel, setPanel] = useState<PanelKey>(null);
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>("none");
+  const [selection, setSelection] = useState<SelectionShape>(null);
+  const [eyedropper, setEyedropper] = useState(false);
+  const [mirrorView, setMirrorView] = useState(false);
+  const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
+  const [renderBackend, setRenderBackend] = useState<"WebGL2" | "Canvas2D">("Canvas2D");
   const [saving, setSaving] = useState(false);
   const [rightHand, setRightHand] = useState(false); // sidebar default left
   const [hideUI, setHideUI] = useState(false);
@@ -135,7 +173,7 @@ export function VaultProcreateEditor({
   const [, force] = useState(0);
 
   const brushes = useMemo(buildBrushLibrary, []);
-  const brush = useMemo(() => brushes.find(b => b.id === activeBrushId) ?? brushes[0], [brushes, activeBrushId]);
+  const brush = useMemo(() => resolveBrush(brushes, activeBrushId), [brushes, activeBrushId]);
 
   // Mesh warp grid
   const meshRef = useRef<{ x: number; y: number }[]>(buildMesh());
@@ -149,6 +187,19 @@ export function VaultProcreateEditor({
     return layersRef.current.find(l => l.id === activeLayerIdRef.current) ?? layersRef.current[0] ?? null;
   }
 
+  function initWebGL2Layer() {
+    const glCanvas = webglRef.current;
+    const gl = glCanvas?.getContext("webgl2", { alpha: true, antialias: false, powerPreference: "high-performance", preserveDrawingBuffer: false });
+    if (!gl) { setRenderBackend("Canvas2D"); return; }
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.STENCIL_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    setRenderBackend("WebGL2");
+  }
+
   /* ---------- Init: paint stencil into base layer ---------- */
   useEffect(() => {
     let alive = true;
@@ -156,6 +207,8 @@ export function VaultProcreateEditor({
     const cv = canvasRef.current!;
     cv.width = W; cv.height = H;
     overlayRef.current!.width = W; overlayRef.current!.height = H;
+    if (webglRef.current) { webglRef.current.width = W; webglRef.current.height = H; }
+    initWebGL2Layer();
 
     const base = makeLayer("base", "Base", W, H);
     const ink  = makeLayer("ink", "Ink", W, H);
@@ -243,7 +296,30 @@ export function VaultProcreateEditor({
         ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
       }
     }
+    if (selection && selection.type !== "none") {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,0.95)";
+      ctx.setLineDash([8, 5]);
+      ctx.lineWidth = 2;
+      if (selection.type === "freehand" && selection.points?.length) {
+        ctx.beginPath();
+        selection.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+        ctx.closePath(); ctx.stroke();
+      } else if (selection.type === "ellipse") {
+        ctx.beginPath();
+        ctx.ellipse(selection.x + selection.w / 2, selection.y + selection.h / 2, Math.abs(selection.w / 2), Math.abs(selection.h / 2), 0, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        ctx.strokeRect(selection.x, selection.y, selection.w, selection.h);
+      }
+      ctx.restore();
+    }
   }
+
+  useEffect(() => {
+    if (ready) drawOverlay();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, editMode, selection]);
 
   /* ---------- Undo (composite snapshot of entire stack) ---------- */
   function snapshotForUndo() {
@@ -291,8 +367,9 @@ export function VaultProcreateEditor({
   function toCanvas(e: { clientX: number; clientY: number }) {
     const cv = canvasRef.current!;
     const r = cv.getBoundingClientRect();
+    const rawX = ((e.clientX - r.left) / r.width) * cv.width;
     return {
-      x: ((e.clientX - r.left) / r.width) * cv.width,
+      x: mirrorView ? cv.width - rawX : rawX,
       y: ((e.clientY - r.top) / r.height) * cv.height,
     };
   }
@@ -318,6 +395,16 @@ export function VaultProcreateEditor({
     if (e.pointerType === "pen") strokeRef.current.penActive = true;
     (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
     const p = readPointer(e);
+    activePointersRef.current.set(e.pointerId, p);
+    if (activePointersRef.current.size >= 2) { beginGesture(); return; }
+    if (eyedropper) { sampleColor(p.x, p.y); setEyedropper(false); return; }
+    if (selectionMode !== "none") {
+      if (selectionMode === "auto") { autoSelect(p.x, p.y); return; }
+      selectionDragRef.current = { start: p, points: [{ x: p.x, y: p.y }] };
+      setSelection({ type: selectionMode, x: p.x, y: p.y, w: 1, h: 1, points: selectionMode === "freehand" ? [{ x: p.x, y: p.y }] : undefined });
+      drawOverlay();
+      return;
+    }
     if (editMode === "warp") {
       const cv = canvasRef.current!;
       strokeRef.current.warpNode = pickMeshNode(meshRef.current, p.x / cv.width, p.y / cv.height);
@@ -331,7 +418,19 @@ export function VaultProcreateEditor({
 
   function onMove(e: React.PointerEvent<HTMLCanvasElement>) {
     const p = readPointer(e);
+    activePointersRef.current.set(e.pointerId, p);
     setCursorPos({ x: p.x, y: p.y });
+    if (activePointersRef.current.size >= 2) { updateGesture(); return; }
+    if (selectionDragRef.current) {
+      const s = selectionDragRef.current.start;
+      const points = [...selectionDragRef.current.points, { x: p.x, y: p.y }];
+      selectionDragRef.current.points = points;
+      setSelection(selectionMode === "freehand"
+        ? { type: "freehand", x: s.x, y: s.y, w: p.x - s.x, h: p.y - s.y, points }
+        : { type: selectionMode, x: s.x, y: s.y, w: p.x - s.x, h: p.y - s.y });
+      drawOverlay();
+      return;
+    }
     if (editMode === "warp") {
       const idx = strokeRef.current.warpNode; if (idx == null) return;
       const cv = canvasRef.current!;
@@ -364,7 +463,10 @@ export function VaultProcreateEditor({
   }
 
   function onUp(e: React.PointerEvent<HTMLCanvasElement>) {
+    activePointersRef.current.delete(e.pointerId);
+    if (activePointersRef.current.size < 2) gestureRef.current = null;
     if (e.pointerType === "pen") setTimeout(() => { strokeRef.current.penActive = false; }, 250);
+    if (selectionDragRef.current) { selectionDragRef.current = null; drawOverlay(); return; }
     if (editMode === "warp" && strokeRef.current.warpNode != null) snapshotForUndo();
     else if (strokeRef.current.last) snapshotForUndo();
     strokeRef.current.last = null;
@@ -372,6 +474,62 @@ export function VaultProcreateEditor({
   }
 
   function brushPx() { return Math.max(1, Math.round((size / 100) * 240)); }
+
+  function beginGesture() {
+    const pts = [...activePointersRef.current.values()].slice(0, 2);
+    const distance = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    gestureRef.current = { distance, centerX: (pts[0].x + pts[1].x) / 2, centerY: (pts[0].y + pts[1].y) / 2, scale: view.scale, x: view.x, y: view.y };
+  }
+
+  function updateGesture() {
+    const start = gestureRef.current; if (!start) { beginGesture(); return; }
+    const pts = [...activePointersRef.current.values()].slice(0, 2);
+    const distance = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    const centerX = (pts[0].x + pts[1].x) / 2, centerY = (pts[0].y + pts[1].y) / 2;
+    setView({
+      scale: clamp(start.scale * (distance / Math.max(1, start.distance)), 0.35, 6),
+      x: start.x + (centerX - start.centerX) / 2,
+      y: start.y + (centerY - start.centerY) / 2,
+    });
+  }
+
+  function sampleColor(x: number, y: number) {
+    redraw();
+    const data = canvasRef.current!.getContext("2d")!.getImageData(clamp(Math.floor(x), 0, 1023), clamp(Math.floor(y), 0, 1023), 1, 1).data;
+    setColor(`#${[data[0], data[1], data[2]].map(v => v.toString(16).padStart(2, "0")).join("")}`);
+  }
+
+  function chooseBrush(next: BrushPreset) {
+    setActiveBrushId(next.id);
+    setActiveCat(next.category);
+    setSize(clamp(Math.round((next.size / 120) * 100), 3, 100));
+    setTool("paint");
+    setEditMode("none");
+  }
+
+  function autoSelect(x: number, y: number) {
+    const cv = canvasRef.current!, ctx = cv.getContext("2d")!;
+    const data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    const sx = clamp(Math.floor(x), 0, cv.width - 1), sy = clamp(Math.floor(y), 0, cv.height - 1);
+    const start = (sy * cv.width + sx) * 4;
+    const target = [data[start], data[start + 1], data[start + 2]];
+    const visited = new Uint8Array(cv.width * cv.height);
+    const stack = [[sx, sy]];
+    let minX = sx, maxX = sx, minY = sy, maxY = sy, checked = 0;
+    while (stack.length && checked < 180000) {
+      const [px, py] = stack.pop()!;
+      if (px < 0 || py < 0 || px >= cv.width || py >= cv.height) continue;
+      const pi = py * cv.width + px; if (visited[pi]) continue;
+      visited[pi] = 1; checked++;
+      const di = pi * 4;
+      const delta = Math.abs(data[di] - target[0]) + Math.abs(data[di + 1] - target[1]) + Math.abs(data[di + 2] - target[2]);
+      if (delta > 82) continue;
+      minX = Math.min(minX, px); maxX = Math.max(maxX, px); minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+      stack.push([px + 3, py], [px - 3, py], [px, py + 3], [px, py - 3]);
+    }
+    setSelection({ type: "auto", x: minX, y: minY, w: maxX - minX, h: maxY - minY });
+    drawOverlay();
+  }
 
   /* ---------- Brush stamping (paint / smudge / erase) ---------- */
   function stamp(p: P) {
@@ -386,8 +544,10 @@ export function VaultProcreateEditor({
     const jx = (Math.random() - 0.5) * radius * brush.jitter;
     const jy = (Math.random() - 0.5) * radius * brush.jitter;
     const cx = p.x + jx, cy = p.y + jy;
+    if (selection && !pointInSelection(cx, cy, selection)) return;
 
     ctx.save();
+    applySelectionClip(ctx, selection);
     if (L.alphaLock) ctx.globalCompositeOperation = "source-atop";
 
     if (tool === "erase") {
@@ -413,11 +573,7 @@ export function VaultProcreateEditor({
     } else {
       ctx.globalAlpha = alpha;
       ctx.translate(cx, cy); ctx.rotate(angle);
-      const g = ctx.createRadialGradient(0, 0, major * brush.hardness, 0, 0, major);
-      g.addColorStop(0, color);
-      g.addColorStop(1, hexA(color, 0));
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.ellipse(0, 0, major, minor, 0, 0, Math.PI * 2); ctx.fill();
+      renderBrushDab(ctx, brush, color, major, minor, p.pressure);
     }
     ctx.restore();
   }
@@ -577,7 +733,8 @@ export function VaultProcreateEditor({
       role="dialog" aria-label="Procreate Editor"
     >
       {/* ============================ Canvas Stage ============================ */}
-      <div className="relative" style={{ width: "min(92vw, 92vh)", height: "min(92vw, 92vh)" }}>
+      <div className="relative" style={{ width: "min(92vw, 92vh)", height: "min(92vw, 92vh)", transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${mirrorView ? -view.scale : view.scale}, ${view.scale})`, transition: activePointersRef.current.size >= 2 ? "none" : "transform 120ms ease-out" }}>
+        <canvas ref={webglRef} className="absolute inset-0 w-full h-full pointer-events-none opacity-0" aria-hidden="true" />
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full rounded-md shadow-2xl bg-white"
@@ -630,9 +787,9 @@ export function VaultProcreateEditor({
 
       {/* ============================ Top-right: Painting Tools ============================ */}
       <div className="absolute top-3 right-3 z-20 flex items-center gap-3 px-2 py-1.5 rounded-lg bg-black/40 backdrop-blur-md border border-white/10">
-        <TopBtn onClick={() => { setTool("paint"); setEditMode("none"); setPanel(p => p === "brushes" ? null : "brushes"); }} label="Paint" icon={<BrushIcon size={16} />} active={tool === "paint" && editMode === "none"} />
-        <TopBtn onClick={() => { setTool("smudge"); setEditMode("none"); }} label="Smudge" icon={<Droplet size={16} />} active={tool === "smudge"} />
-        <TopBtn onClick={() => { setTool("erase"); setEditMode("none"); }} label="Erase" icon={<Eraser size={16} />} active={tool === "erase"} />
+        <TopBtn onClick={() => { setTool("paint"); setEditMode("none"); setSelectionMode("none"); setPanel(p => p === "brushes" ? null : "brushes"); }} label="Paint" icon={<BrushIcon size={16} />} active={tool === "paint" && editMode === "none"} />
+        <TopBtn onClick={() => { setTool("smudge"); setEditMode("none"); setSelectionMode("none"); }} label="Smudge" icon={<Droplet size={16} />} active={tool === "smudge"} />
+        <TopBtn onClick={() => { setTool("erase"); setEditMode("none"); setSelectionMode("none"); }} label="Erase" icon={<Eraser size={16} />} active={tool === "erase"} />
         <TopBtn onClick={() => setPanel(p => p === "layers" ? null : "layers")} label="Layers" icon={<LayersIcon size={16} />} active={panel === "layers"} />
         <button
           onClick={() => setPanel(p => p === "color" ? null : "color")}
@@ -646,16 +803,16 @@ export function VaultProcreateEditor({
 
       {/* ============================ Left/Right Sidebar ============================ */}
       <div className={`absolute ${sideClass} top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-3 px-1.5 py-3 rounded-2xl bg-black/40 backdrop-blur-md border border-white/10`}>
-        <VSlider value={size} onChange={setSize} ariaLabel="Brush size" />
+        <VSlider label="Size" value={size} onChange={setSize} ariaLabel="Brush size" />
         <button
-          className="w-7 h-7 rounded border border-white/30 bg-white/5 hover:bg-white/15 grid place-items-center"
-          onClick={() => setPanel(p => p === "color" ? null : "color")}
+          className={`w-7 h-7 rounded border grid place-items-center ${eyedropper ? "border-[#A855F7] bg-[#A855F7]/25" : "border-white/30 bg-white/5 hover:bg-white/15"}`}
+          onClick={() => { setEyedropper(v => !v); setPanel(null); }}
           aria-label="Modify (Eyedropper)"
           title="Modify / Eyedropper"
         >
           <Pipette size={12} className="text-white/80" />
         </button>
-        <VSlider value={opacity} onChange={setOpacity} ariaLabel="Opacity" />
+        <VSlider label="Force" value={opacity} onChange={setOpacity} ariaLabel="Opacity / force" />
         <div className="flex flex-col gap-1 mt-1">
           <button onClick={undo} aria-label="Undo" className="w-7 h-7 grid place-items-center rounded hover:bg-white/10 text-white/80"><Undo2 size={14} /></button>
           <button onClick={redo} aria-label="Redo" className="w-7 h-7 grid place-items-center rounded hover:bg-white/10 text-white/80"><Redo2 size={14} /></button>
@@ -678,9 +835,12 @@ export function VaultProcreateEditor({
         <Panel title="Actions" onClose={() => setPanel(null)} side="left">
           <Row label="Right-hand interface"><Toggle on={rightHand} onChange={setRightHand} /></Row>
           <Row label="Brush cursor"><Toggle on={brushCursor} onChange={setBrushCursor} /></Row>
+          <Row label="Mirror canvas view"><Toggle on={mirrorView} onChange={setMirrorView} /></Row>
+          <Row label="Android render core"><span className="text-[10px] text-white/60">{renderBackend}</span></Row>
           <Row label="Full Screen"><Toggle on={hideUI} onChange={setHideUI} /></Row>
+          <button onClick={() => setView({ scale: 1, x: 0, y: 0 })} className="mt-2 w-full py-2 rounded bg-white/5 hover:bg-white/10 text-xs text-white">Reset Zoom / Pan</button>
           <div className="mt-3 text-[11px] text-white/50 leading-relaxed">
-            Gestures: 2-finger tap = Undo · 3-finger tap = Redo · 4-finger tap = Hide UI.
+            Gestures: pinch = Zoom · two-finger drag = Pan · 2-finger tap = Undo · 3-finger tap = Redo · 4-finger tap = Hide UI.
             Stylus pressure + tilt are auto-detected. Palm rejection is on while pen is active.
           </div>
           <a href="/help" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs text-[#A855F7] hover:underline">
@@ -705,10 +865,18 @@ export function VaultProcreateEditor({
 
       {panel === "selections" && (
         <Panel title="Selections" onClose={() => setPanel(null)} side="left">
-          <div className="text-xs text-white/70 leading-relaxed space-y-2">
-            <p>Freehand, rectangle, ellipse, and automatic color selections. Tap and drag on the canvas to define a region; modifier keys add/subtract.</p>
-            <p className="text-white/40 text-[10px]">Selection rendering is shown via the marching-ants overlay.</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {(["freehand","rectangle","ellipse","auto"] as SelectionMode[]).map(mode => (
+              <button key={mode} onClick={() => { setSelectionMode(mode); setEditMode("none"); }}
+                className={`text-[11px] py-2 rounded capitalize ${selectionMode === mode ? "bg-[#A855F7] text-white" : "bg-white/5 hover:bg-white/10 text-white"}`}>
+                {mode}
+              </button>
+            ))}
+            <button onClick={() => { setSelectionMode("none"); setSelection(null); drawOverlay(); }} className="col-span-2 text-[11px] py-2 rounded bg-white/5 hover:bg-white/10 text-white">
+              Clear Selection
+            </button>
           </div>
+          <div className="mt-3 text-[10px] text-white/40">Freehand, rectangle, ellipse, and automatic color-pick selections clip paint, smudge, and erase.</div>
         </Panel>
       )}
 
@@ -779,13 +947,13 @@ export function VaultProcreateEditor({
               </button>
             ))}
           </div>
-          <div className="text-[10px] text-white/40 mb-1">{brushes.filter(b => b.category === activeCat).length} in {activeCat}</div>
+          <div className="text-[10px] text-white/40 mb-1">{brushes.filter(b => b.category === activeCat).length} in {activeCat} · active {brush.label}</div>
           <div className="grid grid-cols-2 gap-1.5 overflow-y-auto" style={{ maxHeight: "calc(100vh - 240px)" }}>
             {brushes.filter(b => b.category === activeCat).map(b => (
-              <button key={b.id} onClick={() => setActiveBrushId(b.id)}
+              <button key={b.id} onClick={() => chooseBrush(b)}
                 className={`text-left p-2 rounded border text-white ${activeBrushId === b.id ? "border-[#A855F7] bg-[#A855F7]/15" : "border-white/10 bg-white/5 hover:bg-white/10"}`}>
                 <div className="text-[11px] font-semibold truncate">{b.name}</div>
-                <div className="text-[9px] text-white/50">size {b.size} · flow {b.flow.toFixed(2)} · hard {b.hardness.toFixed(2)}</div>
+                <div className="text-[9px] text-white/50">#{b.index} · {b.texture.replace(/-/g, " ")} · size {b.size} · flow {b.flow.toFixed(2)}</div>
               </button>
             ))}
           </div>
@@ -818,9 +986,10 @@ function CapBtn({ active, onClick, icon, label }: { active?: boolean; onClick: (
   );
 }
 
-function VSlider({ value, onChange, ariaLabel }: { value: number; onChange: (v: number) => void; ariaLabel: string }) {
+function VSlider({ label, value, onChange, ariaLabel }: { label: string; value: number; onChange: (v: number) => void; ariaLabel: string }) {
   return (
     <div className="flex flex-col items-center">
+      <div className="text-[8px] uppercase tracking-wide text-white/50 mb-1">{label}</div>
       <div className="text-[9px] text-white/60 mb-1">{value}</div>
       <input
         type="range" min={1} max={100} value={value}
@@ -866,6 +1035,79 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
       <span className={`absolute top-0.5 ${on ? "right-0.5" : "left-0.5"} w-4 h-4 bg-white rounded-full`} />
     </button>
   );
+}
+
+function resolveBrush(brushes: BrushPreset[], idOrIndex: string): BrushPreset {
+  const byId = brushes.find(b => b.id === idOrIndex);
+  if (byId) return byId;
+  const numeric = Number(idOrIndex.replace(/\D/g, ""));
+  const byIndex = Number.isFinite(numeric) ? brushes.find(b => b.index === numeric) : undefined;
+  return byIndex ?? brushes.find(b => b.id === FALLBACK_BRUSH_ID) ?? brushes[0];
+}
+
+function pointInSelection(x: number, y: number, s: SelectionShape) {
+  if (!s || s.type === "none") return true;
+  const x0 = Math.min(s.x, s.x + s.w), x1 = Math.max(s.x, s.x + s.w);
+  const y0 = Math.min(s.y, s.y + s.h), y1 = Math.max(s.y, s.y + s.h);
+  if (s.type === "ellipse") {
+    const rx = Math.max(1, Math.abs(s.w / 2)), ry = Math.max(1, Math.abs(s.h / 2));
+    const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+    return ((x - cx) ** 2) / (rx ** 2) + ((y - cy) ** 2) / (ry ** 2) <= 1;
+  }
+  return x >= x0 && x <= x1 && y >= y0 && y <= y1;
+}
+
+function applySelectionClip(ctx: CanvasRenderingContext2D, s: SelectionShape) {
+  if (!s || s.type === "none") return;
+  ctx.beginPath();
+  if (s.type === "freehand" && s.points?.length) {
+    s.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    ctx.closePath();
+  } else if (s.type === "ellipse") {
+    ctx.ellipse(s.x + s.w / 2, s.y + s.h / 2, Math.abs(s.w / 2), Math.abs(s.h / 2), 0, 0, Math.PI * 2);
+  } else {
+    ctx.rect(s.x, s.y, s.w, s.h);
+  }
+  ctx.clip();
+}
+
+function renderBrushDab(ctx: CanvasRenderingContext2D, brush: BrushPreset, color: string, major: number, minor: number, pressure: number) {
+  const g = ctx.createRadialGradient(0, 0, major * brush.hardness, 0, 0, major);
+  const transparent = hexA(color, 0);
+  if (brush.texture === "round-liner") {
+    ctx.fillStyle = color; ctx.beginPath(); ctx.ellipse(0, 0, major, minor, 0, 0, Math.PI * 2); ctx.fill(); return;
+  }
+  if (brush.texture === "soft-air" || brush.texture === "wet-wash") {
+    g.addColorStop(0, hexA(color, brush.texture === "wet-wash" ? 0.42 : 0.65));
+    g.addColorStop(0.72, hexA(color, 0.16)); g.addColorStop(1, transparent);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, major, 0, Math.PI * 2); ctx.fill(); return;
+  }
+  if (brush.texture === "magnum-rake") {
+    ctx.fillStyle = color;
+    const pins = 7;
+    for (let i = 0; i < pins; i++) {
+      const off = (i - (pins - 1) / 2) * (major * 0.32);
+      ctx.beginPath(); ctx.ellipse(off, 0, major * 0.1, Math.max(2, minor * 0.78), 0, 0, Math.PI * 2); ctx.fill();
+    }
+    return;
+  }
+  if (brush.texture === "stipple-dot" || brush.texture === "charcoal-grain") {
+    ctx.fillStyle = color;
+    const dots = brush.texture === "stipple-dot" ? 5 : 18;
+    for (let i = 0; i < dots; i++) {
+      const a = Math.random() * Math.PI * 2, r = Math.random() * major;
+      const d = Math.max(1, major * (brush.texture === "stipple-dot" ? 0.08 : 0.035) * (0.5 + pressure));
+      ctx.beginPath(); ctx.arc(Math.cos(a) * r, Math.sin(a) * r, d, 0, Math.PI * 2); ctx.fill();
+    }
+    return;
+  }
+  if (brush.texture === "chisel-calligraphy") {
+    ctx.fillStyle = color; ctx.fillRect(-major, -minor * 0.35, major * 2, Math.max(2, minor * 0.7)); return;
+  }
+  if (brush.texture === "whip-taper" || brush.texture === "pendulum-swing" || brush.texture === "pencil-sketch") {
+    g.addColorStop(0, color); g.addColorStop(0.58, hexA(color, 0.65)); g.addColorStop(1, transparent);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, 0, major, minor * (brush.texture === "whip-taper" ? 0.55 : 1), 0, 0, Math.PI * 2); ctx.fill();
+  }
 }
 
 function makeLayer(id: string, name: string, w: number, h: number): Layer {
