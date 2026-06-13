@@ -142,6 +142,7 @@ export function VaultProcreateEditor({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
+  const webglRef = useRef<HTMLCanvasElement>(null);
 
   const undoStackRef = useRef<ImageData[]>([]);
   const redoStackRef = useRef<ImageData[]>([]);
@@ -163,6 +164,7 @@ export function VaultProcreateEditor({
   const [eyedropper, setEyedropper] = useState(false);
   const [mirrorView, setMirrorView] = useState(false);
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
+  const [renderBackend, setRenderBackend] = useState<"WebGL2" | "Canvas2D">("Canvas2D");
   const [saving, setSaving] = useState(false);
   const [rightHand, setRightHand] = useState(false); // sidebar default left
   const [hideUI, setHideUI] = useState(false);
@@ -192,6 +194,8 @@ export function VaultProcreateEditor({
     const cv = canvasRef.current!;
     cv.width = W; cv.height = H;
     overlayRef.current!.width = W; overlayRef.current!.height = H;
+    if (webglRef.current) { webglRef.current.width = W; webglRef.current.height = H; }
+    initWebGL2Layer();
 
     const base = makeLayer("base", "Base", W, H);
     const ink  = makeLayer("ink", "Ink", W, H);
