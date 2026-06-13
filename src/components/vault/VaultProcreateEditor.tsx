@@ -279,6 +279,24 @@ export function VaultProcreateEditor({
         ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
       }
     }
+    if (selection && selection.type !== "none") {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,0.95)";
+      ctx.setLineDash([8, 5]);
+      ctx.lineWidth = 2;
+      if (selection.type === "freehand" && selection.points?.length) {
+        ctx.beginPath();
+        selection.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+        ctx.closePath(); ctx.stroke();
+      } else if (selection.type === "ellipse") {
+        ctx.beginPath();
+        ctx.ellipse(selection.x + selection.w / 2, selection.y + selection.h / 2, Math.abs(selection.w / 2), Math.abs(selection.h / 2), 0, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        ctx.strokeRect(selection.x, selection.y, selection.w, selection.h);
+      }
+      ctx.restore();
+    }
   }
 
   /* ---------- Undo (composite snapshot of entire stack) ---------- */
