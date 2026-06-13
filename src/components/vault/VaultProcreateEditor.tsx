@@ -299,6 +299,11 @@ export function VaultProcreateEditor({
     }
   }
 
+  useEffect(() => {
+    if (ready) drawOverlay();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, editMode, selection]);
+
   /* ---------- Undo (composite snapshot of entire stack) ---------- */
   function snapshotForUndo() {
     const cv = canvasRef.current; if (!cv) return;
@@ -780,7 +785,7 @@ export function VaultProcreateEditor({
 
       {/* ============================ Left/Right Sidebar ============================ */}
       <div className={`absolute ${sideClass} top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-3 px-1.5 py-3 rounded-2xl bg-black/40 backdrop-blur-md border border-white/10`}>
-        <VSlider value={size} onChange={setSize} ariaLabel="Brush size" />
+        <VSlider label="Size" value={size} onChange={setSize} ariaLabel="Brush size" />
         <button
           className={`w-7 h-7 rounded border grid place-items-center ${eyedropper ? "border-[#A855F7] bg-[#A855F7]/25" : "border-white/30 bg-white/5 hover:bg-white/15"}`}
           onClick={() => { setEyedropper(v => !v); setPanel(null); }}
@@ -789,7 +794,7 @@ export function VaultProcreateEditor({
         >
           <Pipette size={12} className="text-white/80" />
         </button>
-        <VSlider value={opacity} onChange={setOpacity} ariaLabel="Opacity" />
+        <VSlider label="Force" value={opacity} onChange={setOpacity} ariaLabel="Opacity / force" />
         <div className="flex flex-col gap-1 mt-1">
           <button onClick={undo} aria-label="Undo" className="w-7 h-7 grid place-items-center rounded hover:bg-white/10 text-white/80"><Undo2 size={14} /></button>
           <button onClick={redo} aria-label="Redo" className="w-7 h-7 grid place-items-center rounded hover:bg-white/10 text-white/80"><Redo2 size={14} /></button>
