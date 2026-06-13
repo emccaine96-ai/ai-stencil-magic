@@ -345,8 +345,9 @@ export function VaultProcreateEditor({
   function toCanvas(e: { clientX: number; clientY: number }) {
     const cv = canvasRef.current!;
     const r = cv.getBoundingClientRect();
+    const rawX = ((e.clientX - r.left) / r.width) * cv.width;
     return {
-      x: ((e.clientX - r.left) / r.width) * cv.width,
+      x: mirrorView ? cv.width - rawX : rawX,
       y: ((e.clientY - r.top) / r.height) * cv.height,
     };
   }
@@ -710,7 +711,7 @@ export function VaultProcreateEditor({
       role="dialog" aria-label="Procreate Editor"
     >
       {/* ============================ Canvas Stage ============================ */}
-      <div className="relative" style={{ width: "min(92vw, 92vh)", height: "min(92vw, 92vh)" }}>
+      <div className="relative" style={{ width: "min(92vw, 92vh)", height: "min(92vw, 92vh)", transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${mirrorView ? -view.scale : view.scale}, ${view.scale})`, transition: activePointersRef.current.size >= 2 ? "none" : "transform 120ms ease-out" }}>
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full rounded-md shadow-2xl bg-white"
