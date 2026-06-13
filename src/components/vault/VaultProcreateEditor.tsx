@@ -782,8 +782,8 @@ export function VaultProcreateEditor({
       <div className={`absolute ${sideClass} top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-3 px-1.5 py-3 rounded-2xl bg-black/40 backdrop-blur-md border border-white/10`}>
         <VSlider value={size} onChange={setSize} ariaLabel="Brush size" />
         <button
-          className="w-7 h-7 rounded border border-white/30 bg-white/5 hover:bg-white/15 grid place-items-center"
-          onClick={() => setPanel(p => p === "color" ? null : "color")}
+          className={`w-7 h-7 rounded border grid place-items-center ${eyedropper ? "border-[#A855F7] bg-[#A855F7]/25" : "border-white/30 bg-white/5 hover:bg-white/15"}`}
+          onClick={() => { setEyedropper(v => !v); setPanel(null); }}
           aria-label="Modify (Eyedropper)"
           title="Modify / Eyedropper"
         >
@@ -812,9 +812,11 @@ export function VaultProcreateEditor({
         <Panel title="Actions" onClose={() => setPanel(null)} side="left">
           <Row label="Right-hand interface"><Toggle on={rightHand} onChange={setRightHand} /></Row>
           <Row label="Brush cursor"><Toggle on={brushCursor} onChange={setBrushCursor} /></Row>
+          <Row label="Mirror canvas view"><Toggle on={mirrorView} onChange={setMirrorView} /></Row>
           <Row label="Full Screen"><Toggle on={hideUI} onChange={setHideUI} /></Row>
+          <button onClick={() => setView({ scale: 1, x: 0, y: 0 })} className="mt-2 w-full py-2 rounded bg-white/5 hover:bg-white/10 text-xs text-white">Reset Zoom / Pan</button>
           <div className="mt-3 text-[11px] text-white/50 leading-relaxed">
-            Gestures: 2-finger tap = Undo · 3-finger tap = Redo · 4-finger tap = Hide UI.
+            Gestures: pinch = Zoom · two-finger drag = Pan · 2-finger tap = Undo · 3-finger tap = Redo · 4-finger tap = Hide UI.
             Stylus pressure + tilt are auto-detected. Palm rejection is on while pen is active.
           </div>
           <a href="/help" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs text-[#A855F7] hover:underline">
@@ -839,10 +841,18 @@ export function VaultProcreateEditor({
 
       {panel === "selections" && (
         <Panel title="Selections" onClose={() => setPanel(null)} side="left">
-          <div className="text-xs text-white/70 leading-relaxed space-y-2">
-            <p>Freehand, rectangle, ellipse, and automatic color selections. Tap and drag on the canvas to define a region; modifier keys add/subtract.</p>
-            <p className="text-white/40 text-[10px]">Selection rendering is shown via the marching-ants overlay.</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {(["freehand","rectangle","ellipse","auto"] as SelectionMode[]).map(mode => (
+              <button key={mode} onClick={() => { setSelectionMode(mode); setEditMode("none"); }}
+                className={`text-[11px] py-2 rounded capitalize ${selectionMode === mode ? "bg-[#A855F7] text-white" : "bg-white/5 hover:bg-white/10 text-white"}`}>
+                {mode}
+              </button>
+            ))}
+            <button onClick={() => { setSelectionMode("none"); setSelection(null); drawOverlay(); }} className="col-span-2 text-[11px] py-2 rounded bg-white/5 hover:bg-white/10 text-white">
+              Clear Selection
+            </button>
           </div>
+          <div className="mt-3 text-[10px] text-white/40">Freehand, rectangle, ellipse, and automatic color-pick selections clip paint, smudge, and erase.</div>
         </Panel>
       )}
 
