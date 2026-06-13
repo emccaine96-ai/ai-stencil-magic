@@ -187,6 +187,19 @@ export function VaultProcreateEditor({
     return layersRef.current.find(l => l.id === activeLayerIdRef.current) ?? layersRef.current[0] ?? null;
   }
 
+  function initWebGL2Layer() {
+    const glCanvas = webglRef.current;
+    const gl = glCanvas?.getContext("webgl2", { alpha: true, antialias: false, powerPreference: "high-performance", preserveDrawingBuffer: false });
+    if (!gl) { setRenderBackend("Canvas2D"); return; }
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.STENCIL_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    setRenderBackend("WebGL2");
+  }
+
   /* ---------- Init: paint stencil into base layer ---------- */
   useEffect(() => {
     let alive = true;
