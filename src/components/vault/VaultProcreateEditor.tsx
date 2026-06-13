@@ -26,17 +26,22 @@ import { saveDocument, makeThumbnail, type DocumentData } from "@/lib/localDB";
 /* ============================ Brush library ============================ */
 
 const BRUSH_CATEGORIES = [
-  "Sketching", "Inking", "Drawing", "Painting", "Airbrushing",
-  "Calligraphy", "Textures", "Organic", "Abstract", "Tattoo",
+  "Liners", "Whip Shading", "Pendulum", "Stipple", "Airbrush",
+  "Magnums", "Charcoal", "Sketch", "Calligraphy", "Wash",
 ] as const;
 type Cat = typeof BRUSH_CATEGORIES[number];
+type BrushTexture =
+  | "round-liner" | "whip-taper" | "pendulum-swing" | "stipple-dot" | "soft-air"
+  | "magnum-rake" | "charcoal-grain" | "pencil-sketch" | "chisel-calligraphy" | "wet-wash";
 
 export type BrushPreset = {
-  id: string; name: string; category: Cat;
+  id: string; index: number; name: string; category: Cat; texture: BrushTexture;
   size: number; flow: number; hardness: number; spacing: number;
   jitter: number; rotJitter: number; pressureSize: number;
-  tiltSensitivity: number;
+  tiltSensitivity: number; label: string;
 };
+
+const FALLBACK_BRUSH_ID = "liners-1";
 
 function seededRng(seed: number) {
   let s = seed | 0;
@@ -48,29 +53,50 @@ export function buildBrushLibrary(): BrushPreset[] {
   const out: BrushPreset[] = [];
   const perCat = 50;
   const sizeBase: Record<Cat, number> = {
-    Sketching: 6, Inking: 5, Drawing: 8, Painting: 26, Airbrushing: 60,
-    Calligraphy: 18, Textures: 32, Organic: 30, Abstract: 40, Tattoo: 7,
+    Liners: 5, "Whip Shading": 13, Pendulum: 18, Stipple: 16, Airbrush: 72,
+    Magnums: 22, Charcoal: 30, Sketch: 7, Calligraphy: 20, Wash: 64,
   };
   const hardBase: Record<Cat, number> = {
-    Sketching: 0.75, Inking: 1.0, Drawing: 0.85, Painting: 0.55, Airbrushing: 0.08,
-    Calligraphy: 0.95, Textures: 0.7, Organic: 0.5, Abstract: 0.4, Tattoo: 1.0,
+    Liners: 1, "Whip Shading": 0.72, Pendulum: 0.64, Stipple: 0.92, Airbrush: 0.05,
+    Magnums: 0.84, Charcoal: 0.42, Sketch: 0.78, Calligraphy: 0.96, Wash: 0.12,
+  };
+  const textureBase: Record<Cat, BrushTexture> = {
+    Liners: "round-liner", "Whip Shading": "whip-taper", Pendulum: "pendulum-swing",
+    Stipple: "stipple-dot", Airbrush: "soft-air", Magnums: "magnum-rake",
+    Charcoal: "charcoal-grain", Sketch: "pencil-sketch", Calligraphy: "chisel-calligraphy", Wash: "wet-wash",
+  };
+  const nameBase: Record<Cat, string[]> = {
+    Liners: ["1 Round Liner", "3 Round Liner", "5 Tight Liner", "Bugpin Liner", "Sculpt Line"],
+    "Whip Shading": ["Soft Whip", "Pepper Whip", "Curve Whip", "Taper Sweep", "Flick Shader"],
+    Pendulum: ["Pendulum Shade", "Swing Fill", "Arc Shader", "Needle Swing", "Soft Pendulum"],
+    Stipple: ["Fine Stipple", "Dust Stipple", "Bold Dot", "Pepper Dot", "Packed Stipple"],
+    Airbrush: ["Soft Air", "Cloud Mist", "Velvet Spray", "Halo Spray", "Skin Fade"],
+    Magnums: ["7 Curved Mag", "11 Soft Mag", "15 Flat Mag", "Bugpin Mag", "Stacked Mag"],
+    Charcoal: ["Vine Charcoal", "Powder Grain", "Compressed Edge", "Soot Block", "Rough Carbon"],
+    Sketch: ["HB Pencil", "Blue Layout", "Graphite Tilt", "Needle Sketch", "Fine Draft"],
+    Calligraphy: ["Chisel Script", "Blade Letter", "Tilt Broad", "Ink Ribbon", "Edge Flourish"],
+    Wash: ["Grey Wash", "Diluted Ink", "Water Bloom", "Soft Glaze", "Skin Tone Wash"],
   };
   BRUSH_CATEGORIES.forEach((cat, ci) => {
     const rng = seededRng(7919 + ci * 131);
     for (let i = 0; i < perCat; i++) {
       const r1 = rng(), r2 = rng(), r3 = rng(), r4 = rng(), r5 = rng();
+      const variant = nameBase[cat][i % nameBase[cat].length];
       out.push({
-        id: `${cat.toLowerCase()}-${i + 1}`,
-        name: `${cat} ${String(i + 1).padStart(2, "0")}`,
+        id: `${cat.toLowerCase().replace(/\s+/g, "-")}-${i + 1}`,
+        index: ci * perCat + i + 1,
+        name: `${variant} ${String(i + 1).padStart(2, "0")}`,
         category: cat,
+        texture: textureBase[cat],
         size: Math.round(sizeBase[cat] * (0.5 + r1 * 1.8)),
         flow: 0.35 + r2 * 0.65,
         hardness: Math.min(1, Math.max(0.05, hardBase[cat] + (r3 - 0.5) * 0.4)),
-        spacing: 0.04 + r4 * 0.14 + (cat === "Textures" || cat === "Abstract" ? 0.2 : 0),
-        jitter: cat === "Organic" || cat === "Abstract" || cat === "Textures" ? 0.2 + r1 * 0.7 : r1 * 0.12,
-        rotJitter: cat === "Textures" || cat === "Abstract" ? r2 : r2 * 0.2,
-        pressureSize: cat === "Tattoo" || cat === "Inking" ? 0.2 + r3 * 0.5 : 0.55 + r3 * 0.45,
-        tiltSensitivity: cat === "Calligraphy" || cat === "Sketching" ? 0.6 + r5 * 0.4 : r5 * 0.4,
+        spacing: cat === "Stipple" ? 0.35 + r4 * 0.35 : cat === "Airbrush" || cat === "Wash" ? 0.12 + r4 * 0.18 : 0.04 + r4 * 0.12,
+        jitter: cat === "Stipple" || cat === "Charcoal" || cat === "Wash" ? 0.3 + r1 * 0.75 : r1 * 0.16,
+        rotJitter: cat === "Pendulum" || cat === "Charcoal" ? 0.35 + r2 * 0.65 : r2 * 0.18,
+        pressureSize: cat === "Liners" || cat === "Calligraphy" ? 0.12 + r3 * 0.35 : 0.5 + r3 * 0.5,
+        tiltSensitivity: cat === "Calligraphy" || cat === "Sketch" || cat === "Charcoal" ? 0.65 + r5 * 0.35 : r5 * 0.45,
+        label: `#${ci * perCat + i + 1} · ${cat} · ${textureBase[cat].replace(/-/g, " ")}`,
       });
     }
   });
