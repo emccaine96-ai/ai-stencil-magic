@@ -967,9 +967,10 @@ function CapBtn({ active, onClick, icon, label }: { active?: boolean; onClick: (
   );
 }
 
-function VSlider({ value, onChange, ariaLabel }: { value: number; onChange: (v: number) => void; ariaLabel: string }) {
+function VSlider({ label, value, onChange, ariaLabel }: { label: string; value: number; onChange: (v: number) => void; ariaLabel: string }) {
   return (
     <div className="flex flex-col items-center">
+      <div className="text-[8px] uppercase tracking-wide text-white/50 mb-1">{label}</div>
       <div className="text-[9px] text-white/60 mb-1">{value}</div>
       <input
         type="range" min={1} max={100} value={value}
