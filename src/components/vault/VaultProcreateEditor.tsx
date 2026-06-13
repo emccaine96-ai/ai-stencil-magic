@@ -376,6 +376,7 @@ export function VaultProcreateEditor({
     if (activePointersRef.current.size >= 2) { beginGesture(); return; }
     if (eyedropper) { sampleColor(p.x, p.y); setEyedropper(false); return; }
     if (selectionMode !== "none") {
+      if (selectionMode === "auto") { autoSelect(p.x, p.y); return; }
       selectionDragRef.current = { start: p, points: [{ x: p.x, y: p.y }] };
       setSelection({ type: selectionMode, x: p.x, y: p.y, w: 1, h: 1, points: selectionMode === "freehand" ? [{ x: p.x, y: p.y }] : undefined });
       drawOverlay();
