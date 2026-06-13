@@ -968,6 +968,79 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   );
 }
 
+function resolveBrush(brushes: BrushPreset[], idOrIndex: string): BrushPreset {
+  const byId = brushes.find(b => b.id === idOrIndex);
+  if (byId) return byId;
+  const numeric = Number(idOrIndex.replace(/\D/g, ""));
+  const byIndex = Number.isFinite(numeric) ? brushes.find(b => b.index === numeric) : undefined;
+  return byIndex ?? brushes.find(b => b.id === FALLBACK_BRUSH_ID) ?? brushes[0];
+}
+
+function pointInSelection(x: number, y: number, s: SelectionShape) {
+  if (!s || s.type === "none") return true;
+  const x0 = Math.min(s.x, s.x + s.w), x1 = Math.max(s.x, s.x + s.w);
+  const y0 = Math.min(s.y, s.y + s.h), y1 = Math.max(s.y, s.y + s.h);
+  if (s.type === "ellipse") {
+    const rx = Math.max(1, Math.abs(s.w / 2)), ry = Math.max(1, Math.abs(s.h / 2));
+    const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+    return ((x - cx) ** 2) / (rx ** 2) + ((y - cy) ** 2) / (ry ** 2) <= 1;
+  }
+  return x >= x0 && x <= x1 && y >= y0 && y <= y1;
+}
+
+function applySelectionClip(ctx: CanvasRenderingContext2D, s: SelectionShape) {
+  if (!s || s.type === "none") return;
+  ctx.beginPath();
+  if (s.type === "freehand" && s.points?.length) {
+    s.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+    ctx.closePath();
+  } else if (s.type === "ellipse") {
+    ctx.ellipse(s.x + s.w / 2, s.y + s.h / 2, Math.abs(s.w / 2), Math.abs(s.h / 2), 0, 0, Math.PI * 2);
+  } else {
+    ctx.rect(s.x, s.y, s.w, s.h);
+  }
+  ctx.clip();
+}
+
+function renderBrushDab(ctx: CanvasRenderingContext2D, brush: BrushPreset, color: string, major: number, minor: number, pressure: number) {
+  const g = ctx.createRadialGradient(0, 0, major * brush.hardness, 0, 0, major);
+  const transparent = hexA(color, 0);
+  if (brush.texture === "round-liner") {
+    ctx.fillStyle = color; ctx.beginPath(); ctx.ellipse(0, 0, major, minor, 0, 0, Math.PI * 2); ctx.fill(); return;
+  }
+  if (brush.texture === "soft-air" || brush.texture === "wet-wash") {
+    g.addColorStop(0, hexA(color, brush.texture === "wet-wash" ? 0.42 : 0.65));
+    g.addColorStop(0.72, hexA(color, 0.16)); g.addColorStop(1, transparent);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, major, 0, Math.PI * 2); ctx.fill(); return;
+  }
+  if (brush.texture === "magnum-rake") {
+    ctx.fillStyle = color;
+    const pins = 7;
+    for (let i = 0; i < pins; i++) {
+      const off = (i - (pins - 1) / 2) * (major * 0.32);
+      ctx.beginPath(); ctx.ellipse(off, 0, major * 0.1, Math.max(2, minor * 0.78), 0, 0, Math.PI * 2); ctx.fill();
+    }
+    return;
+  }
+  if (brush.texture === "stipple-dot" || brush.texture === "charcoal-grain") {
+    ctx.fillStyle = color;
+    const dots = brush.texture === "stipple-dot" ? 5 : 18;
+    for (let i = 0; i < dots; i++) {
+      const a = Math.random() * Math.PI * 2, r = Math.random() * major;
+      const d = Math.max(1, major * (brush.texture === "stipple-dot" ? 0.08 : 0.035) * (0.5 + pressure));
+      ctx.beginPath(); ctx.arc(Math.cos(a) * r, Math.sin(a) * r, d, 0, Math.PI * 2); ctx.fill();
+    }
+    return;
+  }
+  if (brush.texture === "chisel-calligraphy") {
+    ctx.fillStyle = color; ctx.fillRect(-major, -minor * 0.35, major * 2, Math.max(2, minor * 0.7)); return;
+  }
+  if (brush.texture === "whip-taper" || brush.texture === "pendulum-swing" || brush.texture === "pencil-sketch") {
+    g.addColorStop(0, color); g.addColorStop(0.58, hexA(color, 0.65)); g.addColorStop(1, transparent);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, 0, major, minor * (brush.texture === "whip-taper" ? 0.55 : 1), 0, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
 function makeLayer(id: string, name: string, w: number, h: number): Layer {
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
