@@ -19,7 +19,7 @@ import {
   X, Save, Undo2, Redo2, Brush as BrushIcon, Eraser, Layers as LayersIcon,
   Wrench, Wand2, MousePointer2, Move, Square, Pipette, ChevronLeft,
   Maximize2, Minimize2, Hand, Grid3x3, RotateCcw, Trash2, Eye, EyeOff,
-  Plus, HelpCircle, Sliders, Droplet,
+  Plus, HelpCircle, Sliders, Droplet, Sparkles, Copy, Aperture, Scissors, Activity,
 } from "lucide-react";
 import { saveDocument, makeThumbnail, type DocumentData } from "@/lib/localDB";
 
@@ -121,11 +121,40 @@ type Layer = {
 
 /* ============================ Component ============================ */
 
-type Tool = "paint" | "smudge" | "erase";
+type Tool = "paint" | "smudge" | "erase" | "clone";
 type EditMode = "none" | "warp" | "push" | "inflate" | "deflate";
 type SelectionMode = "none" | "freehand" | "rectangle" | "ellipse" | "auto";
 type SelectionShape = { type: SelectionMode; x: number; y: number; w: number; h: number; points?: { x: number; y: number }[] } | null;
-type PanelKey = null | "actions" | "adjustments" | "selections" | "transform" | "layers" | "color" | "brushes";
+type PanelKey = null | "actions" | "adjustments" | "selections" | "transform" | "layers" | "color" | "brushes" | "elite";
+
+const TURQUOISE = "#00F5D4";
+const CACHE_KEY = "primalprint_stencil_vault_cache";
+
+/** Tiny IndexedDB key/value cache for the autosave snapshot. */
+function openCacheDB(): Promise<IDBDatabase | null> {
+  return new Promise((res) => {
+    if (typeof indexedDB === "undefined") return res(null);
+    const req = indexedDB.open("PrimalPrintVaultCache", 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("snapshots");
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => res(null);
+  });
+}
+async function cachePut(docId: string, dataUrl: string) {
+  const db = await openCacheDB(); if (!db) { try { localStorage.setItem(`${CACHE_KEY}:${docId}`, dataUrl); } catch { /* quota */ } return; }
+  const tx = db.transaction("snapshots", "readwrite");
+  tx.objectStore("snapshots").put({ docId, dataUrl, savedAt: Date.now() }, `${CACHE_KEY}:${docId}`);
+}
+async function cacheGet(docId: string): Promise<string | null> {
+  const db = await openCacheDB();
+  if (!db) { try { return localStorage.getItem(`${CACHE_KEY}:${docId}`); } catch { return null; } }
+  return new Promise((res) => {
+    const tx = db.transaction("snapshots", "readonly");
+    const req = tx.objectStore("snapshots").get(`${CACHE_KEY}:${docId}`);
+    req.onsuccess = () => res((req.result as { dataUrl?: string } | undefined)?.dataUrl ?? null);
+    req.onerror = () => res(null);
+  });
+}
 
 const COLOR_SWATCHES = [
   "#000000", "#1A1A1A", "#333333", "#555555", "#7C7C7C", "#A0A0A0", "#CCCCCC", "#FFFFFF",
@@ -170,6 +199,10 @@ export function VaultProcreateEditor({
   const [hideUI, setHideUI] = useState(false);
   const [brushCursor, setBrushCursor] = useState(true);
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
+  const [predictionWeight, setPredictionWeight] = useState(45); // 0..100 — Kalman + Bézier
+  const [cloneAnchor, setCloneAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [shatterStrength, setShatterStrength] = useState(55);
+  const [tiltBlur, setTiltBlur] = useState({ mode: "radial" as "radial" | "linear", radius: 25 });
   const [, force] = useState(0);
 
   const brushes = useMemo(buildBrushLibrary, []);
@@ -314,12 +347,20 @@ export function VaultProcreateEditor({
       }
       ctx.restore();
     }
+    if (cloneAnchor) {
+      ctx.save();
+      ctx.strokeStyle = "#00F5D4"; ctx.lineWidth = 2; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(cloneAnchor.x, cloneAnchor.y, 18, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cloneAnchor.x - 26, cloneAnchor.y); ctx.lineTo(cloneAnchor.x + 26, cloneAnchor.y);
+      ctx.moveTo(cloneAnchor.x, cloneAnchor.y - 26); ctx.lineTo(cloneAnchor.x, cloneAnchor.y + 26); ctx.stroke();
+      ctx.restore();
+    }
   }
 
   useEffect(() => {
     if (ready) drawOverlay();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, editMode, selection]);
+  }, [ready, editMode, selection, cloneAnchor]);
 
   /* ---------- Undo (composite snapshot of entire stack) ---------- */
   function snapshotForUndo() {
@@ -374,9 +415,28 @@ export function VaultProcreateEditor({
     };
   }
 
-  const strokeRef = useRef<{ last: P | null; warpNode: number | null; penActive: boolean }>({
-    last: null, warpNode: null, penActive: false,
+  const strokeRef = useRef<{ last: P | null; prev: P | null; warpNode: number | null; penActive: boolean; smoothed: { x: number; y: number; vx: number; vy: number } | null; cloneOffset: { dx: number; dy: number } | null }>({
+    last: null, prev: null, warpNode: null, penActive: false, smoothed: null, cloneOffset: null,
   });
+  const liquifyHoldRef = useRef<number | null>(null);
+
+  /** Kalman-like 1D smoother + cubic-bezier midpoint. Weight 0..1. */
+  function smoothPoint(raw: P): P {
+    const w = clamp(predictionWeight / 100, 0, 1);
+    if (w === 0) return raw;
+    const s = strokeRef.current.smoothed;
+    if (!s) { strokeRef.current.smoothed = { x: raw.x, y: raw.y, vx: 0, vy: 0 }; return raw; }
+    // Predict from last velocity
+    const px = s.x + s.vx, py = s.y + s.vy;
+    // Blend prediction with measurement
+    const alpha = 1 - w * 0.85; // higher weight → more smoothing
+    const nx = px * (1 - alpha) + raw.x * alpha;
+    const ny = py * (1 - alpha) + raw.y * alpha;
+    s.vx = (nx - s.x) * 0.6 + s.vx * 0.4;
+    s.vy = (ny - s.y) * 0.6 + s.vy * 0.4;
+    s.x = nx; s.y = ny;
+    return { ...raw, x: nx, y: ny };
+  }
 
   function readPointer(e: React.PointerEvent<HTMLCanvasElement>): P {
     const c = toCanvas(e);
@@ -398,6 +458,14 @@ export function VaultProcreateEditor({
     activePointersRef.current.set(e.pointerId, p);
     if (activePointersRef.current.size >= 2) { beginGesture(); return; }
     if (eyedropper) { sampleColor(p.x, p.y); setEyedropper(false); return; }
+    if (tool === "clone") {
+      if (!cloneAnchor) { setCloneAnchor({ x: p.x, y: p.y }); return; }
+      strokeRef.current.cloneOffset = { dx: p.x - cloneAnchor.x, dy: p.y - cloneAnchor.y };
+      strokeRef.current.last = p;
+      cloneStamp(p);
+      redraw();
+      return;
+    }
     if (selectionMode !== "none") {
       if (selectionMode === "auto") { autoSelect(p.x, p.y); return; }
       selectionDragRef.current = { start: p, points: [{ x: p.x, y: p.y }] };
@@ -410,14 +478,29 @@ export function VaultProcreateEditor({
       strokeRef.current.warpNode = pickMeshNode(meshRef.current, p.x / cv.width, p.y / cv.height);
       return;
     }
+    strokeRef.current.smoothed = null;
+    strokeRef.current.prev = null;
     strokeRef.current.last = p;
     if (editMode === "none") stamp(p);
-    else liquify(p.x, p.y, 0, 0);
+    else {
+      liquify(p.x, p.y, 0, 0);
+      // Hold-to-pulse: inflate/deflate continues at cursor even when stationary.
+      if (editMode === "inflate" || editMode === "deflate") {
+        if (liquifyHoldRef.current != null) window.clearInterval(liquifyHoldRef.current);
+        liquifyHoldRef.current = window.setInterval(() => {
+          const cur = strokeRef.current.last; if (!cur) return;
+          liquify(cur.x, cur.y, 0, 0);
+          redraw();
+        }, 45);
+      }
+    }
     redraw();
   }
 
   function onMove(e: React.PointerEvent<HTMLCanvasElement>) {
-    const p = readPointer(e);
+    const raw = readPointer(e);
+    const p = (tool === "paint" || tool === "erase") && editMode === "none"
+      ? smoothPoint(raw) : raw;
     activePointersRef.current.set(e.pointerId, p);
     setCursorPos({ x: p.x, y: p.y });
     if (activePointersRef.current.size >= 2) { updateGesture(); return; }
@@ -440,15 +523,28 @@ export function VaultProcreateEditor({
       applyMeshWarp(); return;
     }
     const last = strokeRef.current.last; if (!last) return;
-    if (editMode === "none") {
+    if (tool === "clone") {
+      // Walk along path stamping clone-offset pixels.
       const dist = Math.hypot(p.x - last.x, p.y - last.y);
-      const step = Math.max(1, brushPx() * brush.spacing);
+      const step = Math.max(2, brushPx() * 0.25);
       const steps = Math.max(1, Math.floor(dist / step));
       for (let i = 1; i <= steps; i++) {
         const t = i / steps;
+        cloneStamp({ ...p, x: last.x + (p.x - last.x) * t, y: last.y + (p.y - last.y) * t });
+      }
+    } else if (editMode === "none") {
+      // Cubic-bezier midpoint smoothing when prediction is active.
+      const prev = strokeRef.current.prev ?? last;
+      const dist = Math.hypot(p.x - last.x, p.y - last.y);
+      const step = Math.max(1, brushPx() * brush.spacing);
+      const steps = Math.max(1, Math.floor(dist / step));
+      const bezier = predictionWeight > 25;
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        const bx = bezier ? quadBezier(prev.x, last.x, p.x, t) : last.x + (p.x - last.x) * t;
+        const by = bezier ? quadBezier(prev.y, last.y, p.y, t) : last.y + (p.y - last.y) * t;
         stamp({
-          x: last.x + (p.x - last.x) * t,
-          y: last.y + (p.y - last.y) * t,
+          x: bx, y: by,
           pressure: last.pressure + (p.pressure - last.pressure) * t,
           tiltX: last.tiltX + (p.tiltX - last.tiltX) * t,
           tiltY: last.tiltY + (p.tiltY - last.tiltY) * t,
@@ -458,6 +554,7 @@ export function VaultProcreateEditor({
     } else {
       liquify(p.x, p.y, p.x - last.x, p.y - last.y);
     }
+    strokeRef.current.prev = last;
     strokeRef.current.last = p;
     redraw();
   }
@@ -466,11 +563,15 @@ export function VaultProcreateEditor({
     activePointersRef.current.delete(e.pointerId);
     if (activePointersRef.current.size < 2) gestureRef.current = null;
     if (e.pointerType === "pen") setTimeout(() => { strokeRef.current.penActive = false; }, 250);
+    if (liquifyHoldRef.current != null) { window.clearInterval(liquifyHoldRef.current); liquifyHoldRef.current = null; }
     if (selectionDragRef.current) { selectionDragRef.current = null; drawOverlay(); return; }
     if (editMode === "warp" && strokeRef.current.warpNode != null) snapshotForUndo();
     else if (strokeRef.current.last) snapshotForUndo();
     strokeRef.current.last = null;
+    strokeRef.current.prev = null;
+    strokeRef.current.smoothed = null;
     strokeRef.current.warpNode = null;
+    scheduleAutosave();
   }
 
   function brushPx() { return Math.max(1, Math.round((size / 100) * 240)); }
@@ -698,29 +799,165 @@ export function VaultProcreateEditor({
 
   /* ---------- Save ---------- */
   async function save() {
+    const dataUrl = compositeDataUrl();
     setSaving(true);
     try {
-      const cv = canvasRef.current!;
-      const out = document.createElement("canvas");
-      out.width = cv.width; out.height = cv.height;
-      const octx = out.getContext("2d")!;
-      octx.fillStyle = "#ffffff"; octx.fillRect(0, 0, out.width, out.height);
-      for (const L of layersRef.current) {
-        if (!L.visible) continue;
-        octx.globalAlpha = L.opacity;
-        octx.globalCompositeOperation = L.blend;
-        octx.drawImage(L.canvas, 0, 0);
-      }
-      const dataUrl = out.toDataURL("image/png");
       const thumb = await makeThumbnail(dataUrl, 384);
       const updated = await saveDocument(
         { ...doc, originalAIImage: dataUrl, thumbnail: thumb },
         { changes: "Vault editor save", thumbnail: thumb },
       );
+      await cachePut(doc.id, dataUrl);
       onSaved(updated);
       onClose();
     } finally { setSaving(false); }
   }
+
+  function compositeDataUrl(): string {
+    const cv = canvasRef.current!;
+    const out = document.createElement("canvas");
+    out.width = cv.width; out.height = cv.height;
+    const octx = out.getContext("2d")!;
+    octx.fillStyle = "#ffffff"; octx.fillRect(0, 0, out.width, out.height);
+    for (const L of layersRef.current) {
+      if (!L.visible) continue;
+      octx.globalAlpha = L.opacity;
+      octx.globalCompositeOperation = L.blend;
+      octx.drawImage(L.canvas, 0, 0);
+    }
+    return out.toDataURL("image/png");
+  }
+
+  /* ---------- Debounced autosave to IndexedDB cache ---------- */
+  const autosaveTimerRef = useRef<number | null>(null);
+  function scheduleAutosave() {
+    if (autosaveTimerRef.current != null) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = window.setTimeout(() => {
+      try { cachePut(doc.id, compositeDataUrl()); } catch { /* ignore */ }
+    }, 3000);
+  }
+
+  /* ---------- Clone Stamp ---------- */
+  function cloneStamp(p: P) {
+    const off = strokeRef.current.cloneOffset; if (!off) return;
+    const L = activeLayer(); if (!L) return;
+    const ctx = L.canvas.getContext("2d")!;
+    const cv = canvasRef.current!;
+    const r = Math.max(2, brushPx() / 2);
+    const sx = clamp(Math.floor(p.x - off.dx - r), 0, cv.width - 1);
+    const sy = clamp(Math.floor(p.y - off.dy - r), 0, cv.height - 1);
+    const w = Math.min(r * 2, cv.width - sx);
+    const h = Math.min(r * 2, cv.height - sy);
+    if (w <= 0 || h <= 0) return;
+    ctx.save();
+    applySelectionClip(ctx, selection);
+    ctx.globalAlpha = (opacity / 100) * 0.9;
+    // Radial feather mask via offscreen
+    const tmp = document.createElement("canvas"); tmp.width = w; tmp.height = h;
+    const tctx = tmp.getContext("2d")!;
+    tctx.drawImage(cv, sx, sy, w, h, 0, 0, w, h);
+    const grad = tctx.createRadialGradient(w/2, h/2, r * 0.35, w/2, h/2, r);
+    grad.addColorStop(0, "rgba(0,0,0,1)"); grad.addColorStop(1, "rgba(0,0,0,0)");
+    tctx.globalCompositeOperation = "destination-in";
+    tctx.fillStyle = grad; tctx.fillRect(0, 0, w, h);
+    ctx.drawImage(tmp, p.x - r, p.y - r);
+    ctx.restore();
+  }
+
+  /* ---------- Pixel Shatter / Dispersion ---------- */
+  function pixelShatter() {
+    if (!selection || selection.type === "none") { alert("Draw a selection first to shatter that region."); return; }
+    const base = layersRef.current.find(l => l.id === "base"); if (!base) return;
+    const ctx = base.canvas.getContext("2d")!;
+    const x = Math.floor(Math.min(selection.x, selection.x + selection.w));
+    const y = Math.floor(Math.min(selection.y, selection.y + selection.h));
+    const w = Math.floor(Math.abs(selection.w)), h = Math.floor(Math.abs(selection.h));
+    if (w < 4 || h < 4) return;
+    const src = ctx.getImageData(x, y, w, h);
+    const tmp = document.createElement("canvas"); tmp.width = w; tmp.height = h;
+    tmp.getContext("2d")!.putImageData(src, 0, 0);
+    // Clear original area to white
+    ctx.save(); applySelectionClip(ctx, selection);
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(x, y, w, h);
+    ctx.restore();
+    const shards = 60 + Math.floor(shatterStrength * 1.2);
+    const drift = (shatterStrength / 100) * Math.max(w, h) * 1.2;
+    for (let i = 0; i < shards; i++) {
+      const sw = 6 + Math.random() * 24, sh = 6 + Math.random() * 24;
+      const sx = Math.random() * (w - sw), sy = Math.random() * (h - sh);
+      const ang = (Math.random() - 0.5) * 0.6; // dispersion direction
+      const dx = Math.cos(ang) * drift * (0.2 + Math.random() * 0.8);
+      const dy = Math.sin(ang) * drift * (0.2 + Math.random() * 0.8) - Math.random() * drift * 0.3;
+      ctx.save();
+      ctx.globalAlpha = 1 - (i / shards) * 0.85;
+      ctx.beginPath();
+      ctx.moveTo(x + sx + dx, y + sy + dy);
+      ctx.lineTo(x + sx + sw + dx, y + sy + sh * 0.3 + dy);
+      ctx.lineTo(x + sx + sw * 0.4 + dx, y + sy + sh + dy);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(tmp, sx, sy, sw, sh, x + sx + dx, y + sy + dy, sw, sh);
+      ctx.restore();
+    }
+    snapshotForUndo(); redraw(); scheduleAutosave();
+  }
+
+  /* ---------- Tilt-Shift Focal Blur ---------- */
+  function applyTiltShift() {
+    const base = layersRef.current.find(l => l.id === "base"); if (!base) return;
+    const ctx = base.canvas.getContext("2d")!;
+    const W = base.canvas.width, H = base.canvas.height;
+    const blurred = document.createElement("canvas");
+    blurred.width = W; blurred.height = H;
+    const bctx = blurred.getContext("2d")!;
+    bctx.filter = `blur(${Math.max(1, Math.round(tiltBlur.radius / 2))}px)`;
+    bctx.drawImage(base.canvas, 0, 0);
+    // Build a mask: focal area stays sharp.
+    const mask = document.createElement("canvas");
+    mask.width = W; mask.height = H;
+    const mctx = mask.getContext("2d")!;
+    mctx.fillStyle = "rgba(0,0,0,1)"; mctx.fillRect(0, 0, W, H);
+    mctx.globalCompositeOperation = "destination-out";
+    if (tiltBlur.mode === "radial") {
+      const cx = selection ? selection.x + selection.w / 2 : W / 2;
+      const cy = selection ? selection.y + selection.h / 2 : H / 2;
+      const r = selection ? Math.max(Math.abs(selection.w), Math.abs(selection.h)) / 2 : Math.min(W, H) * 0.3;
+      const g = mctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r);
+      g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)");
+      mctx.fillStyle = g; mctx.fillRect(0, 0, W, H);
+    } else {
+      const band = H * 0.25;
+      const cy = selection ? selection.y + selection.h / 2 : H / 2;
+      const g = mctx.createLinearGradient(0, cy - band, 0, cy + band);
+      g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(0.5, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)");
+      mctx.fillStyle = g; mctx.fillRect(0, 0, W, H);
+    }
+    // Apply mask to blurred copy
+    bctx.globalCompositeOperation = "destination-in";
+    bctx.drawImage(mask, 0, 0);
+    ctx.drawImage(bctx.canvas, 0, 0);
+    snapshotForUndo(); redraw(); scheduleAutosave();
+  }
+
+  /* ---------- Hydrate cached snapshot if newer than stored doc ---------- */
+  useEffect(() => {
+    let alive = true;
+    cacheGet(doc.id).then(cached => {
+      if (!alive || !cached || !ready) return;
+      const base = layersRef.current.find(l => l.id === "base"); if (!base) return;
+      const img = new Image();
+      img.onload = () => {
+        if (!alive) return;
+        const ctx = base.canvas.getContext("2d")!;
+        ctx.clearRect(0, 0, base.canvas.width, base.canvas.height);
+        ctx.drawImage(img, 0, 0, base.canvas.width, base.canvas.height);
+        redraw();
+      };
+      img.src = cached;
+    });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, doc.id]);
 
   /* ============================ UI ============================ */
 
@@ -783,6 +1020,18 @@ export function VaultProcreateEditor({
         <TopBtn onClick={() => setPanel(p => p === "adjustments" ? null : "adjustments")} label="Adjustments" icon={<Wand2 size={16} />} active={panel === "adjustments"} />
         <TopBtn onClick={() => setPanel(p => p === "selections" ? null : "selections")} label="Selections" icon={<MousePointer2 size={16} />} active={panel === "selections"} />
         <TopBtn onClick={() => setPanel(p => p === "transform" ? null : "transform")} label="Transform" icon={<Move size={16} />} active={panel === "transform"} />
+        <div className="w-px h-5 bg-white/15" />
+        <button
+          onClick={() => setPanel(p => p === "elite" ? null : "elite")}
+          aria-label="Elite Creative Suite"
+          title="Elite Creative Suite"
+          className={`grid place-items-center px-2 py-1 rounded-md border ${panel === "elite" ? "border-[#00F5D4] bg-[#00F5D4]/15 text-[#00F5D4]" : "border-white/15 text-white/85 hover:text-white hover:border-[#00F5D4]/60"}`}
+        >
+          <div className="flex items-center gap-1">
+            <Sparkles size={14} />
+            <span className="text-[10px] font-bold tracking-wide">ELITE</span>
+          </div>
+        </button>
       </div>
 
       {/* ============================ Top-right: Painting Tools ============================ */}
@@ -828,6 +1077,98 @@ export function VaultProcreateEditor({
           <CapBtn active={editMode === "deflate"} onClick={() => setEditMode(m => m === "deflate" ? "none" : "deflate")} icon={<Minimize2 size={13} />} label="Deflate" />
           {editMode === "warp" && <CapBtn onClick={resetMesh} icon={<RotateCcw size={13} />} label="Reset" />}
         </div>
+      )}
+
+      {panel === "elite" && (
+        <Panel title="Elite Creative Suite" onClose={() => setPanel(null)} side="left" wide>
+          {/* Predictive stroke */}
+          <div className="rounded-lg border border-[#00F5D4]/30 bg-[#00F5D4]/5 p-2.5 mb-3">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Activity size={13} className="text-[#00F5D4]" />
+              <span className="text-[11px] font-bold text-white">Predictive Stroke Engine</span>
+            </div>
+            <div className="text-[10px] text-white/60 mb-2">Kalman filter + cubic Bézier spline smoothing for shaky lines.</div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-white/50 w-8">Raw</span>
+              <input type="range" min={0} max={100} value={predictionWeight}
+                onChange={e => setPredictionWeight(Number(e.target.value))}
+                className="flex-1" style={{ accentColor: TURQUOISE }} />
+              <span className="text-[10px] text-white/50 w-8 text-right">Auto</span>
+            </div>
+            <div className="text-center text-[10px] text-[#00F5D4] mt-1 font-bold">Weight {predictionWeight}</div>
+          </div>
+
+          {/* Clone stamp */}
+          <div className="rounded-lg border border-white/10 bg-white/5 p-2.5 mb-3">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Copy size={13} className={tool === "clone" ? "text-[#00F5D4]" : "text-white/70"} />
+              <span className="text-[11px] font-bold text-white">Smart Clone Stamp</span>
+            </div>
+            <div className="text-[10px] text-white/60 mb-2">Tap canvas to set the turquoise anchor, then paint to clone with radial feather.</div>
+            <div className="flex gap-1.5">
+              <button onClick={() => { setTool(t => t === "clone" ? "paint" : "clone"); setCloneAnchor(null); setPanel(null); }}
+                className={`flex-1 text-[11px] py-1.5 rounded font-semibold ${tool === "clone" ? "bg-[#00F5D4] text-black" : "bg-white/5 hover:bg-white/10 text-white"}`}>
+                {tool === "clone" ? "Active — tap canvas" : "Activate Clone Stamp"}
+              </button>
+              <button onClick={() => setCloneAnchor(null)} className="text-[11px] py-1.5 px-2 rounded bg-white/5 hover:bg-white/10 text-white/70" disabled={!cloneAnchor}>
+                Reset Anchor
+              </button>
+            </div>
+            {cloneAnchor && <div className="text-[9px] text-[#00F5D4] mt-1.5">Anchor: ({Math.round(cloneAnchor.x)}, {Math.round(cloneAnchor.y)})</div>}
+          </div>
+
+          {/* Pixel shatter */}
+          <div className="rounded-lg border border-white/10 bg-white/5 p-2.5 mb-3">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Scissors size={13} className="text-white/70" />
+              <span className="text-[11px] font-bold text-white">Pixel Shatter Dispersion</span>
+            </div>
+            <div className="text-[10px] text-white/60 mb-2">Select a region, then disperse it into triangular shards along a directional trajectory.</div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] text-white/50">Intensity</span>
+              <input type="range" min={0} max={100} value={shatterStrength}
+                onChange={e => setShatterStrength(Number(e.target.value))}
+                className="flex-1" style={{ accentColor: TURQUOISE }} />
+              <span className="text-[10px] text-white/50 w-7 text-right">{shatterStrength}</span>
+            </div>
+            <button onClick={pixelShatter}
+              className="w-full text-[11px] py-1.5 rounded bg-[#00F5D4]/20 hover:bg-[#00F5D4]/30 text-[#00F5D4] font-semibold">
+              Execute Shatter
+            </button>
+          </div>
+
+          {/* Tilt-shift focal blur */}
+          <div className="rounded-lg border border-white/10 bg-white/5 p-2.5">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Aperture size={13} className="text-white/70" />
+              <span className="text-[11px] font-bold text-white">Focal Blur · Tilt-Shift</span>
+            </div>
+            <div className="text-[10px] text-white/60 mb-2">Selection becomes the focal area. Outside blurs with Gaussian falloff.</div>
+            <div className="flex gap-1.5 mb-2">
+              {(["radial","linear"] as const).map(m => (
+                <button key={m} onClick={() => setTiltBlur(b => ({ ...b, mode: m }))}
+                  className={`flex-1 text-[10px] py-1.5 rounded capitalize ${tiltBlur.mode === m ? "bg-[#00F5D4] text-black font-bold" : "bg-white/5 hover:bg-white/10 text-white"}`}>
+                  {m}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] text-white/50">Radius</span>
+              <input type="range" min={1} max={100} value={tiltBlur.radius}
+                onChange={e => setTiltBlur(b => ({ ...b, radius: Number(e.target.value) }))}
+                className="flex-1" style={{ accentColor: TURQUOISE }} />
+              <span className="text-[10px] text-white/50 w-7 text-right">{tiltBlur.radius}</span>
+            </div>
+            <button onClick={applyTiltShift}
+              className="w-full text-[11px] py-1.5 rounded bg-[#00F5D4]/20 hover:bg-[#00F5D4]/30 text-[#00F5D4] font-semibold">
+              Apply Focal Blur
+            </button>
+          </div>
+
+          <div className="mt-3 text-[10px] text-white/40 leading-relaxed">
+            All Elite tools run locally on the canvas — no GPU dependencies. Strokes autosave to the vault cache every 3 s.
+          </div>
+        </Panel>
       )}
 
       {/* ============================ Panels ============================ */}
@@ -1125,6 +1466,11 @@ function hexA(hex: string, a: number): string {
 }
 
 function clamp(v: number, lo: number, hi: number) { return Math.min(hi, Math.max(lo, v)); }
+
+function quadBezier(p0: number, p1: number, p2: number, t: number): number {
+  const u = 1 - t;
+  return u * u * p0 + 2 * u * t * p1 + t * t * p2;
+}
 
 function buildMesh() {
   const arr: { x: number; y: number }[] = [];

@@ -2,12 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft, Download, Trash2, Inbox, Wand2, Search, LayoutGrid, List as ListIcon,
-  Folder as FolderIcon, FolderPlus, ChevronRight, ChevronDown, Upload, Tag, X,
+  Folder as FolderIcon, FolderPlus, ChevronRight, ChevronDown, Upload, Tag, X, Pencil,
 } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
 import {
   listDocuments, listFolders, deleteDocument, deleteFolder, createFolder,
-  moveDocumentToFolder, exportBackup, importBackup, saveDocument,
+  moveDocumentToFolder, exportBackup, importBackup, saveDocument, createDocument,
   type DocumentData, type Folder, type BackupBundle,
 } from "@/lib/localDB";
 import { VaultProcreateEditor } from "@/components/vault/VaultProcreateEditor";
@@ -153,6 +153,27 @@ function VaultPage() {
     refresh();
   }
 
+  /** Create a blank document and open the editor in free-draw mode. */
+  async function onNewPractice() {
+    const W = 1024, H = 1024;
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const ctx = c.getContext("2d")!;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, W, H);
+    const blank = c.toDataURL("image/png");
+    const doc = await createDocument({
+      name: `Practice Sketch ${new Date().toLocaleDateString()}`,
+      tags: ["practice"],
+      thumbnail: blank,
+      originalAIImage: blank,
+      style: "freehand",
+      folderId: activeFolder,
+    });
+    setEditing(doc);
+    refresh();
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
@@ -177,6 +198,9 @@ function VaultPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            <button onClick={onNewPractice} className="rounded-full bg-gradient-to-r from-[#00F5D4] to-[#00B8A9] text-black px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-[#00F5D4]/20 hover:brightness-110">
+              <Pencil size={14} /> Free Draw
+            </button>
             <button onClick={onExport} className="rounded-full border border-border px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 hover:border-primary">
               <Download size={14} /> Export
             </button>
