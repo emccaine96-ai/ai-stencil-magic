@@ -347,12 +347,20 @@ export function VaultProcreateEditor({
       }
       ctx.restore();
     }
+    if (cloneAnchor) {
+      ctx.save();
+      ctx.strokeStyle = "#00F5D4"; ctx.lineWidth = 2; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(cloneAnchor.x, cloneAnchor.y, 18, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cloneAnchor.x - 26, cloneAnchor.y); ctx.lineTo(cloneAnchor.x + 26, cloneAnchor.y);
+      ctx.moveTo(cloneAnchor.x, cloneAnchor.y - 26); ctx.lineTo(cloneAnchor.x, cloneAnchor.y + 26); ctx.stroke();
+      ctx.restore();
+    }
   }
 
   useEffect(() => {
     if (ready) drawOverlay();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, editMode, selection]);
+  }, [ready, editMode, selection, cloneAnchor]);
 
   /* ---------- Undo (composite snapshot of entire stack) ---------- */
   function snapshotForUndo() {
