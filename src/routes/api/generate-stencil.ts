@@ -9,9 +9,9 @@ export const Route = createFileRoute("/api/generate-stencil")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const key = process.env.LOVABLE_API_KEY;
+        const key = process.env.GEMINI_API_KEY;
         if (!key) {
-          return Response.json({ error: "Missing LOVABLE_API_KEY" }, { status: 500 });
+          return Response.json({ error: "Missing GEMINI_API_KEY" }, { status: 500 });
         }
         let body: Body;
         try {
@@ -23,44 +23,38 @@ export const Route = createFileRoute("/api/generate-stencil")({
           return Response.json({ error: "prompt and image are required" }, { status: 400 });
         }
 
-        const upstream = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${key}`,
-            "Content-Type": "application/json",
+        const upstream = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${encodeURIComponent(key)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    { text: body.prompt },
+                    { inline_data: { mime_type: body.image.mimeType, data: body.image.data } },
+                  ],
+                },
+              ],
+              generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
+            }),
           },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash-image",
-            modalities: ["image", "text"],
-            messages: [
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: body.prompt },
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: `data:${body.image.mimeType};base64,${body.image.data}`,
-                    },
-                  },
-                ],
-              },
-            ],
-          }),
-        });
+        );
 
         const text = await upstream.text();
         if (!upstream.ok) {
           if (upstream.status === 429) {
             return Response.json(
-              { error: "Rate limit reached on Lovable AI. Please try again shortly." },
+              { error: "Gemini API rate limit reached. Please try again shortly." },
               { status: 429 },
             );
           }
-          if (upstream.status === 402) {
+          if (upstream.status === 402 || upstream.status === 403) {
             return Response.json(
-              { error: "Lovable AI credits exhausted. Add credits in workspace settings." },
-              { status: 402 },
+              { error: "Gemini API key invalid or quota exhausted." },
+              { status: upstream.status },
             );
           }
           return Response.json({ error: text || `Upstream error ${upstream.status}` }, { status: upstream.status });
@@ -69,13 +63,15 @@ export const Route = createFileRoute("/api/generate-stencil")({
         let data: any;
         try { data = JSON.parse(text); } catch { return Response.json({ error: "Bad upstream response" }, { status: 502 }); }
 
-        const msg = data?.choices?.[0]?.message;
-        const imgUrl: string | undefined =
-          msg?.images?.[0]?.image_url?.url ?? msg?.images?.[0]?.url;
-        if (!imgUrl) {
-          return Response.json({ error: "No image returned by Lovable AI" }, { status: 502 });
+        // Gemini native response: candidates[0].content.parts[].inline_data { mime_type, data }
+        const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
+        const imgPart = parts.find((p) => p?.inline_data?.data || p?.inlineData?.data);
+        const inline = imgPart?.inline_data ?? imgPart?.inlineData;
+        if (!inline?.data) {
+          return Response.json({ error: "No image returned by Gemini" }, { status: 502 });
         }
-        return Response.json({ dataUrl: imgUrl });
+        const mime = inline.mime_type ?? inline.mimeType ?? "image/png";
+        return Response.json({ dataUrl: `data:${mime};base64,${inline.data}` });
       },
     },
   },
