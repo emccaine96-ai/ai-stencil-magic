@@ -288,7 +288,7 @@ export function buildStamp(b: BrushSettings, radius: number, angle: number): HTM
     const nr = Math.max(0.6, radius * 0.18);
     const spread = radius * 1.6;
     for (let i = 0; i < needles; i++) {
-      const t = needles === 1 ? 0 : (i / (needles - 1)) - 0.5;
+      const t = (i / (needles - 1)) - 0.5;
       ctx.beginPath();
       ctx.arc(t * spread, 0, nr, 0, Math.PI * 2);
       ctx.fill();
