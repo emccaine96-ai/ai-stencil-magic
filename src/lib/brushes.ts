@@ -15,7 +15,23 @@ export type BrushId =
   | "calligraphy"
   | "spray"
   | "ink-pen"
-  | "noise-grain";
+  | "noise-grain"
+  // Tranche 1 — tattoo + pro additions
+  | "tattoo-liner-3rl"
+  | "tattoo-liner-9rl"
+  | "tattoo-mag-7"
+  | "tattoo-mag-13"
+  | "tattoo-curved-mag"
+  | "whip-shading"
+  | "pepper-shading"
+  | "smooth-shader"
+  | "blood-spatter"
+  | "watercolor-wash"
+  | "halftone-dots"
+  | "pencil-2b"
+  | "gel-pen"
+  | "neon-glow"
+  | "chalk";
 
 export type BrushSettings = {
   id: BrushId;
