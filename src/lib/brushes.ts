@@ -255,6 +255,218 @@ export function buildStamp(b: BrushSettings, radius: number, angle: number): HTM
     ctx.putImageData(img, 0, 0);
     return c;
   }
+  // ---- Tranche 1: tattoo + pro ---------------------------------------------
+  if (b.id === "tattoo-liner-3rl" || b.id === "tattoo-liner-9rl") {
+    // Tight needle cluster — multiple crisp dots packed in a circle.
+    const needles = b.id === "tattoo-liner-3rl" ? 3 : 9;
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    const nr = radius * 0.22;
+    if (needles === 3) {
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(a) * nr * 1.2, cy + Math.sin(a) * nr * 1.2, nr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      ctx.beginPath(); ctx.arc(cx, cy, nr, 0, Math.PI * 2); ctx.fill();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(a) * nr * 2.2, cy + Math.sin(a) * nr * 2.2, nr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    return c;
+  }
+  if (b.id === "tattoo-mag-7" || b.id === "tattoo-mag-13") {
+    // Flat row of needles — wide stroke for shading/coloring.
+    const needles = b.id === "tattoo-mag-7" ? 7 : 13;
+    ctx.translate(cx, cy);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    const nr = Math.max(0.6, radius * 0.18);
+    const spread = radius * 1.6;
+    for (let i = 0; i < needles; i++) {
+      const t = needles === 1 ? 0 : (i / (needles - 1)) - 0.5;
+      ctx.beginPath();
+      ctx.arc(t * spread, 0, nr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return c;
+  }
+  if (b.id === "tattoo-curved-mag") {
+    // Needles arranged along a slight arc.
+    ctx.translate(cx, cy);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    const needles = 11;
+    const nr = Math.max(0.6, radius * 0.18);
+    const spread = radius * 1.5;
+    for (let i = 0; i < needles; i++) {
+      const t = (i / (needles - 1)) - 0.5;
+      const yOff = Math.cos(t * Math.PI) * radius * 0.25 - radius * 0.25;
+      ctx.beginPath();
+      ctx.arc(t * spread, yOff, nr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return c;
+  }
+  if (b.id === "whip-shading") {
+    // Dense head + tapered tail of fading dots — classic whip pull.
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    const tailLen = radius * 1.8;
+    const dots = 18;
+    for (let i = 0; i < dots; i++) {
+      const t = i / dots;
+      const x = -t * tailLen + (Math.random() - 0.5) * radius * 0.3;
+      const y = (Math.random() - 0.5) * radius * 0.5 * (1 - t * 0.6);
+      const ds = Math.max(0.4, radius * (0.18 - t * 0.14));
+      ctx.globalAlpha = 0.4 + (1 - t) * 0.55;
+      ctx.beginPath(); ctx.arc(x, y, ds, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    return c;
+  }
+  if (b.id === "pepper-shading") {
+    // Loose pepper-grain dots scattered across disc.
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    const dots = 8 + Math.floor(radius * 0.5);
+    for (let i = 0; i < dots; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const rr = Math.sqrt(Math.random()) * radius;
+      ctx.globalAlpha = 0.5 + Math.random() * 0.5;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, 0.4 + Math.random() * (radius * 0.06), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    return c;
+  }
+  if (b.id === "smooth-shader") {
+    // Very soft, broad radial — flawless gradient blending.
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    grad.addColorStop(0, `rgba(${r},${g},${bl},0.55)`);
+    grad.addColorStop(0.5, `rgba(${r},${g},${bl},0.25)`);
+    grad.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.fill();
+    return c;
+  }
+  if (b.id === "blood-spatter") {
+    // Irregular blob cluster + satellite droplets.
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    // central blob (irregular polygon)
+    ctx.beginPath();
+    const verts = 9;
+    for (let i = 0; i <= verts; i++) {
+      const a = (i / verts) * Math.PI * 2;
+      const rr = radius * (0.55 + Math.random() * 0.4);
+      const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath(); ctx.fill();
+    // droplets
+    for (let i = 0; i < 6; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const rr = radius * (1.1 + Math.random() * 0.6);
+      const ds = Math.max(0.6, radius * (0.05 + Math.random() * 0.12));
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, ds, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return c;
+  }
+  if (b.id === "watercolor-wash") {
+    // Multiple ring gradients for diffused wet edge.
+    for (let layer = 0; layer < 3; layer++) {
+      const rr = radius * (0.6 + layer * 0.25);
+      const grad = ctx.createRadialGradient(cx, cy, rr * 0.2, cx, cy, rr);
+      grad.addColorStop(0, `rgba(${r},${g},${bl},${0.18 - layer * 0.05})`);
+      grad.addColorStop(0.85, `rgba(${r},${g},${bl},${0.05})`);
+      grad.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.fill();
+    }
+    return c;
+  }
+  if (b.id === "halftone-dots") {
+    // Single perfectly round dot — at high spacing this builds a halftone grid.
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+    return c;
+  }
+  if (b.id === "pencil-2b") {
+    // Graphite — soft elliptical core with grainy halo.
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+    grad.addColorStop(0, `rgba(${r},${g},${bl},0.85)`);
+    grad.addColorStop(0.7, `rgba(${r},${g},${bl},0.35)`);
+    grad.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius, radius * 0.75, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // grain dots
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    for (let i = 0; i < 10; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const rr = Math.random() * radius * 0.9;
+      ctx.globalAlpha = 0.15 + Math.random() * 0.3;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * rr, Math.sin(a) * rr * 0.75, 0.4 + Math.random() * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    return c;
+  }
+  if (b.id === "gel-pen") {
+    // Crisp disc with subtle inner highlight.
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.fill();
+    const hg = ctx.createRadialGradient(cx - radius * 0.35, cy - radius * 0.35, 0, cx, cy, radius);
+    hg.addColorStop(0, "rgba(255,255,255,0.45)");
+    hg.addColorStop(0.5, "rgba(255,255,255,0)");
+    ctx.fillStyle = hg;
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.fill();
+    return c;
+  }
+  if (b.id === "neon-glow") {
+    // Bright white core surrounded by colored glow.
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    glow.addColorStop(0, "rgba(255,255,255,0.95)");
+    glow.addColorStop(0.25, `rgba(${r},${g},${bl},0.7)`);
+    glow.addColorStop(0.6, `rgba(${r},${g},${bl},0.3)`);
+    glow.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.fill();
+    return c;
+  }
+  if (b.id === "chalk") {
+    // Rough, broken edge disc with internal streaks.
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    const img = ctx.createImageData(d, d);
+    for (let y = 0; y < d; y++) {
+      for (let x = 0; x < d; x++) {
+        const dx = x - cx, dy = y - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist > radius) continue;
+        const falloff = 1 - dist / radius;
+        // streaky edge: bias by sin of x for ridges
+        const ridge = 0.6 + 0.4 * Math.sin((x + y) * 0.7);
+        const alpha = Math.random() < falloff * ridge ? Math.floor(180 + Math.random() * 75) : 0;
+        const i = (y * d + x) * 4;
+        img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = bl; img.data[i + 3] = alpha;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+  }
   // Soft/hard round + fine-liner + wet-ink + eraser all use a radial falloff.
   const hardness = b.hardness;
   const grad = ctx.createRadialGradient(cx, cy, radius * hardness, cx, cy, radius);
