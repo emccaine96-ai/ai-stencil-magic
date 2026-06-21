@@ -16,6 +16,11 @@ const BRUSH_ORDER: BrushId[] = [
   "hard-round", "soft-airbrush", "fine-liner", "ink-pen", "wet-ink",
   "calligraphy", "marker", "charcoal", "noise-grain",
   "dotwork", "stipple", "crosshatch", "spray", "eraser",
+  // Tranche 1 — tattoo + pro
+  "tattoo-liner-3rl", "tattoo-liner-9rl", "tattoo-mag-7", "tattoo-mag-13",
+  "tattoo-curved-mag", "whip-shading", "pepper-shading", "smooth-shader",
+  "blood-spatter", "watercolor-wash", "halftone-dots", "pencil-2b",
+  "gel-pen", "neon-glow", "chalk",
 ];
 
 const PALETTE = [

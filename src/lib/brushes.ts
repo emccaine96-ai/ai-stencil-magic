@@ -15,7 +15,23 @@ export type BrushId =
   | "calligraphy"
   | "spray"
   | "ink-pen"
-  | "noise-grain";
+  | "noise-grain"
+  // Tranche 1 — tattoo + pro additions
+  | "tattoo-liner-3rl"
+  | "tattoo-liner-9rl"
+  | "tattoo-mag-7"
+  | "tattoo-mag-13"
+  | "tattoo-curved-mag"
+  | "whip-shading"
+  | "pepper-shading"
+  | "smooth-shader"
+  | "blood-spatter"
+  | "watercolor-wash"
+  | "halftone-dots"
+  | "pencil-2b"
+  | "gel-pen"
+  | "neon-glow"
+  | "chalk";
 
 export type BrushSettings = {
   id: BrushId;
@@ -48,6 +64,22 @@ export const DEFAULTS: Record<BrushId, Omit<BrushSettings, "color">> = {
   "spray":        { id: "spray",        size: 60, opacity: 0.9, flow: 0.25,spacing: 0.08, hardness: 1.0,  scatter: 0, rotationJitter: 1, pressureSize: 0.5,  pressureOpacity: 0.6, pressureCurve: 1.0 },
   "ink-pen":      { id: "ink-pen",      size: 6,  opacity: 1.0, flow: 1.0, spacing: 0.03, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.95, pressureOpacity: 0.1, pressureCurve: 1.4 },
   "noise-grain":  { id: "noise-grain",  size: 44, opacity: 0.7, flow: 0.6, spacing: 0.12, hardness: 1.0,  scatter: 2, rotationJitter: 1, pressureSize: 0.4,  pressureOpacity: 0.6, pressureCurve: 1.0 },
+  // Tranche 1 — tattoo + pro
+  "tattoo-liner-3rl":  { id: "tattoo-liner-3rl",  size: 6,  opacity: 1.0, flow: 1.0, spacing: 0.02, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.6,  pressureOpacity: 0.2, pressureCurve: 1.2 },
+  "tattoo-liner-9rl":  { id: "tattoo-liner-9rl",  size: 14, opacity: 1.0, flow: 1.0, spacing: 0.03, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.5,  pressureOpacity: 0.2, pressureCurve: 1.1 },
+  "tattoo-mag-7":      { id: "tattoo-mag-7",      size: 22, opacity: 0.95,flow: 0.85,spacing: 0.04, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.4,  pressureOpacity: 0.5, pressureCurve: 1.0 },
+  "tattoo-mag-13":     { id: "tattoo-mag-13",     size: 38, opacity: 0.9, flow: 0.8, spacing: 0.05, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.3,  pressureOpacity: 0.6, pressureCurve: 1.0 },
+  "tattoo-curved-mag": { id: "tattoo-curved-mag", size: 30, opacity: 0.92,flow: 0.82,spacing: 0.04, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.4,  pressureOpacity: 0.5, pressureCurve: 1.0 },
+  "whip-shading":      { id: "whip-shading",      size: 28, opacity: 0.9, flow: 0.5, spacing: 0.1,  hardness: 1.0,  scatter: 4, rotationJitter: 0, pressureSize: 0.7,  pressureOpacity: 0.7, pressureCurve: 1.0 },
+  "pepper-shading":    { id: "pepper-shading",    size: 40, opacity: 0.95,flow: 0.7, spacing: 0.18, hardness: 1.0,  scatter: 8, rotationJitter: 1, pressureSize: 0.5,  pressureOpacity: 0.5, pressureCurve: 1.0 },
+  "smooth-shader":     { id: "smooth-shader",     size: 70, opacity: 0.45,flow: 0.5, spacing: 0.06, hardness: 0.25, scatter: 1, rotationJitter: 1, pressureSize: 0.6,  pressureOpacity: 0.8, pressureCurve: 0.8 },
+  "blood-spatter":     { id: "blood-spatter",     size: 50, opacity: 0.95,flow: 0.8, spacing: 0.6,  hardness: 1.0,  scatter: 14,rotationJitter: 1, pressureSize: 0.5,  pressureOpacity: 0.3, pressureCurve: 1.0 },
+  "watercolor-wash":   { id: "watercolor-wash",   size: 90, opacity: 0.3, flow: 0.35,spacing: 0.04, hardness: 0.05, scatter: 2, rotationJitter: 1, pressureSize: 0.5,  pressureOpacity: 0.7, pressureCurve: 0.7 },
+  "halftone-dots":     { id: "halftone-dots",     size: 36, opacity: 1.0, flow: 1.0, spacing: 0.3,  hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.6,  pressureOpacity: 0.0, pressureCurve: 1.0 },
+  "pencil-2b":         { id: "pencil-2b",         size: 14, opacity: 0.85,flow: 0.7, spacing: 0.04, hardness: 0.9,  scatter: 1, rotationJitter: 1, pressureSize: 0.7,  pressureOpacity: 0.8, pressureCurve: 1.0 },
+  "gel-pen":           { id: "gel-pen",           size: 8,  opacity: 1.0, flow: 1.0, spacing: 0.03, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.6,  pressureOpacity: 0.1, pressureCurve: 1.2 },
+  "neon-glow":         { id: "neon-glow",         size: 28, opacity: 0.85,flow: 0.7, spacing: 0.04, hardness: 0.4,  scatter: 0, rotationJitter: 0, pressureSize: 0.4,  pressureOpacity: 0.3, pressureCurve: 1.0 },
+  "chalk":             { id: "chalk",             size: 42, opacity: 0.85,flow: 0.6, spacing: 0.08, hardness: 0.95, scatter: 2, rotationJitter: 0, pressureSize: 0.5,  pressureOpacity: 0.6, pressureCurve: 1.0 },
 };
 
 export const BRUSH_LABELS: Record<BrushId, string> = {
@@ -65,6 +97,21 @@ export const BRUSH_LABELS: Record<BrushId, string> = {
   "spray": "Spray",
   "ink-pen": "Ink Pen",
   "noise-grain": "Noise Grain",
+  "tattoo-liner-3rl": "Liner 3RL",
+  "tattoo-liner-9rl": "Liner 9RL",
+  "tattoo-mag-7": "Magnum 7",
+  "tattoo-mag-13": "Magnum 13",
+  "tattoo-curved-mag": "Curved Mag",
+  "whip-shading": "Whip Shading",
+  "pepper-shading": "Pepper Shade",
+  "smooth-shader": "Smooth Shader",
+  "blood-spatter": "Blood Spatter",
+  "watercolor-wash": "Watercolor",
+  "halftone-dots": "Halftone",
+  "pencil-2b": "Pencil 2B",
+  "gel-pen": "Gel Pen",
+  "neon-glow": "Neon Glow",
+  "chalk": "Chalk",
 };
 
 function rgb(hex: string): [number, number, number] {
@@ -203,6 +250,218 @@ export function buildStamp(b: BrushSettings, radius: number, angle: number): HTM
         const a = Math.random() < falloff * 0.85 ? Math.floor(160 + Math.random() * 95) : 0;
         const i = (y * d + x) * 4;
         img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = bl; img.data[i + 3] = a;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+  }
+  // ---- Tranche 1: tattoo + pro ---------------------------------------------
+  if (b.id === "tattoo-liner-3rl" || b.id === "tattoo-liner-9rl") {
+    // Tight needle cluster — multiple crisp dots packed in a circle.
+    const needles = b.id === "tattoo-liner-3rl" ? 3 : 9;
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    const nr = radius * 0.22;
+    if (needles === 3) {
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(a) * nr * 1.2, cy + Math.sin(a) * nr * 1.2, nr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      ctx.beginPath(); ctx.arc(cx, cy, nr, 0, Math.PI * 2); ctx.fill();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(a) * nr * 2.2, cy + Math.sin(a) * nr * 2.2, nr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    return c;
+  }
+  if (b.id === "tattoo-mag-7" || b.id === "tattoo-mag-13") {
+    // Flat row of needles — wide stroke for shading/coloring.
+    const needles = b.id === "tattoo-mag-7" ? 7 : 13;
+    ctx.translate(cx, cy);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    const nr = Math.max(0.6, radius * 0.18);
+    const spread = radius * 1.6;
+    for (let i = 0; i < needles; i++) {
+      const t = (i / (needles - 1)) - 0.5;
+      ctx.beginPath();
+      ctx.arc(t * spread, 0, nr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return c;
+  }
+  if (b.id === "tattoo-curved-mag") {
+    // Needles arranged along a slight arc.
+    ctx.translate(cx, cy);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    const needles = 11;
+    const nr = Math.max(0.6, radius * 0.18);
+    const spread = radius * 1.5;
+    for (let i = 0; i < needles; i++) {
+      const t = (i / (needles - 1)) - 0.5;
+      const yOff = Math.cos(t * Math.PI) * radius * 0.25 - radius * 0.25;
+      ctx.beginPath();
+      ctx.arc(t * spread, yOff, nr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return c;
+  }
+  if (b.id === "whip-shading") {
+    // Dense head + tapered tail of fading dots — classic whip pull.
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    const tailLen = radius * 1.8;
+    const dots = 18;
+    for (let i = 0; i < dots; i++) {
+      const t = i / dots;
+      const x = -t * tailLen + (Math.random() - 0.5) * radius * 0.3;
+      const y = (Math.random() - 0.5) * radius * 0.5 * (1 - t * 0.6);
+      const ds = Math.max(0.4, radius * (0.18 - t * 0.14));
+      ctx.globalAlpha = 0.4 + (1 - t) * 0.55;
+      ctx.beginPath(); ctx.arc(x, y, ds, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    return c;
+  }
+  if (b.id === "pepper-shading") {
+    // Loose pepper-grain dots scattered across disc.
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    const dots = 8 + Math.floor(radius * 0.5);
+    for (let i = 0; i < dots; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const rr = Math.sqrt(Math.random()) * radius;
+      ctx.globalAlpha = 0.5 + Math.random() * 0.5;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, 0.4 + Math.random() * (radius * 0.06), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    return c;
+  }
+  if (b.id === "smooth-shader") {
+    // Very soft, broad radial — flawless gradient blending.
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    grad.addColorStop(0, `rgba(${r},${g},${bl},0.55)`);
+    grad.addColorStop(0.5, `rgba(${r},${g},${bl},0.25)`);
+    grad.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.fill();
+    return c;
+  }
+  if (b.id === "blood-spatter") {
+    // Irregular blob cluster + satellite droplets.
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    // central blob (irregular polygon)
+    ctx.beginPath();
+    const verts = 9;
+    for (let i = 0; i <= verts; i++) {
+      const a = (i / verts) * Math.PI * 2;
+      const rr = radius * (0.55 + Math.random() * 0.4);
+      const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath(); ctx.fill();
+    // droplets
+    for (let i = 0; i < 6; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const rr = radius * (1.1 + Math.random() * 0.6);
+      const ds = Math.max(0.6, radius * (0.05 + Math.random() * 0.12));
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, ds, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return c;
+  }
+  if (b.id === "watercolor-wash") {
+    // Multiple ring gradients for diffused wet edge.
+    for (let layer = 0; layer < 3; layer++) {
+      const rr = radius * (0.6 + layer * 0.25);
+      const grad = ctx.createRadialGradient(cx, cy, rr * 0.2, cx, cy, rr);
+      grad.addColorStop(0, `rgba(${r},${g},${bl},${0.18 - layer * 0.05})`);
+      grad.addColorStop(0.85, `rgba(${r},${g},${bl},${0.05})`);
+      grad.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.fill();
+    }
+    return c;
+  }
+  if (b.id === "halftone-dots") {
+    // Single perfectly round dot — at high spacing this builds a halftone grid.
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+    return c;
+  }
+  if (b.id === "pencil-2b") {
+    // Graphite — soft elliptical core with grainy halo.
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+    grad.addColorStop(0, `rgba(${r},${g},${bl},0.85)`);
+    grad.addColorStop(0.7, `rgba(${r},${g},${bl},0.35)`);
+    grad.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius, radius * 0.75, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // grain dots
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    for (let i = 0; i < 10; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const rr = Math.random() * radius * 0.9;
+      ctx.globalAlpha = 0.15 + Math.random() * 0.3;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * rr, Math.sin(a) * rr * 0.75, 0.4 + Math.random() * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    return c;
+  }
+  if (b.id === "gel-pen") {
+    // Crisp disc with subtle inner highlight.
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.fill();
+    const hg = ctx.createRadialGradient(cx - radius * 0.35, cy - radius * 0.35, 0, cx, cy, radius);
+    hg.addColorStop(0, "rgba(255,255,255,0.45)");
+    hg.addColorStop(0.5, "rgba(255,255,255,0)");
+    ctx.fillStyle = hg;
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.fill();
+    return c;
+  }
+  if (b.id === "neon-glow") {
+    // Bright white core surrounded by colored glow.
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    glow.addColorStop(0, "rgba(255,255,255,0.95)");
+    glow.addColorStop(0.25, `rgba(${r},${g},${bl},0.7)`);
+    glow.addColorStop(0.6, `rgba(${r},${g},${bl},0.3)`);
+    glow.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.fill();
+    return c;
+  }
+  if (b.id === "chalk") {
+    // Rough, broken edge disc with internal streaks.
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    const img = ctx.createImageData(d, d);
+    for (let y = 0; y < d; y++) {
+      for (let x = 0; x < d; x++) {
+        const dx = x - cx, dy = y - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist > radius) continue;
+        const falloff = 1 - dist / radius;
+        // streaky edge: bias by sin of x for ridges
+        const ridge = 0.6 + 0.4 * Math.sin((x + y) * 0.7);
+        const alpha = Math.random() < falloff * ridge ? Math.floor(180 + Math.random() * 75) : 0;
+        const i = (y * d + x) * 4;
+        img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = bl; img.data[i + 3] = alpha;
       }
     }
     ctx.putImageData(img, 0, 0);
