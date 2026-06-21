@@ -64,6 +64,22 @@ export const DEFAULTS: Record<BrushId, Omit<BrushSettings, "color">> = {
   "spray":        { id: "spray",        size: 60, opacity: 0.9, flow: 0.25,spacing: 0.08, hardness: 1.0,  scatter: 0, rotationJitter: 1, pressureSize: 0.5,  pressureOpacity: 0.6, pressureCurve: 1.0 },
   "ink-pen":      { id: "ink-pen",      size: 6,  opacity: 1.0, flow: 1.0, spacing: 0.03, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.95, pressureOpacity: 0.1, pressureCurve: 1.4 },
   "noise-grain":  { id: "noise-grain",  size: 44, opacity: 0.7, flow: 0.6, spacing: 0.12, hardness: 1.0,  scatter: 2, rotationJitter: 1, pressureSize: 0.4,  pressureOpacity: 0.6, pressureCurve: 1.0 },
+  // Tranche 1 — tattoo + pro
+  "tattoo-liner-3rl":  { id: "tattoo-liner-3rl",  size: 6,  opacity: 1.0, flow: 1.0, spacing: 0.02, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.6,  pressureOpacity: 0.2, pressureCurve: 1.2 },
+  "tattoo-liner-9rl":  { id: "tattoo-liner-9rl",  size: 14, opacity: 1.0, flow: 1.0, spacing: 0.03, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.5,  pressureOpacity: 0.2, pressureCurve: 1.1 },
+  "tattoo-mag-7":      { id: "tattoo-mag-7",      size: 22, opacity: 0.95,flow: 0.85,spacing: 0.04, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.4,  pressureOpacity: 0.5, pressureCurve: 1.0 },
+  "tattoo-mag-13":     { id: "tattoo-mag-13",     size: 38, opacity: 0.9, flow: 0.8, spacing: 0.05, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.3,  pressureOpacity: 0.6, pressureCurve: 1.0 },
+  "tattoo-curved-mag": { id: "tattoo-curved-mag", size: 30, opacity: 0.92,flow: 0.82,spacing: 0.04, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.4,  pressureOpacity: 0.5, pressureCurve: 1.0 },
+  "whip-shading":      { id: "whip-shading",      size: 28, opacity: 0.9, flow: 0.5, spacing: 0.1,  hardness: 1.0,  scatter: 4, rotationJitter: 0, pressureSize: 0.7,  pressureOpacity: 0.7, pressureCurve: 1.0 },
+  "pepper-shading":    { id: "pepper-shading",    size: 40, opacity: 0.95,flow: 0.7, spacing: 0.18, hardness: 1.0,  scatter: 8, rotationJitter: 1, pressureSize: 0.5,  pressureOpacity: 0.5, pressureCurve: 1.0 },
+  "smooth-shader":     { id: "smooth-shader",     size: 70, opacity: 0.45,flow: 0.5, spacing: 0.06, hardness: 0.25, scatter: 1, rotationJitter: 1, pressureSize: 0.6,  pressureOpacity: 0.8, pressureCurve: 0.8 },
+  "blood-spatter":     { id: "blood-spatter",     size: 50, opacity: 0.95,flow: 0.8, spacing: 0.6,  hardness: 1.0,  scatter: 14,rotationJitter: 1, pressureSize: 0.5,  pressureOpacity: 0.3, pressureCurve: 1.0 },
+  "watercolor-wash":   { id: "watercolor-wash",   size: 90, opacity: 0.3, flow: 0.35,spacing: 0.04, hardness: 0.05, scatter: 2, rotationJitter: 1, pressureSize: 0.5,  pressureOpacity: 0.7, pressureCurve: 0.7 },
+  "halftone-dots":     { id: "halftone-dots",     size: 36, opacity: 1.0, flow: 1.0, spacing: 0.3,  hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.6,  pressureOpacity: 0.0, pressureCurve: 1.0 },
+  "pencil-2b":         { id: "pencil-2b",         size: 14, opacity: 0.85,flow: 0.7, spacing: 0.04, hardness: 0.9,  scatter: 1, rotationJitter: 1, pressureSize: 0.7,  pressureOpacity: 0.8, pressureCurve: 1.0 },
+  "gel-pen":           { id: "gel-pen",           size: 8,  opacity: 1.0, flow: 1.0, spacing: 0.03, hardness: 1.0,  scatter: 0, rotationJitter: 0, pressureSize: 0.6,  pressureOpacity: 0.1, pressureCurve: 1.2 },
+  "neon-glow":         { id: "neon-glow",         size: 28, opacity: 0.85,flow: 0.7, spacing: 0.04, hardness: 0.4,  scatter: 0, rotationJitter: 0, pressureSize: 0.4,  pressureOpacity: 0.3, pressureCurve: 1.0 },
+  "chalk":             { id: "chalk",             size: 42, opacity: 0.85,flow: 0.6, spacing: 0.08, hardness: 0.95, scatter: 2, rotationJitter: 0, pressureSize: 0.5,  pressureOpacity: 0.6, pressureCurve: 1.0 },
 };
 
 export const BRUSH_LABELS: Record<BrushId, string> = {
@@ -81,6 +97,21 @@ export const BRUSH_LABELS: Record<BrushId, string> = {
   "spray": "Spray",
   "ink-pen": "Ink Pen",
   "noise-grain": "Noise Grain",
+  "tattoo-liner-3rl": "Liner 3RL",
+  "tattoo-liner-9rl": "Liner 9RL",
+  "tattoo-mag-7": "Magnum 7",
+  "tattoo-mag-13": "Magnum 13",
+  "tattoo-curved-mag": "Curved Mag",
+  "whip-shading": "Whip Shading",
+  "pepper-shading": "Pepper Shade",
+  "smooth-shader": "Smooth Shader",
+  "blood-spatter": "Blood Spatter",
+  "watercolor-wash": "Watercolor",
+  "halftone-dots": "Halftone",
+  "pencil-2b": "Pencil 2B",
+  "gel-pen": "Gel Pen",
+  "neon-glow": "Neon Glow",
+  "chalk": "Chalk",
 };
 
 function rgb(hex: string): [number, number, number] {
