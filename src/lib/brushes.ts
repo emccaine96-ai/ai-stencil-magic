@@ -31,7 +31,29 @@ export type BrushId =
   | "pencil-2b"
   | "gel-pen"
   | "neon-glow"
-  | "chalk";
+  | "chalk"
+  // Tranche 2 — inking, sketching, painting, FX
+  | "technical-pen"
+  | "brush-pen"
+  | "dip-pen"
+  | "fountain-pen"
+  | "hb-pencil"
+  | "pencil-6b"
+  | "colored-pencil"
+  | "conte-crayon"
+  | "oil-flat"
+  | "oil-round"
+  | "palette-knife"
+  | "gouache"
+  | "acrylic-dry"
+  | "pastel-soft"
+  | "glitch-stripe"
+  | "chromatic-fringe"
+  | "bokeh-dots"
+  | "stars-sparkle"
+  | "lightning-bolt"
+  | "smoke-puff"
+  | "confetti";
 
 export type BrushSettings = {
   id: BrushId;
