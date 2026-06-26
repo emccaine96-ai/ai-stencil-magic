@@ -185,31 +185,65 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     };
   }
 
+  function symmetryPoints(x: number, y: number): { x: number; y: number }[] {
+    const c = ctxRef.current!.canvas;
+    const cx = c.width / 2, cy = c.height / 2;
+    if (symmetry === "none") return [{ x, y }];
+    if (symmetry === "mirror-x") return [{ x, y }, { x: 2 * cx - x, y }];
+    if (symmetry === "mirror-y") return [{ x, y }, { x, y: 2 * cy - y }];
+    // radial-8
+    const out: { x: number; y: number }[] = [];
+    const dx = x - cx, dy = y - cy;
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      const cos = Math.cos(a), sin = Math.sin(a);
+      out.push({ x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos });
+    }
+    return out;
+  }
+
   function beginDraw(p: Pt) {
     const ctx = ctxRef.current!;
+    const variant = MODIFIERS[variantIdx];
     const settings: BrushSettings = {
       ...DEFAULTS[brushId],
       id: tool === "eraser" ? "eraser" : brushId,
       color,
-      size,
-      opacity,
+      size: Math.max(1, size * variant.sizeMul),
+      opacity: Math.max(0.02, Math.min(1, opacity * variant.opacityMul)),
     };
-    strokeRef.current = beginStroke(ctx, settings);
     const { x, y } = screenToCanvas(p.cx, p.cy);
-    strokeTo(strokeRef.current, x, y, p.pressure);
+    stabPt.current = { x, y, p: p.pressure };
+    const pts = symmetryPoints(x, y);
+    strokeRefs.current = pts.map(() => beginStroke(ctx, settings));
+    pts.forEach((pt, i) => strokeTo(strokeRefs.current[i], pt.x + jitter(variant.scatter), pt.y + jitter(variant.scatter), p.pressure));
   }
   function continueDraw(p: Pt) {
-    if (!strokeRef.current) return;
-    const { x, y } = screenToCanvas(p.cx, p.cy);
-    strokeTo(strokeRef.current, x, y, p.pressure);
+    if (!strokeRefs.current.length) return;
+    const target = screenToCanvas(p.cx, p.cy);
+    // EMA stabilizer: move stab point a fraction toward target each event
+    const s = stabPt.current ?? { x: target.x, y: target.y, p: p.pressure };
+    const w = 1 - stabilizer; // higher slider = slower follow = smoother
+    s.x += (target.x - s.x) * w;
+    s.y += (target.y - s.y) * w;
+    s.p += (p.pressure - s.p) * 0.5;
+    stabPt.current = s;
+    const variant = MODIFIERS[variantIdx];
+    const pts = symmetryPoints(s.x, s.y);
+    pts.forEach((pt, i) => {
+      const sr = strokeRefs.current[i];
+      if (sr) strokeTo(sr, pt.x + jitter(variant.scatter), pt.y + jitter(variant.scatter), s.p);
+    });
   }
   function endDraw() {
-    if (strokeRef.current) {
-      endStroke(strokeRef.current);
-      strokeRef.current = null;
+    if (strokeRefs.current.length) {
+      strokeRefs.current.forEach(endStroke);
+      strokeRefs.current = [];
+      stabPt.current = null;
       pushUndo();
     }
   }
+  function jitter(amt: number) { return amt ? (Math.random() - 0.5) * 2 * amt : 0; }
 
   function eyedropAt(cx: number, cy: number) {
     const ctx = ctxRef.current!;
