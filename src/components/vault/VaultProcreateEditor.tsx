@@ -678,6 +678,41 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
             </div>
           </div>
         </aside>
+
+        {/* Far-right — 500-brush variant library */}
+        <aside className="w-40 sm:w-52 shrink-0 bg-neutral-900 border-l border-neutral-800 flex flex-col">
+          <div className="p-2 border-b border-neutral-800">
+            <div className="text-[10px] uppercase text-neutral-500 mb-1">
+              Brush Library · {allVariants.length}
+            </div>
+            <input
+              placeholder="Search 500 brushes…"
+              value={brushQuery}
+              onChange={e => setBrushQuery(e.target.value)}
+              className="w-full bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-xs"
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto p-1">
+            {filteredVariants.map(v => {
+              const sel = v.base === brushId && v.vid.endsWith(`::${variantIdx}`);
+              return (
+                <button
+                  key={v.vid}
+                  onClick={() => {
+                    setBrushId(v.base);
+                    const idx = parseInt(v.vid.split("::")[1], 10);
+                    setVariantIdx(idx);
+                    setEliteTool(null);
+                    if (v.base !== "eraser") setTool("brush"); else setTool("eraser");
+                  }}
+                  className={`w-full text-left rounded px-2 py-1 text-[10px] mb-0.5 truncate ${sel ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-neutral-800 text-neutral-300"}`}
+                >
+                  {v.label}
+                </button>
+              );
+            })}
+          </div>
+        </aside>
       </div>
     </div>
   );
