@@ -40,6 +40,30 @@ const PALETTE = [
 ];
 
 type Tool = "brush" | "eraser" | "pan" | "eyedrop";
+type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple";
+type Symmetry = "none" | "mirror-x" | "mirror-y" | "radial-8";
+
+// --- 500-brush variant matrix (50 bases × 10 modulations) -------------------
+type BrushVariant = {
+  vid: string;
+  base: BrushId;
+  label: string;
+  sizeMul: number;
+  opacityMul: number;
+  scatter: number; // extra radial jitter (px) per stamp
+};
+const MODIFIERS: { tag: string; sizeMul: number; opacityMul: number; scatter: number }[] = [
+  { tag: "Original",    sizeMul: 1.00, opacityMul: 1.00, scatter: 0  },
+  { tag: "Fine",        sizeMul: 0.55, opacityMul: 0.95, scatter: 0  },
+  { tag: "Heavy",       sizeMul: 1.85, opacityMul: 1.00, scatter: 0  },
+  { tag: "Ghost",       sizeMul: 1.00, opacityMul: 0.35, scatter: 0  },
+  { tag: "Bold",        sizeMul: 1.30, opacityMul: 1.00, scatter: 0  },
+  { tag: "Scatter",     sizeMul: 1.00, opacityMul: 0.85, scatter: 8  },
+  { tag: "Wide Spray",  sizeMul: 1.45, opacityMul: 0.70, scatter: 14 },
+  { tag: "Whisper",     sizeMul: 0.75, opacityMul: 0.25, scatter: 2  },
+  { tag: "XL Heavy",    sizeMul: 2.40, opacityMul: 0.95, scatter: 4  },
+  { tag: "Micro Stipple", sizeMul: 0.40, opacityMul: 0.80, scatter: 6  },
+];
 
 /** Two-finger pinch + pan, single-pointer draw. Matrix-based transform so
  *  zoom anchors stay locked to the midpoint between the fingers — no drift. */
