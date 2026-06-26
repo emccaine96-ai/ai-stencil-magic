@@ -245,6 +245,132 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   }
   function jitter(amt: number) { return amt ? (Math.random() - 0.5) * 2 * amt : 0; }
 
+  // ---- Elite engines (B Stippler, C Smudge, D Liquify) ---------------------
+  function applyEliteAt(cx: number, cy: number, dx: number, dy: number) {
+    if (!eliteTool) return;
+    const ctx = ctxRef.current!;
+    const { x, y } = screenToCanvas(cx, cy);
+    const r = Math.max(6, size * 1.5);
+    const ix = Math.floor(x - r), iy = Math.floor(y - r);
+    const w = Math.ceil(r * 2), h = Math.ceil(r * 2);
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    if (ix + w < 0 || iy + h < 0 || ix > W || iy > H) return;
+    const sx = Math.max(0, ix), sy = Math.max(0, iy);
+    const sw = Math.min(W - sx, w - (sx - ix));
+    const sh = Math.min(H - sy, h - (sy - iy));
+    if (sw <= 0 || sh <= 0) return;
+
+    if (eliteTool === "stipple") {
+      // Engine B: procedural whip stippler with velocity falloff
+      const v = Math.min(60, Math.hypot(dx, dy));
+      const density = Math.max(4, Math.floor(20 - v * 0.25));
+      ctx.save();
+      ctx.fillStyle = color;
+      for (let i = 0; i < density; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const rad = Math.random() * r * Math.exp(-Math.random() * 1.2);
+        const px = x + Math.cos(ang) * rad;
+        const py = y + Math.sin(ang) * rad;
+        ctx.globalAlpha = opacity * (0.4 + Math.random() * 0.6);
+        ctx.beginPath();
+        ctx.arc(px, py, Math.max(0.5, size * 0.06), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      return;
+    }
+
+    const src = ctx.getImageData(sx, sy, sw, sh);
+    const out = ctx.createImageData(sw, sh);
+    const data = src.data, od = out.data;
+    const cxL = x - sx, cyL = y - sy;
+
+    if (eliteTool === "smudge") {
+      // Engine C: linear-interpolated color drag
+      const blend = Math.min(0.85, opacity);
+      for (let py = 0; py < sh; py++) {
+        for (let px = 0; px < sw; px++) {
+          const ddx = px - cxL, ddy = py - cyL;
+          const dist = Math.hypot(ddx, ddy);
+          const f = dist < r ? (1 - dist / r) * blend : 0;
+          const sxs = Math.round(px - dx * f);
+          const sys = Math.round(py - dy * f);
+          const idx = (py * sw + px) * 4;
+          if (sxs >= 0 && sxs < sw && sys >= 0 && sys < sh) {
+            const sIdx = (sys * sw + sxs) * 4;
+            od[idx]   = data[idx]   * (1 - f) + data[sIdx]   * f;
+            od[idx+1] = data[idx+1] * (1 - f) + data[sIdx+1] * f;
+            od[idx+2] = data[idx+2] * (1 - f) + data[sIdx+2] * f;
+            od[idx+3] = data[idx+3] * (1 - f) + data[sIdx+3] * f;
+          } else {
+            od[idx]=data[idx]; od[idx+1]=data[idx+1]; od[idx+2]=data[idx+2]; od[idx+3]=data[idx+3];
+          }
+        }
+      }
+    } else {
+      // Engine D: liquify mesh lattice (push / inflate / deflate) — quadratic falloff
+      const strength = opacity * 0.9;
+      for (let py = 0; py < sh; py++) {
+        for (let px = 0; px < sw; px++) {
+          const ddx = px - cxL, ddy = py - cyL;
+          const dist = Math.hypot(ddx, ddy);
+          const t = dist < r ? 1 - (dist / r) * (dist / r) : 0;
+          let ox = px, oy = py;
+          if (t > 0) {
+            if (eliteTool === "liquify-push") {
+              ox = px - dx * t * strength;
+              oy = py - dy * t * strength;
+            } else if (eliteTool === "liquify-inflate") {
+              const k = 1 + t * strength * 0.6;
+              ox = cxL + ddx / k;
+              oy = cyL + ddy / k;
+            } else { // deflate
+              const k = 1 - t * strength * 0.6;
+              ox = cxL + ddx / Math.max(0.2, k);
+              oy = cyL + ddy / Math.max(0.2, k);
+            }
+          }
+          const sxs = Math.max(0, Math.min(sw - 1, Math.round(ox)));
+          const sys = Math.max(0, Math.min(sh - 1, Math.round(oy)));
+          const idx = (py * sw + px) * 4;
+          const sIdx = (sys * sw + sxs) * 4;
+          od[idx]=data[sIdx]; od[idx+1]=data[sIdx+1]; od[idx+2]=data[sIdx+2]; od[idx+3]=data[sIdx+3];
+        }
+      }
+    }
+    ctx.putImageData(out, sx, sy);
+  }
+
+  // ---- Post-process filters -----------------------------------------------
+  function applyThreshold(level = 128) {
+    const ctx = ctxRef.current!;
+    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      // NTSC luminance
+      const l = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+      const v = l < level ? 0 : 255;
+      d[i] = d[i+1] = d[i+2] = v;
+    }
+    ctx.putImageData(img, 0, 0);
+    pushUndo();
+  }
+  function applyThermal() {
+    // Stencil-paper purple emulator: darks → deep violet, mids → magenta tint, lights → cream
+    const ctx = ctxRef.current!;
+    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const l = (0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]) / 255;
+      const r = Math.round(60 + (255 - 60) * Math.pow(l, 1.2));
+      const g = Math.round(35 + (245 - 35) * Math.pow(l, 1.7));
+      const b = Math.round(95 + (235 - 95) * Math.pow(l, 1.1));
+      d[i] = r; d[i+1] = g; d[i+2] = b;
+    }
+    ctx.putImageData(img, 0, 0);
+    pushUndo();
+  }
+
   function eyedropAt(cx: number, cy: number) {
     const ctx = ctxRef.current!;
     const { x, y } = screenToCanvas(cx, cy);
