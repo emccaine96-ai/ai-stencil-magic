@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState, useCallback } from "react";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2,
