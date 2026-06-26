@@ -411,6 +411,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     // Single pointer
     if (tool === "eyedrop") { eyedropAt(e.clientX, e.clientY); return; }
     if (tool === "pan") return;
+    if (eliteTool) {
+      drawingPointerId.current = e.pointerId;
+      lastCanvasPt.current = { x: e.clientX, y: e.clientY };
+      applyEliteAt(e.clientX, e.clientY, 0, 0);
+      return;
+    }
     drawingPointerId.current = e.pointerId;
     beginDraw(p);
   }
@@ -445,7 +451,15 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     }
 
     if (e.pointerId === drawingPointerId.current) {
-      continueDraw(p);
+      if (eliteTool) {
+        const last = lastCanvasPt.current ?? { x: e.clientX, y: e.clientY };
+        const dx = e.clientX - last.x;
+        const dy = e.clientY - last.y;
+        applyEliteAt(e.clientX, e.clientY, dx, dy);
+        lastCanvasPt.current = { x: e.clientX, y: e.clientY };
+      } else {
+        continueDraw(p);
+      }
     } else if (tool === "pan" && pointers.current.size === 1) {
       // single-finger pan when in pan mode
       const v = viewRef.current;
@@ -456,7 +470,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   function onPointerUp(e: React.PointerEvent) {
     pointers.current.delete(e.pointerId);
     if (e.pointerId === drawingPointerId.current) {
-      endDraw();
+      if (eliteTool) {
+        lastCanvasPt.current = null;
+        pushUndo();
+      } else {
+        endDraw();
+      }
       drawingPointerId.current = null;
     }
     if (pointers.current.size < 2) pinchStart.current = null;
