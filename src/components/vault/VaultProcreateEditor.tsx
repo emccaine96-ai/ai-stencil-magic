@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import {
+  X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2,
+  Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3,
+} from "lucide-react";
 import { saveDocument, type DocumentData } from "@/lib/localDB";
 import {
   DEFAULTS, BRUSH_LABELS, beginStroke, endStroke, strokeTo,
