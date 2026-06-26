@@ -555,17 +555,62 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
       {/* Workspace */}
       <div className="flex-1 flex min-h-0">
-        {/* Brush list */}
-        <aside className="w-20 sm:w-28 shrink-0 bg-neutral-900 border-r border-neutral-800 overflow-y-auto p-1">
-          {BRUSH_ORDER.map(id => (
-            <button
-              key={id}
-              onClick={() => { setBrushId(id); if (id !== "eraser") setTool("brush"); else setTool("eraser"); }}
-              className={`w-full text-left rounded px-2 py-1.5 text-[10px] sm:text-xs mb-0.5 ${brushId === id ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-neutral-800 text-neutral-300"}`}
-            >
-              {BRUSH_LABELS[id]}
+        {/* LEFT — Engines & Symmetry */}
+        <aside className="w-36 sm:w-44 shrink-0 bg-neutral-900 border-r border-neutral-800 overflow-y-auto p-2 space-y-3 text-xs">
+          <div>
+            <div className="text-[10px] uppercase text-neutral-500 mb-1">Engine A · Stabilizer</div>
+            <input type="range" min={0} max={90} value={Math.round(stabilizer * 100)}
+              onChange={e => setStabilizer(+e.target.value / 100)} className="w-full" />
+            <div className="text-[10px] text-center text-neutral-400">{Math.round(stabilizer * 100)}%</div>
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase text-neutral-500 mb-1 flex items-center gap-1"><Grid3x3 size={11}/> Symmetry</div>
+            <select value={symmetry} onChange={e => setSymmetry(e.target.value as Symmetry)}
+              className="w-full bg-neutral-800 rounded px-1 py-1 text-xs border border-neutral-700">
+              <option value="none">None</option>
+              <option value="mirror-x">Mirror X</option>
+              <option value="mirror-y">Mirror Y</option>
+              <option value="radial-8">8-Fold Mandala</option>
+            </select>
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase text-neutral-500 mb-1">Elite Engines</div>
+            <div className="grid grid-cols-2 gap-1">
+              {([
+                ["stipple", "Stippler", Sparkles],
+                ["smudge", "Smudge", Droplet],
+                ["liquify-push", "Push", Wind],
+                ["liquify-inflate", "Inflate", Wind],
+                ["liquify-deflate", "Deflate", Wind],
+              ] as const).map(([id, label, Icon]) => (
+                <button key={id}
+                  onClick={() => setEliteTool(eliteTool === id ? null : id)}
+                  className={`flex flex-col items-center gap-0.5 rounded px-1 py-1.5 text-[10px] ${eliteTool === id ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"}`}>
+                  <Icon size={12} />{label}
+                </button>
+              ))}
+            </div>
+            {eliteTool && (
+              <button onClick={() => setEliteTool(null)}
+                className="mt-1 w-full rounded bg-neutral-800 text-neutral-400 text-[10px] py-1 hover:bg-neutral-700">
+                Back to Brush
+              </button>
+            )}
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase text-neutral-500 mb-1">Post Process</div>
+            <button onClick={() => applyThreshold(128)}
+              className="w-full flex items-center gap-1 justify-center rounded bg-neutral-800 hover:bg-neutral-700 px-2 py-1.5 text-[11px] mb-1">
+              <Contrast size={12} /> Threshold
             </button>
-          ))}
+            <button onClick={applyThermal}
+              className="w-full flex items-center gap-1 justify-center rounded bg-gradient-to-r from-purple-700 to-fuchsia-700 hover:opacity-90 px-2 py-1.5 text-[11px]">
+              <Thermometer size={12} /> Thermal
+            </button>
+          </div>
         </aside>
 
         {/* Canvas viewport */}
