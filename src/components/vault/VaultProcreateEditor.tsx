@@ -77,11 +77,16 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const redoStack = useRef<ImageData[]>([]);
 
   const [brushId, setBrushId] = useState<BrushId>("hard-round");
+  const [variantIdx, setVariantIdx] = useState(0); // 0..9
   const [tool, setTool] = useState<Tool>("brush");
+  const [eliteTool, setEliteTool] = useState<EliteTool | null>(null);
+  const [symmetry, setSymmetry] = useState<Symmetry>("none");
+  const [stabilizer, setStabilizer] = useState(0.35); // 0..0.9 EMA weight toward target
   const [color, setColor] = useState("#000000");
   const [size, setSize] = useState(18);
   const [opacity, setOpacity] = useState(1);
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
+  const [brushQuery, setBrushQuery] = useState("");
   const viewRef = useRef(view);
   viewRef.current = view;
   const [canUndo, setCanUndo] = useState(false);
