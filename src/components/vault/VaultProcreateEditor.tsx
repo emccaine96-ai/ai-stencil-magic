@@ -516,6 +516,27 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     onSaved();
   }
 
+  // ---- 500-variant matrix --------------------------------------------------
+  const allVariants = useMemo<BrushVariant[]>(() => {
+    const out: BrushVariant[] = [];
+    for (const base of BRUSH_ORDER) {
+      MODIFIERS.forEach((m, i) => {
+        out.push({
+          vid: `${base}::${i}`,
+          base,
+          label: `${BRUSH_LABELS[base]} — ${m.tag}`,
+          sizeMul: m.sizeMul, opacityMul: m.opacityMul, scatter: m.scatter,
+        });
+      });
+    }
+    return out;
+  }, []);
+  const filteredVariants = useMemo(() => {
+    if (!brushQuery.trim()) return allVariants;
+    const q = brushQuery.toLowerCase();
+    return allVariants.filter(v => v.label.toLowerCase().includes(q));
+  }, [allVariants, brushQuery]);
+
   // ---- UI ------------------------------------------------------------------
   return (
     <div className="fixed inset-0 z-[100] bg-neutral-950 text-white flex flex-col touch-none select-none">
