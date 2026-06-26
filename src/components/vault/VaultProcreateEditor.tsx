@@ -71,7 +71,9 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
-  const strokeRef = useRef<StrokeContext | null>(null);
+  const strokeRefs = useRef<StrokeContext[]>([]);
+  const stabPt = useRef<{ x: number; y: number; p: number } | null>(null);
+  const lastCanvasPt = useRef<{ x: number; y: number } | null>(null);
   const rafRef = useRef<number | null>(null);
   const undoStack = useRef<ImageData[]>([]);
   const redoStack = useRef<ImageData[]>([]);
