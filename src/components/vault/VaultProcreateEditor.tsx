@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import { X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import {
+  X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2,
+  Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3,
+} from "lucide-react";
 import { saveDocument, type DocumentData } from "@/lib/localDB";
 import {
   DEFAULTS, BRUSH_LABELS, beginStroke, endStroke, strokeTo,
@@ -37,6 +40,30 @@ const PALETTE = [
 ];
 
 type Tool = "brush" | "eraser" | "pan" | "eyedrop";
+type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple";
+type Symmetry = "none" | "mirror-x" | "mirror-y" | "radial-8";
+
+// --- 500-brush variant matrix (50 bases × 10 modulations) -------------------
+type BrushVariant = {
+  vid: string;
+  base: BrushId;
+  label: string;
+  sizeMul: number;
+  opacityMul: number;
+  scatter: number; // extra radial jitter (px) per stamp
+};
+const MODIFIERS: { tag: string; sizeMul: number; opacityMul: number; scatter: number }[] = [
+  { tag: "Original",    sizeMul: 1.00, opacityMul: 1.00, scatter: 0  },
+  { tag: "Fine",        sizeMul: 0.55, opacityMul: 0.95, scatter: 0  },
+  { tag: "Heavy",       sizeMul: 1.85, opacityMul: 1.00, scatter: 0  },
+  { tag: "Ghost",       sizeMul: 1.00, opacityMul: 0.35, scatter: 0  },
+  { tag: "Bold",        sizeMul: 1.30, opacityMul: 1.00, scatter: 0  },
+  { tag: "Scatter",     sizeMul: 1.00, opacityMul: 0.85, scatter: 8  },
+  { tag: "Wide Spray",  sizeMul: 1.45, opacityMul: 0.70, scatter: 14 },
+  { tag: "Whisper",     sizeMul: 0.75, opacityMul: 0.25, scatter: 2  },
+  { tag: "XL Heavy",    sizeMul: 2.40, opacityMul: 0.95, scatter: 4  },
+  { tag: "Micro Stipple", sizeMul: 0.40, opacityMul: 0.80, scatter: 6  },
+];
 
 /** Two-finger pinch + pan, single-pointer draw. Matrix-based transform so
  *  zoom anchors stay locked to the midpoint between the fingers — no drift. */
@@ -44,17 +71,24 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
-  const strokeRef = useRef<StrokeContext | null>(null);
+  const strokeRefs = useRef<StrokeContext[]>([]);
+  const stabPt = useRef<{ x: number; y: number; p: number } | null>(null);
+  const lastCanvasPt = useRef<{ x: number; y: number } | null>(null);
   const rafRef = useRef<number | null>(null);
   const undoStack = useRef<ImageData[]>([]);
   const redoStack = useRef<ImageData[]>([]);
 
   const [brushId, setBrushId] = useState<BrushId>("hard-round");
+  const [variantIdx, setVariantIdx] = useState(0); // 0..9
   const [tool, setTool] = useState<Tool>("brush");
+  const [eliteTool, setEliteTool] = useState<EliteTool | null>(null);
+  const [symmetry, setSymmetry] = useState<Symmetry>("none");
+  const [stabilizer, setStabilizer] = useState(0.35); // 0..0.9 EMA weight toward target
   const [color, setColor] = useState("#000000");
   const [size, setSize] = useState(18);
   const [opacity, setOpacity] = useState(1);
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
+  const [brushQuery, setBrushQuery] = useState("");
   const viewRef = useRef(view);
   viewRef.current = view;
   const [canUndo, setCanUndo] = useState(false);
@@ -151,30 +185,190 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     };
   }
 
+  function symmetryPoints(x: number, y: number): { x: number; y: number }[] {
+    const c = ctxRef.current!.canvas;
+    const cx = c.width / 2, cy = c.height / 2;
+    if (symmetry === "none") return [{ x, y }];
+    if (symmetry === "mirror-x") return [{ x, y }, { x: 2 * cx - x, y }];
+    if (symmetry === "mirror-y") return [{ x, y }, { x, y: 2 * cy - y }];
+    // radial-8
+    const out: { x: number; y: number }[] = [];
+    const dx = x - cx, dy = y - cy;
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      const cos = Math.cos(a), sin = Math.sin(a);
+      out.push({ x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos });
+    }
+    return out;
+  }
+
   function beginDraw(p: Pt) {
     const ctx = ctxRef.current!;
+    const variant = MODIFIERS[variantIdx];
     const settings: BrushSettings = {
       ...DEFAULTS[brushId],
       id: tool === "eraser" ? "eraser" : brushId,
       color,
-      size,
-      opacity,
+      size: Math.max(1, size * variant.sizeMul),
+      opacity: Math.max(0.02, Math.min(1, opacity * variant.opacityMul)),
     };
-    strokeRef.current = beginStroke(ctx, settings);
     const { x, y } = screenToCanvas(p.cx, p.cy);
-    strokeTo(strokeRef.current, x, y, p.pressure);
+    stabPt.current = { x, y, p: p.pressure };
+    const pts = symmetryPoints(x, y);
+    strokeRefs.current = pts.map(() => beginStroke(ctx, settings));
+    pts.forEach((pt, i) => strokeTo(strokeRefs.current[i], pt.x + jitter(variant.scatter), pt.y + jitter(variant.scatter), p.pressure));
   }
   function continueDraw(p: Pt) {
-    if (!strokeRef.current) return;
-    const { x, y } = screenToCanvas(p.cx, p.cy);
-    strokeTo(strokeRef.current, x, y, p.pressure);
+    if (!strokeRefs.current.length) return;
+    const target = screenToCanvas(p.cx, p.cy);
+    // EMA stabilizer: move stab point a fraction toward target each event
+    const s = stabPt.current ?? { x: target.x, y: target.y, p: p.pressure };
+    const w = 1 - stabilizer; // higher slider = slower follow = smoother
+    s.x += (target.x - s.x) * w;
+    s.y += (target.y - s.y) * w;
+    s.p += (p.pressure - s.p) * 0.5;
+    stabPt.current = s;
+    const variant = MODIFIERS[variantIdx];
+    const pts = symmetryPoints(s.x, s.y);
+    pts.forEach((pt, i) => {
+      const sr = strokeRefs.current[i];
+      if (sr) strokeTo(sr, pt.x + jitter(variant.scatter), pt.y + jitter(variant.scatter), s.p);
+    });
   }
   function endDraw() {
-    if (strokeRef.current) {
-      endStroke(strokeRef.current);
-      strokeRef.current = null;
+    if (strokeRefs.current.length) {
+      strokeRefs.current.forEach(endStroke);
+      strokeRefs.current = [];
+      stabPt.current = null;
       pushUndo();
     }
+  }
+  function jitter(amt: number) { return amt ? (Math.random() - 0.5) * 2 * amt : 0; }
+
+  // ---- Elite engines (B Stippler, C Smudge, D Liquify) ---------------------
+  function applyEliteAt(cx: number, cy: number, dx: number, dy: number) {
+    if (!eliteTool) return;
+    const ctx = ctxRef.current!;
+    const { x, y } = screenToCanvas(cx, cy);
+    const r = Math.max(6, size * 1.5);
+    const ix = Math.floor(x - r), iy = Math.floor(y - r);
+    const w = Math.ceil(r * 2), h = Math.ceil(r * 2);
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    if (ix + w < 0 || iy + h < 0 || ix > W || iy > H) return;
+    const sx = Math.max(0, ix), sy = Math.max(0, iy);
+    const sw = Math.min(W - sx, w - (sx - ix));
+    const sh = Math.min(H - sy, h - (sy - iy));
+    if (sw <= 0 || sh <= 0) return;
+
+    if (eliteTool === "stipple") {
+      // Engine B: procedural whip stippler with velocity falloff
+      const v = Math.min(60, Math.hypot(dx, dy));
+      const density = Math.max(4, Math.floor(20 - v * 0.25));
+      ctx.save();
+      ctx.fillStyle = color;
+      for (let i = 0; i < density; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const rad = Math.random() * r * Math.exp(-Math.random() * 1.2);
+        const px = x + Math.cos(ang) * rad;
+        const py = y + Math.sin(ang) * rad;
+        ctx.globalAlpha = opacity * (0.4 + Math.random() * 0.6);
+        ctx.beginPath();
+        ctx.arc(px, py, Math.max(0.5, size * 0.06), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      return;
+    }
+
+    const src = ctx.getImageData(sx, sy, sw, sh);
+    const out = ctx.createImageData(sw, sh);
+    const data = src.data, od = out.data;
+    const cxL = x - sx, cyL = y - sy;
+
+    if (eliteTool === "smudge") {
+      // Engine C: linear-interpolated color drag
+      const blend = Math.min(0.85, opacity);
+      for (let py = 0; py < sh; py++) {
+        for (let px = 0; px < sw; px++) {
+          const ddx = px - cxL, ddy = py - cyL;
+          const dist = Math.hypot(ddx, ddy);
+          const f = dist < r ? (1 - dist / r) * blend : 0;
+          const sxs = Math.round(px - dx * f);
+          const sys = Math.round(py - dy * f);
+          const idx = (py * sw + px) * 4;
+          if (sxs >= 0 && sxs < sw && sys >= 0 && sys < sh) {
+            const sIdx = (sys * sw + sxs) * 4;
+            od[idx]   = data[idx]   * (1 - f) + data[sIdx]   * f;
+            od[idx+1] = data[idx+1] * (1 - f) + data[sIdx+1] * f;
+            od[idx+2] = data[idx+2] * (1 - f) + data[sIdx+2] * f;
+            od[idx+3] = data[idx+3] * (1 - f) + data[sIdx+3] * f;
+          } else {
+            od[idx]=data[idx]; od[idx+1]=data[idx+1]; od[idx+2]=data[idx+2]; od[idx+3]=data[idx+3];
+          }
+        }
+      }
+    } else {
+      // Engine D: liquify mesh lattice (push / inflate / deflate) — quadratic falloff
+      const strength = opacity * 0.9;
+      for (let py = 0; py < sh; py++) {
+        for (let px = 0; px < sw; px++) {
+          const ddx = px - cxL, ddy = py - cyL;
+          const dist = Math.hypot(ddx, ddy);
+          const t = dist < r ? 1 - (dist / r) * (dist / r) : 0;
+          let ox = px, oy = py;
+          if (t > 0) {
+            if (eliteTool === "liquify-push") {
+              ox = px - dx * t * strength;
+              oy = py - dy * t * strength;
+            } else if (eliteTool === "liquify-inflate") {
+              const k = 1 + t * strength * 0.6;
+              ox = cxL + ddx / k;
+              oy = cyL + ddy / k;
+            } else { // deflate
+              const k = 1 - t * strength * 0.6;
+              ox = cxL + ddx / Math.max(0.2, k);
+              oy = cyL + ddy / Math.max(0.2, k);
+            }
+          }
+          const sxs = Math.max(0, Math.min(sw - 1, Math.round(ox)));
+          const sys = Math.max(0, Math.min(sh - 1, Math.round(oy)));
+          const idx = (py * sw + px) * 4;
+          const sIdx = (sys * sw + sxs) * 4;
+          od[idx]=data[sIdx]; od[idx+1]=data[sIdx+1]; od[idx+2]=data[sIdx+2]; od[idx+3]=data[sIdx+3];
+        }
+      }
+    }
+    ctx.putImageData(out, sx, sy);
+  }
+
+  // ---- Post-process filters -----------------------------------------------
+  function applyThreshold(level = 128) {
+    const ctx = ctxRef.current!;
+    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      // NTSC luminance
+      const l = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+      const v = l < level ? 0 : 255;
+      d[i] = d[i+1] = d[i+2] = v;
+    }
+    ctx.putImageData(img, 0, 0);
+    pushUndo();
+  }
+  function applyThermal() {
+    // Stencil-paper purple emulator: darks → deep violet, mids → magenta tint, lights → cream
+    const ctx = ctxRef.current!;
+    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const l = (0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]) / 255;
+      const r = Math.round(60 + (255 - 60) * Math.pow(l, 1.2));
+      const g = Math.round(35 + (245 - 35) * Math.pow(l, 1.7));
+      const b = Math.round(95 + (235 - 95) * Math.pow(l, 1.1));
+      d[i] = r; d[i+1] = g; d[i+2] = b;
+    }
+    ctx.putImageData(img, 0, 0);
+    pushUndo();
   }
 
   function eyedropAt(cx: number, cy: number) {
@@ -217,6 +411,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     // Single pointer
     if (tool === "eyedrop") { eyedropAt(e.clientX, e.clientY); return; }
     if (tool === "pan") return;
+    if (eliteTool) {
+      drawingPointerId.current = e.pointerId;
+      lastCanvasPt.current = { x: e.clientX, y: e.clientY };
+      applyEliteAt(e.clientX, e.clientY, 0, 0);
+      return;
+    }
     drawingPointerId.current = e.pointerId;
     beginDraw(p);
   }
@@ -251,7 +451,15 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     }
 
     if (e.pointerId === drawingPointerId.current) {
-      continueDraw(p);
+      if (eliteTool) {
+        const last = lastCanvasPt.current ?? { x: e.clientX, y: e.clientY };
+        const dx = e.clientX - last.x;
+        const dy = e.clientY - last.y;
+        applyEliteAt(e.clientX, e.clientY, dx, dy);
+        lastCanvasPt.current = { x: e.clientX, y: e.clientY };
+      } else {
+        continueDraw(p);
+      }
     } else if (tool === "pan" && pointers.current.size === 1) {
       // single-finger pan when in pan mode
       const v = viewRef.current;
@@ -262,7 +470,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   function onPointerUp(e: React.PointerEvent) {
     pointers.current.delete(e.pointerId);
     if (e.pointerId === drawingPointerId.current) {
-      endDraw();
+      if (eliteTool) {
+        lastCanvasPt.current = null;
+        pushUndo();
+      } else {
+        endDraw();
+      }
       drawingPointerId.current = null;
     }
     if (pointers.current.size < 2) pinchStart.current = null;
@@ -303,6 +516,27 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     onSaved();
   }
 
+  // ---- 500-variant matrix --------------------------------------------------
+  const allVariants = useMemo<BrushVariant[]>(() => {
+    const out: BrushVariant[] = [];
+    for (const base of BRUSH_ORDER) {
+      MODIFIERS.forEach((m, i) => {
+        out.push({
+          vid: `${base}::${i}`,
+          base,
+          label: `${BRUSH_LABELS[base]} — ${m.tag}`,
+          sizeMul: m.sizeMul, opacityMul: m.opacityMul, scatter: m.scatter,
+        });
+      });
+    }
+    return out;
+  }, []);
+  const filteredVariants = useMemo(() => {
+    if (!brushQuery.trim()) return allVariants;
+    const q = brushQuery.toLowerCase();
+    return allVariants.filter(v => v.label.toLowerCase().includes(q));
+  }, [allVariants, brushQuery]);
+
   // ---- UI ------------------------------------------------------------------
   return (
     <div className="fixed inset-0 z-[100] bg-neutral-950 text-white flex flex-col touch-none select-none">
@@ -321,17 +555,62 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
       {/* Workspace */}
       <div className="flex-1 flex min-h-0">
-        {/* Brush list */}
-        <aside className="w-20 sm:w-28 shrink-0 bg-neutral-900 border-r border-neutral-800 overflow-y-auto p-1">
-          {BRUSH_ORDER.map(id => (
-            <button
-              key={id}
-              onClick={() => { setBrushId(id); if (id !== "eraser") setTool("brush"); else setTool("eraser"); }}
-              className={`w-full text-left rounded px-2 py-1.5 text-[10px] sm:text-xs mb-0.5 ${brushId === id ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-neutral-800 text-neutral-300"}`}
-            >
-              {BRUSH_LABELS[id]}
+        {/* LEFT — Engines & Symmetry */}
+        <aside className="w-36 sm:w-44 shrink-0 bg-neutral-900 border-r border-neutral-800 overflow-y-auto p-2 space-y-3 text-xs">
+          <div>
+            <div className="text-[10px] uppercase text-neutral-500 mb-1">Engine A · Stabilizer</div>
+            <input type="range" min={0} max={90} value={Math.round(stabilizer * 100)}
+              onChange={e => setStabilizer(+e.target.value / 100)} className="w-full" />
+            <div className="text-[10px] text-center text-neutral-400">{Math.round(stabilizer * 100)}%</div>
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase text-neutral-500 mb-1 flex items-center gap-1"><Grid3x3 size={11}/> Symmetry</div>
+            <select value={symmetry} onChange={e => setSymmetry(e.target.value as Symmetry)}
+              className="w-full bg-neutral-800 rounded px-1 py-1 text-xs border border-neutral-700">
+              <option value="none">None</option>
+              <option value="mirror-x">Mirror X</option>
+              <option value="mirror-y">Mirror Y</option>
+              <option value="radial-8">8-Fold Mandala</option>
+            </select>
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase text-neutral-500 mb-1">Elite Engines</div>
+            <div className="grid grid-cols-2 gap-1">
+              {([
+                ["stipple", "Stippler", Sparkles],
+                ["smudge", "Smudge", Droplet],
+                ["liquify-push", "Push", Wind],
+                ["liquify-inflate", "Inflate", Wind],
+                ["liquify-deflate", "Deflate", Wind],
+              ] as const).map(([id, label, Icon]) => (
+                <button key={id}
+                  onClick={() => setEliteTool(eliteTool === id ? null : id)}
+                  className={`flex flex-col items-center gap-0.5 rounded px-1 py-1.5 text-[10px] ${eliteTool === id ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"}`}>
+                  <Icon size={12} />{label}
+                </button>
+              ))}
+            </div>
+            {eliteTool && (
+              <button onClick={() => setEliteTool(null)}
+                className="mt-1 w-full rounded bg-neutral-800 text-neutral-400 text-[10px] py-1 hover:bg-neutral-700">
+                Back to Brush
+              </button>
+            )}
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase text-neutral-500 mb-1">Post Process</div>
+            <button onClick={() => applyThreshold(128)}
+              className="w-full flex items-center gap-1 justify-center rounded bg-neutral-800 hover:bg-neutral-700 px-2 py-1.5 text-[11px] mb-1">
+              <Contrast size={12} /> Threshold
             </button>
-          ))}
+            <button onClick={applyThermal}
+              className="w-full flex items-center gap-1 justify-center rounded bg-gradient-to-r from-purple-700 to-fuchsia-700 hover:opacity-90 px-2 py-1.5 text-[11px]">
+              <Thermometer size={12} /> Thermal
+            </button>
+          </div>
         </aside>
 
         {/* Canvas viewport */}
@@ -397,6 +676,41 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
                 />
               ))}
             </div>
+          </div>
+        </aside>
+
+        {/* Far-right — 500-brush variant library */}
+        <aside className="w-40 sm:w-52 shrink-0 bg-neutral-900 border-l border-neutral-800 flex flex-col">
+          <div className="p-2 border-b border-neutral-800">
+            <div className="text-[10px] uppercase text-neutral-500 mb-1">
+              Brush Library · {allVariants.length}
+            </div>
+            <input
+              placeholder="Search 500 brushes…"
+              value={brushQuery}
+              onChange={e => setBrushQuery(e.target.value)}
+              className="w-full bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-xs"
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto p-1">
+            {filteredVariants.map(v => {
+              const sel = v.base === brushId && v.vid.endsWith(`::${variantIdx}`);
+              return (
+                <button
+                  key={v.vid}
+                  onClick={() => {
+                    setBrushId(v.base);
+                    const idx = parseInt(v.vid.split("::")[1], 10);
+                    setVariantIdx(idx);
+                    setEliteTool(null);
+                    if (v.base !== "eraser") setTool("brush"); else setTool("eraser");
+                  }}
+                  className={`w-full text-left rounded px-2 py-1 text-[10px] mb-0.5 truncate ${sel ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-neutral-800 text-neutral-300"}`}
+                >
+                  {v.label}
+                </button>
+              );
+            })}
           </div>
         </aside>
       </div>
