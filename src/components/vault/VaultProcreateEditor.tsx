@@ -71,6 +71,9 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const refCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const refCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const refFileInput = useRef<HTMLInputElement | null>(null);
   const strokeRefs = useRef<StrokeContext[]>([]);
   const stabPt = useRef<{ x: number; y: number; p: number } | null>(null);
   const lastCanvasPt = useRef<{ x: number; y: number } | null>(null);
@@ -93,6 +96,9 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   viewRef.current = view;
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [refLoaded, setRefLoaded] = useState(false);
+  const [refOpacity, setRefOpacity] = useState(0.4);
+  const [refVisible, setRefVisible] = useState(true);
 
   // ---- Init canvas from doc -------------------------------------------------
   useEffect(() => {
