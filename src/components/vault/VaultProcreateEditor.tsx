@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2,
-  Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3,
+  Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3, Image as ImageIcon, Eye, EyeOff,
 } from "lucide-react";
 import { saveDocument, type DocumentData } from "@/lib/localDB";
 import {
