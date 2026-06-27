@@ -149,6 +149,43 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     });
   }, []);
 
+  // Re-fit on window resize. Canvas backing buffers are unchanged → drawing is preserved.
+  useEffect(() => {
+    const onResize = () => fitToScreen();
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, [fitToScreen]);
+
+  // ---- Reference image (Layer 0) -------------------------------------------
+  function onPickRefImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; e.target.value = "";
+    if (!f) return;
+    const url = URL.createObjectURL(f);
+    const img = new Image();
+    img.onload = () => {
+      const refCtx = refCtxRef.current!;
+      const rc = refCanvasRef.current!;
+      refCtx.clearRect(0, 0, rc.width, rc.height);
+      // Fit reference image inside the document canvas, centered.
+      const s = Math.min(rc.width / img.naturalWidth, rc.height / img.naturalHeight);
+      const w = img.naturalWidth * s, h = img.naturalHeight * s;
+      refCtx.drawImage(img, (rc.width - w) / 2, (rc.height - h) / 2, w, h);
+      setRefLoaded(true);
+      setRefVisible(true);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  }
+  function clearRefImage() {
+    const refCtx = refCtxRef.current; const rc = refCanvasRef.current;
+    if (refCtx && rc) refCtx.clearRect(0, 0, rc.width, rc.height);
+    setRefLoaded(false);
+  }
+
   // ---- Undo/redo ------------------------------------------------------------
   function pushUndo() {
     const ctx = ctxRef.current; if (!ctx) return;
