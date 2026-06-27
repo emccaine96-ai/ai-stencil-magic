@@ -105,11 +105,16 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
     ctxRef.current = ctx;
+    const refCanvas = refCanvasRef.current!;
+    const refCtx = refCanvas.getContext("2d", { willReadFrequently: true })!;
+    refCtxRef.current = refCtx;
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
       canvas.width = img.naturalWidth || 1024;
       canvas.height = img.naturalHeight || 1024;
+      refCanvas.width = canvas.width;
+      refCanvas.height = canvas.height;
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0);
@@ -118,6 +123,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     };
     img.onerror = () => {
       canvas.width = 1024; canvas.height = 1024;
+      refCanvas.width = 1024; refCanvas.height = 1024;
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, 1024, 1024);
       fitToScreen();
@@ -126,6 +132,17 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     img.src = doc.originalAIImage ?? doc.thumbnail;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);
+
+  // Re-fit on window resize. Canvas backing buffers are unchanged → drawing is preserved.
+  useEffect(() => {
+    const onResize = () => fitToScreen();
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, [fitToScreen]);
 
   const fitToScreen = useCallback(() => {
     const wrap = wrapRef.current;
