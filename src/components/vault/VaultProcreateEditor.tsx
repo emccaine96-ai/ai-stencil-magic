@@ -133,17 +133,6 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);
 
-  // Re-fit on window resize. Canvas backing buffers are unchanged → drawing is preserved.
-  useEffect(() => {
-    const onResize = () => fitToScreen();
-    window.addEventListener("resize", onResize);
-    window.addEventListener("orientationchange", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("orientationchange", onResize);
-    };
-  }, [fitToScreen]);
-
   const fitToScreen = useCallback(() => {
     const wrap = wrapRef.current;
     const canvas = canvasRef.current;
