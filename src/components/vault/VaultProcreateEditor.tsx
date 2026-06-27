@@ -405,7 +405,6 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     pushUndo();
   }
   function applyThermal() {
-    // Stencil-paper purple emulator: darks → deep violet, mids → magenta tint, lights → cream
     const ctx = ctxRef.current!;
     const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
     const d = img.data;
@@ -415,6 +414,25 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       const g = Math.round(35 + (245 - 35) * Math.pow(l, 1.7));
       const b = Math.round(95 + (235 - 95) * Math.pow(l, 1.1));
       d[i] = r; d[i+1] = g; d[i+2] = b;
+    }
+    ctx.putImageData(img, 0, 0);
+    pushUndo();
+  }
+
+  /** Premium stencil transfer hue. Darks → #2b3a8c violet-blue carbon; lights → cream. */
+  function applyThermalBlueCarbon() {
+    const ctx = ctxRef.current!;
+    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+    const d = img.data;
+    const CARBON = { r: 0x2b, g: 0x3a, b: 0x8c };
+    const CREAM  = { r: 0xfa, g: 0xf6, b: 0xea };
+    for (let i = 0; i < d.length; i += 4) {
+      const l = (0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]) / 255;
+      // Gamma curve favors mapping mid-darks to the carbon hue.
+      const t = Math.pow(l, 1.4);
+      d[i]   = Math.round(CARBON.r * (1 - t) + CREAM.r * t);
+      d[i+1] = Math.round(CARBON.g * (1 - t) + CREAM.g * t);
+      d[i+2] = Math.round(CARBON.b * (1 - t) + CREAM.b * t);
     }
     ctx.putImageData(img, 0, 0);
     pushUndo();
