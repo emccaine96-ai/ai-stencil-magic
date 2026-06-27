@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2,
-  Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3,
+  Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3, Image as ImageIcon, Eye, EyeOff,
 } from "lucide-react";
 import { saveDocument, type DocumentData } from "@/lib/localDB";
 import {
@@ -71,6 +71,9 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const refCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const refCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const refFileInput = useRef<HTMLInputElement | null>(null);
   const strokeRefs = useRef<StrokeContext[]>([]);
   const stabPt = useRef<{ x: number; y: number; p: number } | null>(null);
   const lastCanvasPt = useRef<{ x: number; y: number } | null>(null);
@@ -93,17 +96,25 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   viewRef.current = view;
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [refLoaded, setRefLoaded] = useState(false);
+  const [refOpacity, setRefOpacity] = useState(0.4);
+  const [refVisible, setRefVisible] = useState(true);
 
   // ---- Init canvas from doc -------------------------------------------------
   useEffect(() => {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
     ctxRef.current = ctx;
+    const refCanvas = refCanvasRef.current!;
+    const refCtx = refCanvas.getContext("2d", { willReadFrequently: true })!;
+    refCtxRef.current = refCtx;
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
       canvas.width = img.naturalWidth || 1024;
       canvas.height = img.naturalHeight || 1024;
+      refCanvas.width = canvas.width;
+      refCanvas.height = canvas.height;
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0);
@@ -112,6 +123,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     };
     img.onerror = () => {
       canvas.width = 1024; canvas.height = 1024;
+      refCanvas.width = 1024; refCanvas.height = 1024;
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, 1024, 1024);
       fitToScreen();
@@ -136,6 +148,43 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       y: (wrap.clientHeight - canvas.height * scale) / 2,
     });
   }, []);
+
+  // Re-fit on window resize. Canvas backing buffers are unchanged → drawing is preserved.
+  useEffect(() => {
+    const onResize = () => fitToScreen();
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, [fitToScreen]);
+
+  // ---- Reference image (Layer 0) -------------------------------------------
+  function onPickRefImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; e.target.value = "";
+    if (!f) return;
+    const url = URL.createObjectURL(f);
+    const img = new Image();
+    img.onload = () => {
+      const refCtx = refCtxRef.current!;
+      const rc = refCanvasRef.current!;
+      refCtx.clearRect(0, 0, rc.width, rc.height);
+      // Fit reference image inside the document canvas, centered.
+      const s = Math.min(rc.width / img.naturalWidth, rc.height / img.naturalHeight);
+      const w = img.naturalWidth * s, h = img.naturalHeight * s;
+      refCtx.drawImage(img, (rc.width - w) / 2, (rc.height - h) / 2, w, h);
+      setRefLoaded(true);
+      setRefVisible(true);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  }
+  function clearRefImage() {
+    const refCtx = refCtxRef.current; const rc = refCanvasRef.current;
+    if (refCtx && rc) refCtx.clearRect(0, 0, rc.width, rc.height);
+    setRefLoaded(false);
+  }
 
   // ---- Undo/redo ------------------------------------------------------------
   function pushUndo() {
@@ -356,7 +405,6 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     pushUndo();
   }
   function applyThermal() {
-    // Stencil-paper purple emulator: darks → deep violet, mids → magenta tint, lights → cream
     const ctx = ctxRef.current!;
     const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
     const d = img.data;
@@ -366,6 +414,25 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       const g = Math.round(35 + (245 - 35) * Math.pow(l, 1.7));
       const b = Math.round(95 + (235 - 95) * Math.pow(l, 1.1));
       d[i] = r; d[i+1] = g; d[i+2] = b;
+    }
+    ctx.putImageData(img, 0, 0);
+    pushUndo();
+  }
+
+  /** Premium stencil transfer hue. Darks → #2b3a8c violet-blue carbon; lights → cream. */
+  function applyThermalBlueCarbon() {
+    const ctx = ctxRef.current!;
+    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+    const d = img.data;
+    const CARBON = { r: 0x2b, g: 0x3a, b: 0x8c };
+    const CREAM  = { r: 0xfa, g: 0xf6, b: 0xea };
+    for (let i = 0; i < d.length; i += 4) {
+      const l = (0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]) / 255;
+      // Gamma curve favors mapping mid-darks to the carbon hue.
+      const t = Math.pow(l, 1.4);
+      d[i]   = Math.round(CARBON.r * (1 - t) + CREAM.r * t);
+      d[i+1] = Math.round(CARBON.g * (1 - t) + CREAM.g * t);
+      d[i+2] = Math.round(CARBON.b * (1 - t) + CREAM.b * t);
     }
     ctx.putImageData(img, 0, 0);
     pushUndo();
@@ -539,181 +606,264 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
   // ---- UI ------------------------------------------------------------------
   return (
-    <div className="fixed inset-0 z-[100] bg-neutral-950 text-white flex flex-col touch-none select-none">
-      {/* Top bar */}
-      <header className="h-12 shrink-0 flex items-center gap-2 px-3 border-b border-neutral-800 bg-neutral-900">
-        <button onClick={onClose} className="p-1.5 rounded hover:bg-neutral-800" aria-label="Close"><X size={18} /></button>
+    <div className="fixed inset-0 z-[100] text-white touch-none select-none" style={{ background: "#0d0d0f" }}>
+      {/* LAYER 0+1 — Fullscreen canvas viewport, behind every panel */}
+      <div
+        ref={wrapRef}
+        className="absolute inset-0 overflow-hidden"
+        style={{ background: "#0d0d0f", zIndex: 1, touchAction: "none" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onPointerLeave={onPointerUp}
+        onWheel={onWheel}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: 0, top: 0,
+            transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale})`,
+            transformOrigin: "0 0",
+            willChange: "transform",
+          }}
+        >
+          {/* Layer 0 — Reference image (under) */}
+          <canvas
+            ref={refCanvasRef}
+            className="absolute inset-0 bg-white shadow-[0_30px_120px_-30px_rgba(0,0,0,0.7)]"
+            style={{
+              opacity: refVisible ? refOpacity : 0,
+              pointerEvents: "none",
+              imageRendering: view.scale > 2 ? "pixelated" : "auto",
+            }}
+          />
+          {/* Layer 1 — Stencil/drawing layer (top) */}
+          <canvas
+            ref={canvasRef}
+            className="relative bg-white shadow-2xl"
+            style={{
+              imageRendering: view.scale > 2 ? "pixelated" : "auto",
+              mixBlendMode: refLoaded && refVisible ? "multiply" : "normal",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* HEADER — floating control bar (z 10) */}
+      <header
+        className="absolute left-0 right-0 top-0 flex items-center gap-2 px-3"
+        style={{
+          height: 50,
+          zIndex: 10,
+          background: "rgba(18,18,22,0.85)",
+          backdropFilter: "blur(12px)",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+        }}
+      >
+        <button onClick={onClose} className="p-1.5 rounded hover:bg-white/10" aria-label="Close"><X size={18} /></button>
         <div className="text-sm font-semibold truncate flex-1">{doc.name}</div>
-        <button onClick={doUndo} disabled={!canUndo} className="p-1.5 rounded hover:bg-neutral-800 disabled:opacity-30" aria-label="Undo"><Undo2 size={18} /></button>
-        <button onClick={doRedo} disabled={!canRedo} className="p-1.5 rounded hover:bg-neutral-800 disabled:opacity-30" aria-label="Redo"><Redo2 size={18} /></button>
-        <button onClick={fitToScreen} className="p-1.5 rounded hover:bg-neutral-800" aria-label="Fit"><Maximize2 size={16} /></button>
-        <button onClick={() => setView(v => ({ ...v, scale: 1, x: 0, y: 0 }))} className="p-1.5 rounded hover:bg-neutral-800" aria-label="Reset zoom"><RotateCcw size={16} /></button>
+        <button onClick={doUndo} disabled={!canUndo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Undo"><Undo2 size={18} /></button>
+        <button onClick={doRedo} disabled={!canRedo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Redo"><Redo2 size={18} /></button>
+        <button onClick={fitToScreen} className="p-1.5 rounded hover:bg-white/10" aria-label="Fit"><Maximize2 size={16} /></button>
+        <button onClick={() => setView(v => ({ ...v, scale: 1, x: 0, y: 0 }))} className="p-1.5 rounded hover:bg-white/10" aria-label="Reset zoom"><RotateCcw size={16} /></button>
+        <span className="text-[11px] text-neutral-400 tabular-nums w-12 text-right">{(view.scale * 100).toFixed(0)}%</span>
         <button onClick={onSave} className="ml-1 rounded-full bg-gradient-to-r from-[#00F5D4] to-[#00B8A9] text-black px-3 py-1.5 text-xs font-bold flex items-center gap-1">
-          <Save size={14} /> Save
+          <Save size={14} /> Save Stencil
         </button>
       </header>
 
-      {/* Workspace */}
-      <div className="flex-1 flex min-h-0">
-        {/* LEFT — Engines & Symmetry */}
-        <aside className="w-36 sm:w-44 shrink-0 bg-neutral-900 border-r border-neutral-800 overflow-y-auto p-2 space-y-3 text-xs">
-          <div>
-            <div className="text-[10px] uppercase text-neutral-500 mb-1">Engine A · Stabilizer</div>
-            <input type="range" min={0} max={90} value={Math.round(stabilizer * 100)}
-              onChange={e => setStabilizer(+e.target.value / 100)} className="w-full" />
-            <div className="text-[10px] text-center text-neutral-400">{Math.round(stabilizer * 100)}%</div>
-          </div>
-
-          <div>
-            <div className="text-[10px] uppercase text-neutral-500 mb-1 flex items-center gap-1"><Grid3x3 size={11}/> Symmetry</div>
-            <select value={symmetry} onChange={e => setSymmetry(e.target.value as Symmetry)}
-              className="w-full bg-neutral-800 rounded px-1 py-1 text-xs border border-neutral-700">
-              <option value="none">None</option>
-              <option value="mirror-x">Mirror X</option>
-              <option value="mirror-y">Mirror Y</option>
-              <option value="radial-8">8-Fold Mandala</option>
-            </select>
-          </div>
-
-          <div>
-            <div className="text-[10px] uppercase text-neutral-500 mb-1">Elite Engines</div>
-            <div className="grid grid-cols-2 gap-1">
-              {([
-                ["stipple", "Stippler", Sparkles],
-                ["smudge", "Smudge", Droplet],
-                ["liquify-push", "Push", Wind],
-                ["liquify-inflate", "Inflate", Wind],
-                ["liquify-deflate", "Deflate", Wind],
-              ] as const).map(([id, label, Icon]) => (
-                <button key={id}
-                  onClick={() => setEliteTool(eliteTool === id ? null : id)}
-                  className={`flex flex-col items-center gap-0.5 rounded px-1 py-1.5 text-[10px] ${eliteTool === id ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"}`}>
-                  <Icon size={12} />{label}
-                </button>
-              ))}
-            </div>
-            {eliteTool && (
-              <button onClick={() => setEliteTool(null)}
-                className="mt-1 w-full rounded bg-neutral-800 text-neutral-400 text-[10px] py-1 hover:bg-neutral-700">
-                Back to Brush
+      {/* COLUMN 1 — Engines (left floating glass panel) */}
+      <aside
+        className="absolute overflow-y-auto p-3 space-y-4 text-xs"
+        style={{
+          top: 60, left: 10, bottom: 10, width: 260,
+          zIndex: 10,
+          borderRadius: 8,
+          background: "rgba(18,18,22,0.85)",
+          backdropFilter: "blur(12px)",
+          border: "1px solid rgba(255,255,255,0.06)",
+        }}
+      >
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Engine A · Stabilizer</div>
+          <input type="range" min={0} max={90} value={Math.round(stabilizer * 100)}
+            onChange={e => setStabilizer(+e.target.value / 100)} className="w-full" />
+          <div className="text-[10px] text-center text-neutral-400">{Math.round(stabilizer * 100)}%</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1 flex items-center gap-1"><Grid3x3 size={11}/> Symmetry</div>
+          <select value={symmetry} onChange={e => setSymmetry(e.target.value as Symmetry)}
+            className="w-full bg-black/40 rounded px-2 py-1.5 text-xs border border-white/10">
+            <option value="none">None</option>
+            <option value="mirror-x">Mirror X</option>
+            <option value="mirror-y">Mirror Y</option>
+            <option value="radial-8">8-Fold Mandala</option>
+          </select>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Elite Engines</div>
+          <div className="grid grid-cols-2 gap-1">
+            {([
+              ["stipple", "Stippler", Sparkles],
+              ["smudge", "Smudge", Droplet],
+              ["liquify-push", "Push", Wind],
+              ["liquify-inflate", "Inflate", Wind],
+              ["liquify-deflate", "Deflate", Wind],
+            ] as const).map(([id, label, Icon]) => (
+              <button key={id}
+                onClick={() => setEliteTool(eliteTool === id ? null : id)}
+                className={`flex flex-col items-center gap-0.5 rounded px-1 py-1.5 text-[10px] border ${eliteTool === id ? "bg-[#00F5D4]/15 text-[#00F5D4] border-[#00F5D4]/40" : "bg-black/30 text-neutral-300 border-white/5 hover:bg-white/10"}`}>
+                <Icon size={12} />{label}
               </button>
-            )}
+            ))}
           </div>
-
-          <div>
-            <div className="text-[10px] uppercase text-neutral-500 mb-1">Post Process</div>
-            <button onClick={() => applyThreshold(128)}
-              className="w-full flex items-center gap-1 justify-center rounded bg-neutral-800 hover:bg-neutral-700 px-2 py-1.5 text-[11px] mb-1">
-              <Contrast size={12} /> Threshold
+          {eliteTool && (
+            <button onClick={() => setEliteTool(null)}
+              className="mt-1 w-full rounded bg-white/5 text-neutral-400 text-[10px] py-1 hover:bg-white/10">
+              Back to Brush
             </button>
-            <button onClick={applyThermal}
-              className="w-full flex items-center gap-1 justify-center rounded bg-gradient-to-r from-purple-700 to-fuchsia-700 hover:opacity-90 px-2 py-1.5 text-[11px]">
-              <Thermometer size={12} /> Thermal
-            </button>
-          </div>
-        </aside>
+          )}
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Post Process</div>
+          <button onClick={() => applyThreshold(128)}
+            className="w-full flex items-center gap-1 justify-center rounded bg-black/30 hover:bg-white/10 px-2 py-2 text-[11px] mb-1 border border-white/5">
+            <Contrast size={12} /> Run Stencil Threshold Map
+          </button>
+          <button onClick={applyThermalBlueCarbon}
+            className="w-full flex items-center gap-1 justify-center rounded px-2 py-2 text-[11px] mb-1 font-semibold text-white"
+            style={{ background: "linear-gradient(135deg,#2b3a8c,#5a4bd1)" }}>
+            <Thermometer size={12} /> Thermal Blue Carbon
+          </button>
+          <button onClick={applyThermal}
+            className="w-full flex items-center gap-1 justify-center rounded bg-gradient-to-r from-purple-700 to-fuchsia-700 hover:opacity-90 px-2 py-2 text-[11px]">
+            <Thermometer size={12} /> Thermal Purple
+          </button>
+        </div>
+      </aside>
 
-        {/* Canvas viewport */}
-        <div
-          ref={wrapRef}
-          className="flex-1 relative overflow-hidden bg-neutral-800"
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          onPointerLeave={onPointerUp}
-          onWheel={onWheel}
-          style={{ touchAction: "none" }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              left: 0, top: 0,
-              transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale})`,
-              transformOrigin: "0 0",
-              willChange: "transform",
-            }}
-          >
-            <canvas
-              ref={canvasRef}
-              className="bg-white shadow-2xl"
-              style={{ imageRendering: view.scale > 2 ? "pixelated" : "auto" }}
-            />
-          </div>
-          <div className="absolute bottom-2 left-2 text-[10px] text-neutral-400 bg-black/40 px-2 py-0.5 rounded">
-            {(view.scale * 100).toFixed(0)}%
+      {/* COLUMN 2 — Tool dock (60px) */}
+      <aside
+        className="absolute flex flex-col gap-2 p-2"
+        style={{
+          top: 60, left: 280, width: 60,
+          zIndex: 10,
+          borderRadius: 8,
+          background: "rgba(18,18,22,0.85)",
+          backdropFilter: "blur(12px)",
+          border: "1px solid rgba(255,255,255,0.06)",
+        }}
+      >
+        <button onClick={() => setTool("brush")} className={`p-2 rounded ${tool === "brush" && !eliteTool ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Brush"><Pipette size={16} className="mx-auto rotate-180" /></button>
+        <button onClick={() => setTool("pan")} className={`p-2 rounded ${tool === "pan" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Pan"><Hand size={16} className="mx-auto" /></button>
+        <button onClick={() => { setTool("eraser"); setBrushId("eraser"); }} className={`p-2 rounded ${tool === "eraser" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Eraser"><Eraser size={16} className="mx-auto" /></button>
+        <button onClick={() => setTool("eyedrop")} className={`p-2 rounded ${tool === "eyedrop" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Eyedropper"><Pipette size={16} className="mx-auto" /></button>
+        <div className="mt-1">
+          <div className="text-[8px] text-neutral-500 uppercase text-center">Size</div>
+          <input type="range" min={1} max={200} value={size} onChange={e => setSize(+e.target.value)}
+            className="w-full"
+            style={{ writingMode: "vertical-lr" as never, WebkitAppearance: "slider-vertical" as never, height: 90 }} />
+          <div className="text-[9px] text-center text-neutral-400">{size}</div>
+        </div>
+        <div>
+          <div className="text-[8px] text-neutral-500 uppercase text-center">Flow</div>
+          <input type="range" min={5} max={100} value={Math.round(opacity * 100)} onChange={e => setOpacity(+e.target.value / 100)}
+            className="w-full"
+            style={{ writingMode: "vertical-lr" as never, WebkitAppearance: "slider-vertical" as never, height: 90 }} />
+          <div className="text-[9px] text-center text-neutral-400">{Math.round(opacity * 100)}</div>
+        </div>
+        <label className="block mt-1">
+          <span className="block text-[8px] text-neutral-500 uppercase text-center mb-1">Color</span>
+          <input type="color" value={color} onChange={e => setColor(e.target.value)}
+            className="w-full h-8 bg-transparent rounded cursor-pointer" />
+        </label>
+      </aside>
+
+      {/* COLUMN 3 — Layers + 500-brush library (right floating panel) */}
+      <aside
+        className="absolute flex flex-col"
+        style={{
+          top: 60, right: 10, bottom: 10, width: 280,
+          zIndex: 10,
+          borderRadius: 8,
+          background: "rgba(18,18,22,0.85)",
+          backdropFilter: "blur(12px)",
+          border: "1px solid rgba(255,255,255,0.06)",
+        }}
+      >
+        {/* Layer manager */}
+        <div className="p-3 border-b border-white/5">
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Layers</div>
+          <div className="space-y-1.5">
+            <div className="rounded bg-black/30 border border-white/5 px-2 py-1.5">
+              <div className="flex items-center gap-2 text-[11px] font-semibold">
+                <span className="w-2 h-2 rounded-full bg-[#00F5D4]" /> Layer 1 · Stencil
+                <span className="ml-auto text-[9px] text-neutral-500">trace</span>
+              </div>
+            </div>
+            <div className="rounded bg-black/30 border border-white/5 px-2 py-1.5">
+              <div className="flex items-center gap-2 text-[11px]">
+                <span className="w-2 h-2 rounded-full bg-neutral-500" /> Layer 0 · Reference
+                <button onClick={() => setRefVisible(v => !v)} className="ml-auto p-0.5 text-neutral-400 hover:text-white" aria-label="Toggle reference">
+                  {refVisible ? <Eye size={12} /> : <EyeOff size={12} />}
+                </button>
+              </div>
+              <div className="mt-1 flex gap-1">
+                <button onClick={() => refFileInput.current?.click()}
+                  className="flex-1 flex items-center justify-center gap-1 rounded bg-white/5 hover:bg-white/10 text-[10px] py-1">
+                  <ImageIcon size={11} /> {refLoaded ? "Replace" : "Import"}
+                </button>
+                {refLoaded && (
+                  <button onClick={clearRefImage}
+                    className="rounded bg-white/5 hover:bg-red-500/20 text-[10px] px-2 py-1">×</button>
+                )}
+                <input ref={refFileInput} type="file" accept="image/*" onChange={onPickRefImage} className="hidden" />
+              </div>
+              {refLoaded && (
+                <div className="mt-1">
+                  <input type="range" min={0} max={100} value={Math.round(refOpacity * 100)}
+                    onChange={e => setRefOpacity(+e.target.value / 100)} className="w-full" />
+                  <div className="text-[9px] text-neutral-500 text-center">Ref Opacity {Math.round(refOpacity * 100)}%</div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Right controls */}
-        <aside className="w-16 sm:w-24 shrink-0 bg-neutral-900 border-l border-neutral-800 flex flex-col items-stretch p-2 gap-2">
-          <button onClick={() => setTool("pan")} className={`p-2 rounded ${tool === "pan" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-neutral-800"}`} aria-label="Pan"><Hand size={16} className="mx-auto" /></button>
-          <button onClick={() => { setTool("eraser"); setBrushId("eraser"); }} className={`p-2 rounded ${tool === "eraser" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-neutral-800"}`} aria-label="Eraser"><Eraser size={16} className="mx-auto" /></button>
-          <button onClick={() => setTool("eyedrop")} className={`p-2 rounded ${tool === "eyedrop" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-neutral-800"}`} aria-label="Eyedropper"><Pipette size={16} className="mx-auto" /></button>
-
-          <div className="mt-2">
-            <div className="text-[9px] text-neutral-400 uppercase">Size</div>
-            <input type="range" min={1} max={200} value={size} onChange={e => setSize(+e.target.value)} className="w-full" />
-            <div className="text-[10px] text-center">{size}px</div>
+        {/* Brush library */}
+        <div className="p-3 border-b border-white/5">
+          <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">
+            Brush Library · {allVariants.length}
           </div>
-          <div>
-            <div className="text-[9px] text-neutral-400 uppercase">Opacity</div>
-            <input type="range" min={5} max={100} value={Math.round(opacity * 100)} onChange={e => setOpacity(+e.target.value / 100)} className="w-full" />
-            <div className="text-[10px] text-center">{Math.round(opacity * 100)}%</div>
-          </div>
-
-          <div className="mt-1">
-            <div className="text-[9px] text-neutral-400 uppercase mb-1">Color</div>
-            <input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-full h-8 bg-transparent rounded cursor-pointer" />
-            <div className="grid grid-cols-3 gap-0.5 mt-1">
-              {PALETTE.map(c => (
-                <button
-                  key={c}
-                  onClick={() => setColor(c)}
-                  className={`aspect-square rounded border ${color.toLowerCase() === c ? "border-[#00F5D4]" : "border-neutral-700"}`}
-                  style={{ background: c }}
-                  aria-label={c}
-                />
-              ))}
-            </div>
-          </div>
-        </aside>
-
-        {/* Far-right — 500-brush variant library */}
-        <aside className="w-40 sm:w-52 shrink-0 bg-neutral-900 border-l border-neutral-800 flex flex-col">
-          <div className="p-2 border-b border-neutral-800">
-            <div className="text-[10px] uppercase text-neutral-500 mb-1">
-              Brush Library · {allVariants.length}
-            </div>
-            <input
-              placeholder="Search 500 brushes…"
-              value={brushQuery}
-              onChange={e => setBrushQuery(e.target.value)}
-              className="w-full bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-xs"
-            />
-          </div>
-          <div className="flex-1 overflow-y-auto p-1">
-            {filteredVariants.map(v => {
-              const sel = v.base === brushId && v.vid.endsWith(`::${variantIdx}`);
-              return (
-                <button
-                  key={v.vid}
-                  onClick={() => {
-                    setBrushId(v.base);
-                    const idx = parseInt(v.vid.split("::")[1], 10);
-                    setVariantIdx(idx);
-                    setEliteTool(null);
-                    if (v.base !== "eraser") setTool("brush"); else setTool("eraser");
-                  }}
-                  className={`w-full text-left rounded px-2 py-1 text-[10px] mb-0.5 truncate ${sel ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-neutral-800 text-neutral-300"}`}
-                >
-                  {v.label}
-                </button>
-              );
-            })}
-          </div>
-        </aside>
-      </div>
+          <input
+            placeholder="Search 500 brushes…"
+            value={brushQuery}
+            onChange={e => setBrushQuery(e.target.value)}
+            className="w-full bg-black/40 border border-white/10 rounded px-2 py-1.5 text-xs"
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto p-1.5">
+          {filteredVariants.map(v => {
+            const sel = v.base === brushId && v.vid.endsWith(`::${variantIdx}`);
+            return (
+              <button
+                key={v.vid}
+                onClick={() => {
+                  setBrushId(v.base);
+                  const idx = parseInt(v.vid.split("::")[1], 10);
+                  setVariantIdx(idx);
+                  setEliteTool(null);
+                  if (v.base !== "eraser") setTool("brush"); else setTool("eraser");
+                }}
+                className={`w-full text-left rounded px-2 py-1.5 text-[10px] mb-0.5 truncate ${sel ? "bg-[#00F5D4]/15 text-[#00F5D4]" : "hover:bg-white/10 text-neutral-300"}`}
+              >
+                {v.label}
+              </button>
+            );
+          })}
+        </div>
+      </aside>
     </div>
   );
 }
