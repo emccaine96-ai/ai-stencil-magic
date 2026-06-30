@@ -1669,6 +1669,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           willChange: "transform, opacity",
         }}
       >
+        <div className="flex items-center justify-between -mt-1 -mx-1 mb-1">
+          <span className="text-[10px] uppercase tracking-wider text-[#00F5D4] font-bold">Engines</span>
+          <button onClick={() => setLeftOpen(false)} className="p-1 rounded hover:bg-white/10 text-neutral-400" aria-label="Hide engines">
+            <X size={14}/>
+          </button>
+        </div>
         <div>
           <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Engine A · Stabilizer</div>
           <input type="range" min={0} max={90} value={Math.round(stabilizer * 100)}
