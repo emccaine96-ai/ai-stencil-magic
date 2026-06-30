@@ -23,6 +23,9 @@ import {
 } from "@/lib/magic-wand";
 import { useAutosavePrefs } from "@/hooks/use-autosave-prefs";
 import { AutosaveSettings } from "./AutosaveSettings";
+import { PicsartDock, type PicsartDockHandlers } from "./PicsartDock";
+import * as PF from "@/lib/picsart-filters";
+import { useNavigate } from "@tanstack/react-router";
 
 type Props = {
   doc: DocumentData;
