@@ -762,16 +762,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     toast.success("Text added");
   }
 
-  function _unusedEyedropAt(cx: number, cy: number) {
-    const ctx = ctxRef.current!;
-    const { x, y } = screenToCanvas(cx, cy);
-    const ix = Math.floor(x), iy = Math.floor(y);
-    if (ix < 0 || iy < 0 || ix >= ctx.canvas.width || iy >= ctx.canvas.height) return;
-    const d = ctx.getImageData(ix, iy, 1, 1).data;
-    if (d[3] === 0) return;
-    setColor("#" + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, "0")).join(""));
-    setTool("brush");
-  }
+  // (eyedropAt defined above)
 
   function onPointerDown(e: React.PointerEvent) {
     (e.target as Element).setPointerCapture?.(e.pointerId);
