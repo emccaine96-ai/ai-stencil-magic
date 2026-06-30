@@ -3,9 +3,11 @@ import {
   X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2,
   Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3, Image as ImageIcon, Eye, EyeOff,
   ChevronRight, ChevronLeft, Settings2, Brush as BrushIcon, Minimize2, Wand2,
+  Crop, Rocket, Type as TypeIcon, Stamp, Wand, Sliders,
 } from "lucide-react";
 import { saveDocument, saveEditorState, type DocumentData, type EditorState, type LayerState } from "@/lib/localDB";
 import { runOp } from "@/lib/worker-bridge";
+import { lanczosResize } from "@/lib/lanczos-bridge";
 import { toast } from "sonner";
 import {
   DEFAULTS, BRUSH_LABELS, beginStroke, endStroke, strokeTo,
@@ -43,8 +45,18 @@ const PALETTE = [
 ];
 
 type Tool = "brush" | "eraser" | "pan" | "eyedrop";
-type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple";
+type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple" | "clone";
 type Symmetry = "none" | "mirror-x" | "mirror-y" | "radial-8";
+
+// Canvas size presets (Picsart-style)
+const SIZE_PRESETS: { id: string; label: string; w: number; h: number }[] = [
+  { id: "stencil",   label: "Tattoo Stencil 1024", w: 1024, h: 1024 },
+  { id: "square2k",  label: "Square 2048",         w: 2048, h: 2048 },
+  { id: "portrait",  label: "Portrait 1080×1920",  w: 1080, h: 1920 },
+  { id: "landscape", label: "Landscape 1920×1080", w: 1920, h: 1080 },
+  { id: "a4",        label: "A4 Print 2480×3508",  w: 2480, h: 3508 },
+  { id: "max6k",     label: "6K Max 6144×6144",    w: 6144, h: 6144 },
+];
 
 // --- 500-brush variant matrix (50 bases × 10 modulations) -------------------
 type BrushVariant = {
