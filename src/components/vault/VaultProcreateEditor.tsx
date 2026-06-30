@@ -582,6 +582,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       type: e.pointerType,
     };
     pointers.current.set(e.pointerId, p);
+    lastMoveTs.current = performance.now();
+    lastVelocity.current = 0;
 
     // Two fingers = pinch/pan, kill any active draw
     if (pointers.current.size === 2) {
@@ -618,8 +620,20 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   function onPointerMove(e: React.PointerEvent) {
     if (!pointers.current.has(e.pointerId)) return;
     const p = pointers.current.get(e.pointerId)!;
+    // Mouse pressure simulation: faster strokes → lower pressure, smooths over time.
+    if (e.pointerType === "mouse" && e.pointerId === drawingPointerId.current) {
+      const now = performance.now();
+      const dt = Math.max(1, now - lastMoveTs.current);
+      const v = Math.hypot(e.clientX - p.cx, e.clientY - p.cy) / dt;
+      lastVelocity.current = lastVelocity.current * 0.7 + v * 0.3;
+      lastMoveTs.current = now;
+      // map 0..1.5 px/ms → pressure 1..0.25
+      const sim = Math.max(0.25, Math.min(1, 1 - lastVelocity.current / 1.5));
+      p.pressure = sim;
+    } else {
+      p.pressure = e.pressure > 0 ? e.pressure : p.pressure;
+    }
     p.cx = e.clientX; p.cy = e.clientY;
-    p.pressure = e.pressure > 0 ? e.pressure : p.pressure;
 
     if (pointers.current.size >= 2 && pinchStart.current) {
       const [a, b] = [...pointers.current.values()];
