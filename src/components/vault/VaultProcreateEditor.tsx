@@ -3,9 +3,11 @@ import {
   X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2,
   Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3, Image as ImageIcon, Eye, EyeOff,
   ChevronRight, ChevronLeft, Settings2, Brush as BrushIcon, Minimize2, Wand2,
+  Crop, Rocket, Type as TypeIcon, Stamp, Wand, Sliders,
 } from "lucide-react";
 import { saveDocument, saveEditorState, type DocumentData, type EditorState, type LayerState } from "@/lib/localDB";
 import { runOp } from "@/lib/worker-bridge";
+import { lanczosResize } from "@/lib/lanczos-bridge";
 import { toast } from "sonner";
 import {
   DEFAULTS, BRUSH_LABELS, beginStroke, endStroke, strokeTo,
@@ -43,8 +45,18 @@ const PALETTE = [
 ];
 
 type Tool = "brush" | "eraser" | "pan" | "eyedrop";
-type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple";
+type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple" | "clone";
 type Symmetry = "none" | "mirror-x" | "mirror-y" | "radial-8";
+
+// Canvas size presets (Picsart-style)
+const SIZE_PRESETS: { id: string; label: string; w: number; h: number }[] = [
+  { id: "stencil",   label: "Tattoo Stencil 1024", w: 1024, h: 1024 },
+  { id: "square2k",  label: "Square 2048",         w: 2048, h: 2048 },
+  { id: "portrait",  label: "Portrait 1080×1920",  w: 1080, h: 1920 },
+  { id: "landscape", label: "Landscape 1920×1080", w: 1920, h: 1080 },
+  { id: "a4",        label: "A4 Print 2480×3508",  w: 2480, h: 3508 },
+  { id: "max6k",     label: "6K Max 6144×6144",    w: 6144, h: 6144 },
+];
 
 // --- 500-brush variant matrix (50 bases × 10 modulations) -------------------
 type BrushVariant = {
@@ -107,6 +119,14 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const autosaveTimer = useRef<number | null>(null);
   const lastVelocity = useRef(0);
   const lastMoveTs = useRef(0);
+  const cloneSourceRef = useRef<{ x: number; y: number } | null>(null);
+  const cloneOffsetRef = useRef<{ dx: number; dy: number } | null>(null);
+  const [showSizeMenu, setShowSizeMenu] = useState(false);
+  const [showProMenu, setShowProMenu] = useState(false);
+  const [upscaleBusy, setUpscaleBusy] = useState<number | null>(null);
+  const [textPrompt, setTextPrompt] = useState<{ x: number; y: number } | null>(null);
+  const [textValue, setTextValue] = useState("");
+  const [textSize, setTextSize] = useState(72);
 
   // Drawer + HUD state machines (Procreate-style collapsible workspace)
   // Panels start collapsed — they only appear when the user taps an edge tab.
@@ -424,6 +444,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   // ---- Elite engines (B Stippler, C Smudge, D Liquify) ---------------------
   function applyEliteAt(cx: number, cy: number, dx: number, dy: number) {
     if (!eliteTool) return;
+    if (eliteTool === "clone") { cloneStampAt(cx, cy); return; }
     const ctx = ctxRef.current!;
     const { x, y } = screenToCanvas(cx, cy);
     const r = Math.max(6, size * 1.5);
@@ -574,6 +595,175 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     setColor("#" + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, "0")).join(""));
     setTool("brush");
   }
+
+  // ===== Pro tools: resize, upscale, filters, clone stamp, text =============
+
+  /** Resize the document canvas (both Stencil + Reference). Optionally rescales
+   *  existing pixel content with bilinear; otherwise keeps top-left aligned. */
+  function resizeCanvas(newW: number, newH: number, scaleContent: boolean) {
+    const ctx = ctxRef.current!; const c = ctx.canvas;
+    const rctx = refCtxRef.current!; const rc = rctx.canvas;
+    const oldStencil = document.createElement("canvas");
+    oldStencil.width = c.width; oldStencil.height = c.height;
+    oldStencil.getContext("2d")!.drawImage(c, 0, 0);
+    const oldRef = document.createElement("canvas");
+    oldRef.width = rc.width; oldRef.height = rc.height;
+    oldRef.getContext("2d")!.drawImage(rc, 0, 0);
+
+    c.width = newW; c.height = newH;
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, newW, newH);
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+    if (scaleContent) ctx.drawImage(oldStencil, 0, 0, newW, newH);
+    else ctx.drawImage(oldStencil, 0, 0);
+
+    rc.width = newW; rc.height = newH;
+    rctx.imageSmoothingEnabled = true; rctx.imageSmoothingQuality = "high";
+    if (refLoaded) {
+      if (scaleContent) rctx.drawImage(oldRef, 0, 0, newW, newH);
+      else rctx.drawImage(oldRef, 0, 0);
+    }
+    undoStack.current = []; redoStack.current = [];
+    pushUndo();
+    fitToScreen();
+    toast.success(`Canvas ${newW}×${newH}`);
+  }
+
+  function applyCanvasPreset(p: typeof SIZE_PRESETS[number]) {
+    const ctx = ctxRef.current!;
+    const cur = `${ctx.canvas.width}×${ctx.canvas.height}`;
+    const scale = window.confirm(
+      `Resize ${cur} → ${p.w}×${p.h}\n\nOK = scale content to fit\nCancel = keep pixels at top-left`
+    );
+    if (p.w * p.h > 16e6) {
+      const go = window.confirm(`Large canvas (${(p.w * p.h / 1e6).toFixed(1)}MP). This may use significant memory on mobile. Continue?`);
+      if (!go) return;
+    }
+    resizeCanvas(p.w, p.h, scale);
+    setShowSizeMenu(false);
+  }
+
+  /** Lanczos-3 upscale to 6K (or any target) via Web Worker. */
+  async function upscaleTo(targetW: number, targetH: number) {
+    const ctx = ctxRef.current!;
+    if (targetW * targetH > 40e6) {
+      const ok = window.confirm(`${(targetW * targetH / 1e6).toFixed(1)}MP target — heavy on mobile. Continue?`);
+      if (!ok) return;
+    }
+    setUpscaleBusy(0);
+    try {
+      const src = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+      const t0 = performance.now();
+      const out = await lanczosResize(src, targetW, targetH, (p) => setUpscaleBusy(Math.round(p * 100)));
+      ctx.canvas.width = targetW; ctx.canvas.height = targetH;
+      ctx.putImageData(out, 0, 0);
+      // also resize ref canvas to match (preserve aspect by scaling existing content)
+      if (refCtxRef.current) {
+        const rctx = refCtxRef.current; const rc = rctx.canvas;
+        const old = document.createElement("canvas");
+        old.width = rc.width; old.height = rc.height;
+        old.getContext("2d")!.drawImage(rc, 0, 0);
+        rc.width = targetW; rc.height = targetH;
+        if (refLoaded) { rctx.imageSmoothingQuality = "high"; rctx.drawImage(old, 0, 0, targetW, targetH); }
+      }
+      undoStack.current = []; redoStack.current = [];
+      pushUndo(); fitToScreen();
+      toast.success(`Upscaled to ${targetW}×${targetH} · ${Math.round(performance.now() - t0)}ms`);
+    } catch (e) {
+      console.error("[editor] upscale failed", e);
+      toast.error("Upscale failed");
+    } finally {
+      setUpscaleBusy(null);
+    }
+  }
+
+  /** One-tap pro filters (chained worker ops). */
+  async function applyStencilClean() {
+    const ctx = ctxRef.current!; if (!ctx) return;
+    const t0 = performance.now();
+    try {
+      const w = ctx.canvas.width, h = ctx.canvas.height;
+      const src = ctx.getImageData(0, 0, w, h);
+      const clone = (d: ImageData) => new ImageData(new Uint8ClampedArray(d.data), d.width, d.height);
+      let buf = await runOp({ op: "otsu", data: clone(src) });
+      buf = await runOp({ op: "morph", data: clone(buf), passes: 2, kind: "open" });
+      ctx.putImageData(buf, 0, 0); pushUndo();
+      toast.success(`Stencil Clean · ${Math.round(performance.now() - t0)}ms`);
+    } catch { toast.error("Stencil Clean failed"); }
+  }
+  async function applyLineSharpen() {
+    // unsharp mask: blur via downscale/upscale, subtract.
+    const ctx = ctxRef.current!; if (!ctx) return;
+    const w = ctx.canvas.width, h = ctx.canvas.height;
+    const src = ctx.getImageData(0, 0, w, h);
+    const dw = Math.max(2, Math.round(w / 2)), dh = Math.max(2, Math.round(h / 2));
+    const small = await lanczosResize(new ImageData(new Uint8ClampedArray(src.data), w, h), dw, dh);
+    const blurred = await lanczosResize(small, w, h);
+    const out = new ImageData(new Uint8ClampedArray(src.data), w, h);
+    const a = 1.6; // amount
+    const sd = src.data, bd = blurred.data, od = out.data;
+    for (let i = 0; i < od.length; i += 4) {
+      od[i]   = Math.max(0, Math.min(255, sd[i]   + a * (sd[i]   - bd[i])));
+      od[i+1] = Math.max(0, Math.min(255, sd[i+1] + a * (sd[i+1] - bd[i+1])));
+      od[i+2] = Math.max(0, Math.min(255, sd[i+2] + a * (sd[i+2] - bd[i+2])));
+    }
+    ctx.putImageData(out, 0, 0); pushUndo();
+    toast.success("Line Sharpen");
+  }
+  async function applyTattooReady() {
+    // Sharpen → Otsu → close. Final print-ready pass.
+    await applyLineSharpen();
+    const ctx = ctxRef.current!;
+    try {
+      const w = ctx.canvas.width, h = ctx.canvas.height;
+      const src = ctx.getImageData(0, 0, w, h);
+      const clone = (d: ImageData) => new ImageData(new Uint8ClampedArray(d.data), d.width, d.height);
+      let buf = await runOp({ op: "otsu", data: clone(src) });
+      buf = await runOp({ op: "morph", data: clone(buf), passes: 1, kind: "close" });
+      ctx.putImageData(buf, 0, 0); pushUndo();
+      toast.success("Tattoo Ready ✓");
+    } catch { toast.error("Tattoo Ready failed"); }
+  }
+
+  /** Clone stamp: alt-click (or first tap while tool=clone) sets source. */
+  function cloneStampAt(cx: number, cy: number) {
+    const ctx = ctxRef.current!;
+    const { x, y } = screenToCanvas(cx, cy);
+    if (!cloneSourceRef.current) {
+      cloneSourceRef.current = { x, y };
+      toast.success("Clone source set — paint to stamp");
+      return;
+    }
+    if (!cloneOffsetRef.current) {
+      cloneOffsetRef.current = { dx: x - cloneSourceRef.current.x, dy: y - cloneSourceRef.current.y };
+    }
+    const off = cloneOffsetRef.current;
+    const sx = x - off.dx, sy = y - off.dy;
+    const r = Math.max(4, size * 0.5);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalAlpha = opacity;
+    ctx.drawImage(ctx.canvas, sx - r, sy - r, r * 2, r * 2, x - r, y - r, r * 2, r * 2);
+    ctx.restore();
+  }
+
+  /** Place text onto stencil layer. */
+  function commitText() {
+    if (!textPrompt || !textValue.trim()) { setTextPrompt(null); setTextValue(""); return; }
+    const ctx = ctxRef.current!;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.font = `bold ${textSize}px system-ui, -apple-system, sans-serif`;
+    ctx.textBaseline = "top";
+    ctx.fillText(textValue, textPrompt.x, textPrompt.y);
+    ctx.restore();
+    pushUndo();
+    setTextPrompt(null); setTextValue("");
+    toast.success("Text added");
+  }
+
+  // (eyedropAt defined above)
 
   function onPointerDown(e: React.PointerEvent) {
     (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -826,6 +1016,65 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         <button onClick={fitToScreen} className="p-1.5 rounded hover:bg-white/10" aria-label="Fit"><Maximize2 size={16} /></button>
         <button onClick={() => setView(v => ({ ...v, scale: 1, x: 0, y: 0 }))} className="p-1.5 rounded hover:bg-white/10" aria-label="Reset zoom"><RotateCcw size={16} /></button>
         <span className="text-[11px] text-neutral-400 tabular-nums w-12 text-right">{(view.scale * 100).toFixed(0)}%</span>
+        {/* Canvas Size dropdown */}
+        <div className="relative">
+          <button onClick={() => { setShowSizeMenu(s => !s); setShowProMenu(false); }}
+            className="p-1.5 rounded hover:bg-white/10 flex items-center gap-1 text-[11px]" title="Canvas Size">
+            <Crop size={14} /> Size
+          </button>
+          {showSizeMenu && (
+            <div className="absolute right-0 mt-1 w-56 rounded-lg border border-white/10 bg-[#121216] shadow-xl p-1 z-20">
+              {SIZE_PRESETS.map(p => (
+                <button key={p.id} onClick={() => applyCanvasPreset(p)}
+                  className="w-full text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10">
+                  {p.label}
+                </button>
+              ))}
+              <button onClick={() => {
+                const v = window.prompt("Custom size W×H (e.g. 3000x4000)");
+                if (!v) return;
+                const m = v.match(/(\d+)\s*[x×]\s*(\d+)/i);
+                if (!m) { toast.error("Bad format"); return; }
+                applyCanvasPreset({ id: "custom", label: "Custom", w: +m[1], h: +m[2] });
+              }} className="w-full text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10 text-[#00F5D4]">
+                Custom…
+              </button>
+            </div>
+          )}
+        </div>
+        {/* Pro Tools dropdown (filters + upscale + text) */}
+        <div className="relative">
+          <button onClick={() => { setShowProMenu(s => !s); setShowSizeMenu(false); }}
+            className="p-1.5 rounded hover:bg-white/10 flex items-center gap-1 text-[11px]" title="Pro Tools">
+            <Sliders size={14} /> Pro
+          </button>
+          {showProMenu && (
+            <div className="absolute right-0 mt-1 w-56 rounded-lg border border-white/10 bg-[#121216] shadow-xl p-1 z-20">
+              <button onClick={() => { setShowProMenu(false); upscaleTo(6144, 6144); }}
+                className="w-full flex items-center gap-2 text-left px-2 py-2 text-[11px] rounded bg-gradient-to-r from-[#A855F7] to-[#7c3aed] text-white font-bold mb-1">
+                <Rocket size={12} /> Upscale to 6K (Lanczos)
+              </button>
+              <button onClick={() => { setShowProMenu(false); upscaleTo(4096, 4096); }}
+                className="w-full text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10">Upscale 4K</button>
+              <div className="h-px bg-white/5 my-1" />
+              <button onClick={() => { setShowProMenu(false); applyStencilClean(); }}
+                className="w-full text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10">✦ Stencil Clean</button>
+              <button onClick={() => { setShowProMenu(false); applyLineSharpen(); }}
+                className="w-full text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10">✦ Line Sharpen</button>
+              <button onClick={() => { setShowProMenu(false); applyTattooReady(); }}
+                className="w-full text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10 text-[#00F5D4] font-semibold">✦ Tattoo Ready</button>
+              <div className="h-px bg-white/5 my-1" />
+              <button onClick={() => { setShowProMenu(false); setEliteTool("clone"); cloneSourceRef.current = null; cloneOffsetRef.current = null; toast.info("Clone: tap to set source, then paint"); }}
+                className="w-full flex items-center gap-2 text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10">
+                <Stamp size={12} /> Clone Stamp
+              </button>
+              <button onClick={() => { setShowProMenu(false); const ctx = ctxRef.current!; setTextPrompt({ x: ctx.canvas.width / 2 - 100, y: ctx.canvas.height / 2 - 40 }); }}
+                className="w-full flex items-center gap-2 text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10">
+                <TypeIcon size={12} /> Add Text
+              </button>
+            </div>
+          )}
+        </div>
         <button onClick={onSave} className="ml-1 rounded-full bg-gradient-to-r from-[#00F5D4] to-[#00B8A9] text-black px-3 py-1.5 text-xs font-bold flex items-center gap-1">
           <Save size={14} /> Save Stencil
         </button>
@@ -873,6 +1122,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
               ["liquify-push", "Push", Wind],
               ["liquify-inflate", "Inflate", Wind],
               ["liquify-deflate", "Deflate", Wind],
+              ["clone", "Clone", Stamp],
             ] as const).map(([id, label, Icon]) => (
               <button key={id}
                 onClick={() => setEliteTool(eliteTool === id ? null : id)}
@@ -1167,6 +1417,44 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
             : "Autosave on"}
         </span>
       </div>
+
+      {/* Upscale progress overlay */}
+      {upscaleBusy !== null && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center" style={{ background: "rgba(13,13,15,0.75)", backdropFilter: "blur(8px)" }}>
+          <div className="rounded-xl border border-white/10 bg-[#121216] px-6 py-5 w-72 text-center">
+            <Rocket size={24} className="mx-auto text-[#A855F7] mb-2" />
+            <div className="text-sm font-bold mb-1">Lanczos Upscaling…</div>
+            <div className="text-[11px] text-neutral-400 mb-3">High-fidelity resampling in worker</div>
+            <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-[#A855F7] to-[#00F5D4] transition-all" style={{ width: `${upscaleBusy}%` }} />
+            </div>
+            <div className="text-[10px] text-neutral-500 mt-1 tabular-nums">{upscaleBusy}%</div>
+          </div>
+        </div>
+      )}
+
+      {/* Text tool input */}
+      {textPrompt && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center" style={{ background: "rgba(13,13,15,0.75)", backdropFilter: "blur(8px)" }}>
+          <div className="rounded-xl border border-white/10 bg-[#121216] p-4 w-80">
+            <div className="flex items-center gap-2 mb-3"><TypeIcon size={14} className="text-[#00F5D4]" /><div className="text-sm font-bold">Add Text</div></div>
+            <input autoFocus value={textValue} onChange={e => setTextValue(e.target.value)}
+              placeholder="Type text…"
+              className="w-full bg-black/40 border border-white/10 rounded px-2 py-2 text-sm mb-2" />
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[10px] text-neutral-400">Size</span>
+              <input type="range" min={12} max={400} value={textSize} onChange={e => setTextSize(+e.target.value)} className="flex-1" />
+              <span className="text-[10px] text-neutral-300 tabular-nums w-8 text-right">{textSize}</span>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { setTextPrompt(null); setTextValue(""); }}
+                className="flex-1 rounded bg-white/5 hover:bg-white/10 text-xs py-2">Cancel</button>
+              <button onClick={commitText}
+                className="flex-1 rounded bg-gradient-to-r from-[#00F5D4] to-[#00B8A9] text-black text-xs font-bold py-2">Place</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
