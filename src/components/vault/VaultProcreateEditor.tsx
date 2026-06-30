@@ -2251,3 +2251,152 @@ function formatAgo(ts: number): string {
 }
 
 export default VaultProcreateEditor;
+
+/* ===================== Crop Overlay ====================================== */
+type CropProps = {
+  view: { x: number; y: number; scale: number };
+  canvasW: number;
+  canvasH: number;
+  rect: { x: number; y: number; w: number; h: number };
+  aspect: "free" | "1:1" | "4:5" | "16:9" | "9:16";
+  onChange: (r: { x: number; y: number; w: number; h: number }) => void;
+  onAspect: (a: "free" | "1:1" | "4:5" | "16:9" | "9:16") => void;
+  onApply: () => void;
+  onCancel: () => void;
+};
+function CropOverlay({ view, canvasW, canvasH, rect, aspect, onChange, onAspect, onApply, onCancel }: CropProps) {
+  // Convert canvas-space rect → screen-space px
+  const sx = view.x + rect.x * view.scale;
+  const sy = view.y + rect.y * view.scale;
+  const sw = rect.w * view.scale;
+  const sh = rect.h * view.scale;
+
+  const aspectRatio = aspect === "free" ? 0
+    : aspect === "1:1" ? 1
+    : aspect === "4:5" ? 4/5
+    : aspect === "16:9" ? 16/9
+    : 9/16;
+
+  const drag = useRef<{ mode: "move" | "tl" | "tr" | "bl" | "br"; startX: number; startY: number; orig: typeof rect } | null>(null);
+
+  function onDown(mode: "move" | "tl" | "tr" | "bl" | "br") {
+    return (e: React.PointerEvent) => {
+      e.stopPropagation();
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+      drag.current = { mode, startX: e.clientX, startY: e.clientY, orig: { ...rect } };
+    };
+  }
+  function onMove(e: React.PointerEvent) {
+    if (!drag.current) return;
+    const dxScreen = e.clientX - drag.current.startX;
+    const dyScreen = e.clientY - drag.current.startY;
+    const dx = dxScreen / view.scale;
+    const dy = dyScreen / view.scale;
+    const o = drag.current.orig;
+    let r = { ...o };
+    if (drag.current.mode === "move") {
+      r.x = Math.max(0, Math.min(canvasW - o.w, o.x + dx));
+      r.y = Math.max(0, Math.min(canvasH - o.h, o.y + dy));
+    } else {
+      // Resize from a corner
+      const left = drag.current.mode === "tl" || drag.current.mode === "bl";
+      const top  = drag.current.mode === "tl" || drag.current.mode === "tr";
+      let x = o.x, y = o.y, w = o.w, h = o.h;
+      if (left) { x = Math.min(o.x + o.w - 16, o.x + dx); w = o.x + o.w - x; }
+      else      { w = Math.max(16, o.w + dx); }
+      if (top)  { y = Math.min(o.y + o.h - 16, o.y + dy); h = o.y + o.h - y; }
+      else      { h = Math.max(16, o.h + dy); }
+      if (aspectRatio > 0) {
+        // Lock by adjusting height to width
+        h = w / aspectRatio;
+        if (top) y = o.y + o.h - h;
+      }
+      // Clamp into canvas
+      x = Math.max(0, x); y = Math.max(0, y);
+      w = Math.min(canvasW - x, w); h = Math.min(canvasH - y, h);
+      r = { x, y, w, h };
+    }
+    onChange(r);
+  }
+  function onUp(e: React.PointerEvent) {
+    drag.current = null;
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+  }
+
+  const aspects: { id: CropProps["aspect"]; label: string }[] = [
+    { id: "free", label: "Free" },
+    { id: "1:1", label: "1:1" },
+    { id: "4:5", label: "4:5" },
+    { id: "16:9", label: "16:9" },
+    { id: "9:16", label: "9:16" },
+  ];
+
+  return (
+    <div className="absolute inset-0 z-[15]" style={{ pointerEvents: "none" }}>
+      {/* Dim mask outside rect via 4 rectangles */}
+      <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.55)", clipPath: `polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${sx}px ${sy}px, ${sx}px ${sy+sh}px, ${sx+sw}px ${sy+sh}px, ${sx+sw}px ${sy}px, ${sx}px ${sy}px)`, pointerEvents: "none" }} />
+      {/* Crop frame */}
+      <div
+        onPointerDown={onDown("move")}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        className="absolute cursor-move"
+        style={{
+          left: sx, top: sy, width: sw, height: sh,
+          border: "2px solid #00F5D4",
+          boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
+          pointerEvents: "auto",
+          touchAction: "none",
+        }}
+      >
+        {/* Rule-of-thirds */}
+        <div className="absolute inset-0 pointer-events-none" style={{
+          backgroundImage: "linear-gradient(to right, rgba(255,255,255,0.25) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.25) 1px, transparent 1px)",
+          backgroundSize: `${100/3}% 100%, 100% ${100/3}%`,
+        }} />
+        {/* Corner handles */}
+        {(["tl","tr","bl","br"] as const).map(c => (
+          <div
+            key={c}
+            onPointerDown={onDown(c)}
+            onPointerMove={onMove}
+            onPointerUp={onUp}
+            onPointerCancel={onUp}
+            className="absolute"
+            style={{
+              width: 20, height: 20,
+              background: "#00F5D4",
+              borderRadius: 4,
+              left: c.includes("l") ? -10 : "auto",
+              right: c.includes("r") ? -10 : "auto",
+              top: c.includes("t") ? -10 : "auto",
+              bottom: c.includes("b") ? -10 : "auto",
+              cursor: c === "tl" || c === "br" ? "nwse-resize" : "nesw-resize",
+              touchAction: "none",
+            }}
+          />
+        ))}
+      </div>
+      {/* Toolbar */}
+      <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-1.5 rounded-xl"
+        style={{
+          top: 60, pointerEvents: "auto",
+          background: "rgba(18,18,22,0.95)", backdropFilter: "blur(12px)",
+          border: "1px solid rgba(0,245,212,0.4)",
+          boxShadow: "0 8px 32px -8px rgba(0,245,212,0.3)",
+        }}>
+        <span className="text-[10px] text-[#00F5D4] font-bold mr-1">CROP</span>
+        {aspects.map(a => (
+          <button key={a.id} onClick={() => onAspect(a.id)}
+            className={`px-2 py-1 rounded text-[10px] ${aspect === a.id ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "text-neutral-300 hover:bg-white/10"}`}>
+            {a.label}
+          </button>
+        ))}
+        <div className="w-px h-4 bg-white/10 mx-1" />
+        <button onClick={onCancel} className="px-2 py-1 rounded text-[10px] bg-white/5 hover:bg-white/10">Cancel</button>
+        <button onClick={onApply} className="px-2.5 py-1 rounded text-[10px] font-bold bg-[#00F5D4] text-black">Apply</button>
+      </div>
+    </div>
+  );
+}
