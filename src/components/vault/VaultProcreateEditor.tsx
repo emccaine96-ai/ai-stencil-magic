@@ -1648,7 +1648,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         </button>
       </header>
 
-      {/* COLUMN 1 — Engines (left floating glass panel) */}
+      {/* COLUMN 1 — Engines (left floating glass panel) — Draw mode only */}
+      {drawMode && (
       <aside
         className="absolute overflow-y-auto p-3 space-y-4 text-xs"
         style={{
