@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2,
   Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3, Image as ImageIcon, Eye, EyeOff,
+  ChevronRight, ChevronLeft, Settings2, Brush as BrushIcon, Minimize2,
 } from "lucide-react";
 import { saveDocument, type DocumentData } from "@/lib/localDB";
 import {
@@ -99,6 +100,35 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [refLoaded, setRefLoaded] = useState(false);
   const [refOpacity, setRefOpacity] = useState(0.4);
   const [refVisible, setRefVisible] = useState(true);
+
+  // Drawer + HUD state machines (Procreate-style collapsible workspace)
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
+  const [headerVisible, setHeaderVisible] = useState(true);
+  const [immersive, setImmersive] = useState(false);
+  const [isInteracting, setIsInteracting] = useState(false);
+  const lastTapRef = useRef(0);
+
+  const collapseAll = useCallback(() => {
+    const anyOpen = leftOpen || rightOpen || headerVisible;
+    setLeftOpen(!anyOpen);
+    setRightOpen(!anyOpen);
+    setHeaderVisible(!anyOpen);
+  }, [leftOpen, rightOpen, headerVisible]);
+
+  // Tab key toggles all chrome
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
+      if (e.key === "Tab") { e.preventDefault(); collapseAll(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [collapseAll]);
+
+  // Whether sidebars should fade out for stylus painting
+  const fadeChrome = immersive && isInteracting;
 
   // ---- Init canvas from doc -------------------------------------------------
   useEffect(() => {
@@ -477,15 +507,17 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
     // Single pointer
     if (tool === "eyedrop") { eyedropAt(e.clientX, e.clientY); return; }
-    if (tool === "pan") return;
+    if (tool === "pan") { setIsInteracting(true); return; }
     if (eliteTool) {
       drawingPointerId.current = e.pointerId;
       lastCanvasPt.current = { x: e.clientX, y: e.clientY };
       applyEliteAt(e.clientX, e.clientY, 0, 0);
+      setIsInteracting(true);
       return;
     }
     drawingPointerId.current = e.pointerId;
     beginDraw(p);
+    setIsInteracting(true);
   }
 
   function onPointerMove(e: React.PointerEvent) {
@@ -546,6 +578,19 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       drawingPointerId.current = null;
     }
     if (pointers.current.size < 2) pinchStart.current = null;
+    if (pointers.current.size === 0) {
+      setIsInteracting(false);
+      // Double-tap on workspace background → toggle all chrome
+      const now = performance.now();
+      const target = e.target as HTMLElement;
+      const onBackground = target === wrapRef.current || target?.tagName === "CANVAS" || target?.parentElement === wrapRef.current?.firstChild;
+      if (onBackground && now - lastTapRef.current < 320) {
+        collapseAll();
+        lastTapRef.current = 0;
+      } else {
+        lastTapRef.current = now;
+      }
+    }
   }
 
   // Wheel zoom
@@ -659,10 +704,23 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           background: "rgba(18,18,22,0.85)",
           backdropFilter: "blur(12px)",
           borderBottom: "1px solid rgba(255,255,255,0.06)",
+          transform: headerVisible ? "translateY(0)" : "translateY(-105%)",
+          transition: "transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.2s",
+          opacity: fadeChrome ? 0.15 : 1,
+          pointerEvents: fadeChrome ? "none" : "auto",
+          willChange: "transform, opacity",
         }}
       >
         <button onClick={onClose} className="p-1.5 rounded hover:bg-white/10" aria-label="Close"><X size={18} /></button>
         <div className="text-sm font-semibold truncate flex-1">{doc.name}</div>
+        <button
+          onClick={() => setImmersive(v => !v)}
+          className={`px-2 py-1 rounded text-[10px] font-semibold ${immersive ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "bg-white/5 text-neutral-300 hover:bg-white/10"}`}
+          title="Fade panels while drawing"
+        >
+          {immersive ? "Procreate Mode On" : "Procreate Mode"}
+        </button>
+        <button onClick={collapseAll} className="p-1.5 rounded hover:bg-white/10" aria-label="Toggle all panels (Tab)"><Minimize2 size={16} /></button>
         <button onClick={doUndo} disabled={!canUndo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Undo"><Undo2 size={18} /></button>
         <button onClick={doRedo} disabled={!canRedo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Redo"><Redo2 size={18} /></button>
         <button onClick={fitToScreen} className="p-1.5 rounded hover:bg-white/10" aria-label="Fit"><Maximize2 size={16} /></button>
@@ -683,6 +741,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           background: "rgba(18,18,22,0.85)",
           backdropFilter: "blur(12px)",
           border: "1px solid rgba(255,255,255,0.06)",
+          transform: leftOpen ? "translateX(0)" : "translateX(-105%)",
+          transition: "transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.2s",
+          opacity: fadeChrome ? 0.15 : 1,
+          pointerEvents: fadeChrome || !leftOpen ? "none" : "auto",
+          willChange: "transform, opacity",
         }}
       >
         <div>
@@ -753,6 +816,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           background: "rgba(18,18,22,0.85)",
           backdropFilter: "blur(12px)",
           border: "1px solid rgba(255,255,255,0.06)",
+          transform: leftOpen ? "translateX(0)" : "translateX(calc(-280px - 20px))",
+          transition: "transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.2s",
+          opacity: fadeChrome ? 0.15 : 1,
+          pointerEvents: fadeChrome ? "none" : "auto",
+          willChange: "transform, opacity",
         }}
       >
         <button onClick={() => setTool("brush")} className={`p-2 rounded ${tool === "brush" && !eliteTool ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Brush"><Pipette size={16} className="mx-auto rotate-180" /></button>
@@ -790,6 +858,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           background: "rgba(18,18,22,0.85)",
           backdropFilter: "blur(12px)",
           border: "1px solid rgba(255,255,255,0.06)",
+          transform: rightOpen ? "translateX(0)" : "translateX(105%)",
+          transition: "transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.2s",
+          opacity: fadeChrome ? 0.15 : 1,
+          pointerEvents: fadeChrome || !rightOpen ? "none" : "auto",
+          willChange: "transform, opacity",
         }}
       >
         {/* Layer manager */}
@@ -864,6 +937,104 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           })}
         </div>
       </aside>
+
+      {/* Edge dock tabs — appear when a column is collapsed */}
+      {!leftOpen && (
+        <button
+          onClick={() => setLeftOpen(true)}
+          aria-label="Open engines panel"
+          className="absolute flex items-center justify-center hover:bg-white/15"
+          style={{
+            left: 0, top: "50%", transform: "translateY(-50%)",
+            width: 32, height: 48, zIndex: 11,
+            background: "rgba(18,18,22,0.9)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderLeft: "none",
+            borderRadius: "0 8px 8px 0",
+            backdropFilter: "blur(12px)",
+            color: "#00F5D4",
+          }}
+        >
+          <Settings2 size={16} />
+        </button>
+      )}
+      {leftOpen && (
+        <button
+          onClick={() => setLeftOpen(false)}
+          aria-label="Collapse engines panel"
+          className="absolute hover:bg-white/15"
+          style={{
+            left: 340, top: "50%", transform: "translateY(-50%)",
+            width: 18, height: 48, zIndex: 11,
+            background: "rgba(18,18,22,0.85)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: "0 8px 8px 0",
+            color: "#9ca3af",
+            transition: "transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.2s",
+            opacity: fadeChrome ? 0.15 : 1,
+            pointerEvents: fadeChrome ? "none" : "auto",
+          }}
+        >
+          <ChevronLeft size={14} className="mx-auto" />
+        </button>
+      )}
+      {!rightOpen && (
+        <button
+          onClick={() => setRightOpen(true)}
+          aria-label="Open brush vault"
+          className="absolute flex items-center justify-center hover:bg-white/15"
+          style={{
+            right: 0, top: "50%", transform: "translateY(-50%)",
+            width: 32, height: 48, zIndex: 11,
+            background: "rgba(18,18,22,0.9)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRight: "none",
+            borderRadius: "8px 0 0 8px",
+            backdropFilter: "blur(12px)",
+            color: "#00F5D4",
+          }}
+        >
+          <BrushIcon size={16} />
+        </button>
+      )}
+      {rightOpen && (
+        <button
+          onClick={() => setRightOpen(false)}
+          aria-label="Collapse brush vault"
+          className="absolute hover:bg-white/15"
+          style={{
+            right: 300, top: "50%", transform: "translateY(-50%)",
+            width: 18, height: 48, zIndex: 11,
+            background: "rgba(18,18,22,0.85)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: "8px 0 0 8px",
+            color: "#9ca3af",
+            transition: "transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.2s",
+            opacity: fadeChrome ? 0.15 : 1,
+            pointerEvents: fadeChrome ? "none" : "auto",
+          }}
+        >
+          <ChevronRight size={14} className="mx-auto" />
+        </button>
+      )}
+      {!headerVisible && (
+        <button
+          onClick={() => setHeaderVisible(true)}
+          aria-label="Show header"
+          className="absolute flex items-center justify-center hover:bg-white/15"
+          style={{
+            top: 0, left: "50%", transform: "translateX(-50%)",
+            width: 56, height: 22, zIndex: 11,
+            background: "rgba(18,18,22,0.9)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderTop: "none",
+            borderRadius: "0 0 10px 10px",
+            color: "#00F5D4",
+          }}
+        >
+          <ChevronRight size={14} className="rotate-90" />
+        </button>
+      )}
     </div>
   );
 }
