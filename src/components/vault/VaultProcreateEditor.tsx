@@ -306,11 +306,46 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     const ctx = ctxRef.current; if (!ctx) return;
     const snap = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
     undoStack.current.push(snap);
-    if (undoStack.current.length > 30) undoStack.current.shift();
+    // 6K safeguard: cap by total bytes (≈384MB) AND step count.
+    const MAX_BYTES = 384 * 1024 * 1024;
+    const MAX_STEPS = 60;
+    let total = 0;
+    for (const s of undoStack.current) total += s.data.byteLength;
+    while (undoStack.current.length > 1 && (total > MAX_BYTES || undoStack.current.length > MAX_STEPS)) {
+      const dropped = undoStack.current.shift()!;
+      total -= dropped.data.byteLength;
+      historyThumbs.current.shift();
+    }
+    // Thumbnail for history timeline
+    try {
+      const tc = document.createElement("canvas");
+      const TW = 64;
+      const ratio = ctx.canvas.height / ctx.canvas.width;
+      tc.width = TW; tc.height = Math.max(24, Math.round(TW * ratio));
+      tc.getContext("2d")!.drawImage(ctx.canvas, 0, 0, tc.width, tc.height);
+      historyThumbs.current.push(tc.toDataURL("image/jpeg", 0.55));
+    } catch { historyThumbs.current.push(""); }
+    setHistoryTick(t => t + 1);
     redoStack.current = [];
     setCanUndo(undoStack.current.length > 1);
     setCanRedo(false);
     scheduleAutosave();
+  }
+
+  /** Jump history to a given undo-stack index (non-destructive timeline scrub). */
+  function jumpHistory(index: number) {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const i = Math.max(0, Math.min(undoStack.current.length - 1, index));
+    // Move all snapshots after i into redo stack (keeps them reachable)
+    while (undoStack.current.length - 1 > i) {
+      const s = undoStack.current.pop()!;
+      redoStack.current.push(s);
+      historyThumbs.current.pop();
+    }
+    ctx.putImageData(undoStack.current[i], 0, 0);
+    setCanUndo(undoStack.current.length > 1);
+    setCanRedo(redoStack.current.length > 0);
+    setHistoryTick(t => t + 1);
   }
 
   // ---- Autosave (debounced 3s, also on visibilitychange/beforeunload) -------
