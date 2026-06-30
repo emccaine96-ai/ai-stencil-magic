@@ -204,6 +204,33 @@ export async function deleteDocument(id: string): Promise<void> {
   await d.delete("documents", id);
 }
 
+/* --- Layered editor state helpers (used by VaultProcreateEditor) --- */
+
+export async function getDocumentWithLayers(id: string): Promise<{ doc: DocumentData; editorState: EditorState | null } | undefined> {
+  const doc = await getDocument(id);
+  if (!doc) return undefined;
+  let editorState: EditorState | null = null;
+  if (doc.layeredEditorData) {
+    try { editorState = JSON.parse(doc.layeredEditorData) as EditorState; }
+    catch (err) { console.warn("[vault] layeredEditorData parse failed", err); editorState = null; }
+  }
+  return { doc, editorState };
+}
+
+export async function saveEditorState(id: string, editorState: EditorState, thumbnail?: string): Promise<void> {
+  const d = await db();
+  if (!d) return;
+  const cur = await d.get("documents", id);
+  if (!cur) return;
+  await d.put("documents", {
+    ...cur,
+    layeredEditorData: JSON.stringify(editorState),
+    thumbnail: thumbnail ?? cur.thumbnail,
+    lastEdited: Date.now(),
+    schemaVersion: CURRENT_SCHEMA,
+  });
+}
+
 /* --- Folder CRUD --- */
 
 export async function createFolder(name: string, parentId: string | null = null): Promise<Folder> {
