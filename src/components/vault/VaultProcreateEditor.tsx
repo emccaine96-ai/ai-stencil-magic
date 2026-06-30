@@ -1345,6 +1345,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     sepia:         () => runFilter(PF.sepia, "Sepia"),
     lensFlare:     () => runFilter((c) => PF.lensFlare(c), "Lens Flare"),
     smudge:        () => { setEliteTool("smudge"); toast.info("Smudge: drag to blend"); },
+    heal:          () => { setEliteTool("heal"); toast.info("Heal: tap blemishes to remove"); },
     liquifyPush:   () => { setEliteTool("liquify-push"); toast.info("Liquify Push"); },
     liquifyInflate:() => { setEliteTool("liquify-inflate"); toast.info("Liquify Inflate"); },
     liquifyDeflate:() => { setEliteTool("liquify-deflate"); toast.info("Liquify Deflate"); },
