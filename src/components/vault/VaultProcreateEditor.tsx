@@ -704,10 +704,23 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           background: "rgba(18,18,22,0.85)",
           backdropFilter: "blur(12px)",
           borderBottom: "1px solid rgba(255,255,255,0.06)",
+          transform: headerVisible ? "translateY(0)" : "translateY(-105%)",
+          transition: "transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.2s",
+          opacity: fadeChrome ? 0.15 : 1,
+          pointerEvents: fadeChrome ? "none" : "auto",
+          willChange: "transform, opacity",
         }}
       >
         <button onClick={onClose} className="p-1.5 rounded hover:bg-white/10" aria-label="Close"><X size={18} /></button>
         <div className="text-sm font-semibold truncate flex-1">{doc.name}</div>
+        <button
+          onClick={() => setImmersive(v => !v)}
+          className={`px-2 py-1 rounded text-[10px] font-semibold ${immersive ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "bg-white/5 text-neutral-300 hover:bg-white/10"}`}
+          title="Fade panels while drawing"
+        >
+          {immersive ? "Procreate Mode On" : "Procreate Mode"}
+        </button>
+        <button onClick={collapseAll} className="p-1.5 rounded hover:bg-white/10" aria-label="Toggle all panels (Tab)"><Minimize2 size={16} /></button>
         <button onClick={doUndo} disabled={!canUndo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Undo"><Undo2 size={18} /></button>
         <button onClick={doRedo} disabled={!canRedo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Redo"><Redo2 size={18} /></button>
         <button onClick={fitToScreen} className="p-1.5 rounded hover:bg-white/10" aria-label="Fit"><Maximize2 size={16} /></button>
@@ -728,6 +741,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           background: "rgba(18,18,22,0.85)",
           backdropFilter: "blur(12px)",
           border: "1px solid rgba(255,255,255,0.06)",
+          transform: leftOpen ? "translateX(0)" : "translateX(-105%)",
+          transition: "transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.2s",
+          opacity: fadeChrome ? 0.15 : 1,
+          pointerEvents: fadeChrome || !leftOpen ? "none" : "auto",
+          willChange: "transform, opacity",
         }}
       >
         <div>
