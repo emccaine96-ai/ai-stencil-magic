@@ -1166,6 +1166,77 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     return allVariants.filter(v => v.label.toLowerCase().includes(q));
   }, [allVariants, brushQuery]);
 
+  // ---- Picsart-style dock handlers ----------------------------------------
+  const navigate = useNavigate();
+  function runFilter(fn: (ctx: CanvasRenderingContext2D) => void, label: string) {
+    const ctx = ctxRef.current; if (!ctx) return;
+    try {
+      const t0 = performance.now();
+      fn(ctx);
+      pushUndo();
+      toast.success(`${label} · ${Math.round(performance.now() - t0)}ms`);
+    } catch (e) {
+      console.error("[picsart-filter]", label, e);
+      toast.error(`${label} failed`);
+    }
+  }
+  const dockHandlers: PicsartDockHandlers = {
+    openCrop:      () => { setTool("pan"); toast.info("Pinch-zoom to frame, then use Resize"); },
+    setSelectionMode: () => { setEliteTool("wand"); toast.info("Magic Wand: tap an area to select"); },
+    openAdjust:    openAdjust,
+    enhance:       applyStencilOptimizer,
+    resizeMenu:    () => { setShowSizeMenu(true); setHeaderVisible(true); },
+    flipH:         () => runFilter(PF.flipHorizontal, "Flip H"),
+    flipV:         () => runFilter(PF.flipVertical, "Flip V"),
+    rotate90:      () => runFilter(PF.rotate90, "Rotate 90°"),
+    perspective:   () => toast.info("Perspective: drag corners (coming soon)"),
+    tiltShift:     () => runFilter((c) => PF.tiltShift(c, 0.35, 12), "Tilt Shift"),
+    aiExpand:      () => toast.info("AI Expand uses outpainting — coming soon"),
+    aiReplace:     () => toast.info("AI Replace — coming soon"),
+    dispersion:    () => runFilter((c) => PF.dispersion(c, 1500, 0.3), "Dispersion"),
+    stretch:       () => runFilter((c) => PF.pixelate(c, 6), "Stretch (pixel)"),
+    motion:        () => runFilter((c) => PF.gaussianBlur(c, 10), "Motion Blur"),
+    shapeCrop:     () => toast.info("Shape Crop: use Magic Wand → Invert → Delete"),
+    freeCrop:      () => toast.info("Free Crop: use Magic Wand selection"),
+    cloneStamp:    () => { setEliteTool("clone"); cloneSourceRef.current = null; cloneOffsetRef.current = null; toast.info("Clone: tap source, then paint"); },
+    curves:        openAdjust,
+    upscale6k:     () => upscaleTo(6144, 6144),
+    stencilClean:  applyStencilClean,
+    threshold:     () => applyThreshold(128),
+    thermalBlue:   applyThermalBlueCarbon,
+    thermalPurple: applyThermal,
+    sharpen:       () => runFilter((c) => PF.sharpen(c, 1.4), "Sharpen"),
+    blur:          () => runFilter((c) => PF.gaussianBlur(c, 6), "Blur"),
+    vignette:      () => runFilter((c) => PF.vignette(c, 0.75), "Vignette"),
+    halftone:      () => runFilter((c) => PF.halftone(c, 8), "Halftone"),
+    pixelate:      () => runFilter((c) => PF.pixelate(c, 14), "Pixelate"),
+    posterize:     () => runFilter((c) => PF.posterize(c, 4), "Posterize"),
+    edge:          () => runFilter(PF.edgeDetect, "Edge Detect"),
+    grain:         () => runFilter((c) => PF.grain(c, 20), "Grain"),
+    sepia:         () => runFilter(PF.sepia, "Sepia"),
+    lensFlare:     () => runFilter((c) => PF.lensFlare(c), "Lens Flare"),
+    smudge:        () => { setEliteTool("smudge"); toast.info("Smudge: drag to blend"); },
+    liquifyPush:   () => { setEliteTool("liquify-push"); toast.info("Liquify Push"); },
+    liquifyInflate:() => { setEliteTool("liquify-inflate"); toast.info("Liquify Inflate"); },
+    liquifyDeflate:() => { setEliteTool("liquify-deflate"); toast.info("Liquify Deflate"); },
+    removeBg:      () => runFilter((c) => PF.removeBackground(c, 240), "Remove BG"),
+    cutout:        () => { setEliteTool("wand"); toast.info("Cutout: tap area, then Delete"); },
+    text:          () => { const ctx = ctxRef.current!; setTextPrompt({ x: ctx.canvas.width / 2 - 100, y: ctx.canvas.height / 2 - 40 }); },
+    addPhoto:      () => refFileInput.current?.click(),
+    openBrushes:   () => setRightOpen(true),
+    shapeMask:     () => toast.info("Shape Mask: use Selection → Shape"),
+    frame:         () => runFilter((c) => PF.borderFrame(c, 32, "#0d0d0f"), "Frame"),
+    callout:       () => { const ctx = ctxRef.current!; setTextPrompt({ x: ctx.canvas.width / 2 - 100, y: ctx.canvas.height / 2 - 40 }); toast.info("Type your callout"); },
+    draw:          () => { setTool("brush"); setEliteTool(null); },
+    sticker:       () => refFileInput.current?.click(),
+    aiTryOn:       () => toast.info("AI Try On — coming soon"),
+    apps:          () => navigate({ to: "/plugins" }),
+    myFolders:     () => onClose(),
+    border:        () => runFilter((c) => PF.borderFrame(c, 24, color), "Border"),
+    shape:         () => toast.info("Shape: tap to drop circle"),
+    mask:          () => { setEliteTool("wand"); toast.info("Mask: tap area to define"); },
+  };
+
   // ---- UI ------------------------------------------------------------------
   return (
     <div className="fixed inset-0 z-[100] text-white touch-none select-none" style={{ background: "#0d0d0f" }}>
