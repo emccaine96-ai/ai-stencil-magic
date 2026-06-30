@@ -257,7 +257,72 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     redoStack.current = [];
     setCanUndo(undoStack.current.length > 1);
     setCanRedo(false);
+    scheduleAutosave();
   }
+
+  // ---- Autosave (debounced 3s, also on visibilitychange/beforeunload) -------
+  const autosaveNow = useCallback(async () => {
+    const canvas = canvasRef.current; const refCanvas = refCanvasRef.current;
+    if (!canvas) return;
+    setSaveState("saving");
+    try {
+      const stencilUrl = canvas.toDataURL("image/png");
+      const refUrl = refLoaded && refCanvas ? refCanvas.toDataURL("image/png") : "";
+      const editorState: EditorState = {
+        width: canvas.width,
+        height: canvas.height,
+        activeLayerId: "stencil",
+        layers: [
+          ...(refUrl ? [{
+            id: "reference", name: "Reference" as const,
+            visible: refVisible, locked: true, alphaLock: false, clipping: false,
+            opacity: refOpacity, blendMode: "normal" as const, dataUrl: refUrl,
+          } satisfies LayerState] : []),
+          {
+            id: "stencil", name: "Stencil",
+            visible: true, locked: false, alphaLock: false, clipping: false,
+            opacity: 1, blendMode: "normal", dataUrl: stencilUrl,
+          },
+        ],
+      };
+      // Lightweight thumbnail (~512px wide).
+      const tc = document.createElement("canvas");
+      const TW = 384;
+      const ratio = canvas.height / canvas.width;
+      tc.width = TW; tc.height = Math.round(TW * ratio);
+      tc.getContext("2d")!.drawImage(canvas, 0, 0, tc.width, tc.height);
+      const thumb = tc.toDataURL("image/jpeg", 0.7);
+      await saveEditorState(doc.id, editorState, thumb);
+      setSaveState("saved");
+      setSavedAgo(Date.now());
+    } catch (err) {
+      console.error("[editor] autosave failed", err);
+      setSaveState("error");
+    }
+  }, [doc.id, refLoaded, refVisible, refOpacity]);
+
+  function scheduleAutosave() {
+    if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = window.setTimeout(() => { autosaveNow(); }, 3000);
+  }
+
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === "hidden") autosaveNow(); };
+    const onBye = () => { autosaveNow(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("beforeunload", onBye);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("beforeunload", onBye);
+      if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+    };
+  }, [autosaveNow]);
+
+  // tick the "Saved 12s ago" label
+  useEffect(() => {
+    const t = window.setInterval(() => { if (savedAgo) setSavedAgo(s => s); }, 5000);
+    return () => window.clearInterval(t);
+  }, [savedAgo]);
   function doUndo() {
     const ctx = ctxRef.current; if (!ctx) return;
     if (undoStack.current.length < 2) return;
