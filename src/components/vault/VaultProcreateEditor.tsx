@@ -102,8 +102,9 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [refVisible, setRefVisible] = useState(true);
 
   // Drawer + HUD state machines (Procreate-style collapsible workspace)
-  const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
+  // Panels start collapsed — they only appear when the user taps an edge tab.
+  const [leftOpen, setLeftOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(false);
   const [headerVisible, setHeaderVisible] = useState(true);
   const [immersive, setImmersive] = useState(false);
   const [isInteracting, setIsInteracting] = useState(false);
@@ -580,16 +581,6 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     if (pointers.current.size < 2) pinchStart.current = null;
     if (pointers.current.size === 0) {
       setIsInteracting(false);
-      // Double-tap on workspace background → toggle all chrome
-      const now = performance.now();
-      const target = e.target as HTMLElement;
-      const onBackground = target === wrapRef.current || target?.tagName === "CANVAS" || target?.parentElement === wrapRef.current?.firstChild;
-      if (onBackground && now - lastTapRef.current < 320) {
-        collapseAll();
-        lastTapRef.current = 0;
-      } else {
-        lastTapRef.current = now;
-      }
     }
   }
 
