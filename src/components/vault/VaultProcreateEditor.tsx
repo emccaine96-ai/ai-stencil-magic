@@ -58,8 +58,29 @@ const PALETTE = [
 ];
 
 type Tool = "brush" | "eraser" | "pan" | "eyedrop";
-type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple" | "clone" | "wand";
+type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple" | "clone" | "wand" | "heal";
 type Symmetry = "none" | "mirror-x" | "mirror-y" | "radial-8";
+
+/** Detect coarse pointer / Android to throttle pixel-heavy ops harder. */
+const IS_MOBILE = typeof window !== "undefined"
+  && (window.matchMedia?.("(pointer: coarse)").matches
+    || /Android|iPhone|iPad/i.test(navigator.userAgent || ""));
+const ELITE_THROTTLE_MS = IS_MOBILE ? 33 : 16; // ~30 vs ~60 fps cap
+
+/** Dense-brush spacing: smaller spacing for hard-edge brushes to avoid
+ *  banding, larger for soft scatter brushes for speed. Returns px between
+ *  stamps as a fraction of brush diameter. */
+export function getDynamicSpacing(brush: BrushId, size: number): number {
+  const dense: BrushId[] = [
+    "hard-round", "fine-liner", "ink-pen", "wet-ink", "tattoo-liner-3rl",
+    "tattoo-liner-9rl", "technical-pen", "dip-pen", "gel-pen", "marker",
+  ];
+  const sparse: BrushId[] = ["spray", "stipple", "dotwork", "noise-grain", "halftone-dots"];
+  const base = dense.includes(brush) ? 0.08 : sparse.includes(brush) ? 0.45 : 0.18;
+  // Big brushes can step further w/o visible banding
+  const scale = size > 60 ? 1.35 : size > 28 ? 1.1 : 1.0;
+  return Math.max(0.5, size * base * scale);
+}
 
 // Canvas size presets (Picsart-style)
 const SIZE_PRESETS: { id: string; label: string; w: number; h: number }[] = [
@@ -114,7 +135,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [tool, setTool] = useState<Tool>("brush");
   const [eliteTool, setEliteTool] = useState<EliteTool | null>(null);
   const [symmetry, setSymmetry] = useState<Symmetry>("none");
-  const [stabilizer, setStabilizer] = useState(0.35); // 0..0.9 EMA weight toward target
+  const [stabilizer, setStabilizer] = useState(0.5); // 0..0.9 EMA weight toward target
   const [color, setColor] = useState("#000000");
   const [size, setSize] = useState(18);
   const [opacity, setOpacity] = useState(1);
@@ -135,6 +156,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const lastMoveTs = useRef(0);
   const cloneSourceRef = useRef<{ x: number; y: number } | null>(null);
   const cloneOffsetRef = useRef<{ dx: number; dy: number } | null>(null);
+  /** Pending pointer sample for RAF-batched draw flush. */
+  const pendingDraw = useRef<Pt | null>(null);
+  const drawRafRef = useRef<number | null>(null);
+  const lastEliteTs = useRef(0);
+  const [curvedText, setCurvedText] = useState(false);
+  const [textRadius, setTextRadius] = useState(180);
   const [showSizeMenu, setShowSizeMenu] = useState(false);
   const [showProMenu, setShowProMenu] = useState(false);
   const [upscaleBusy, setUpscaleBusy] = useState<number | null>(null);
@@ -205,6 +232,9 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     const refCanvas = refCanvasRef.current!;
     const refCtx = refCanvas.getContext("2d", { willReadFrequently: true })!;
     refCtxRef.current = refCtx;
+    // Speed: never resample on draw; brushes should write exact pixels.
+    ctx.imageSmoothingEnabled = false;
+    refCtx.imageSmoothingEnabled = false;
 
     // Prefer restoring full layered editor state (autosave); fall back to the
     // original AI image. Layer 0 = Reference, Layer 1 = Stencil/drawing.
@@ -520,6 +550,21 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   }
   function continueDraw(p: Pt) {
     if (!strokeRefs.current.length) return;
+    // RAF batch: only the latest sample is processed per frame. The previous
+    // implementation drew on every pointermove (often 120+ Hz on Pixel/iOS),
+    // which created jank with dense brushes. We drop intermediate moves; the
+    // EMA stabilizer below still smooths the visible stroke.
+    pendingDraw.current = p;
+    if (drawRafRef.current !== null) return;
+    drawRafRef.current = requestAnimationFrame(() => {
+      drawRafRef.current = null;
+      const sample = pendingDraw.current;
+      pendingDraw.current = null;
+      if (!sample || !strokeRefs.current.length) return;
+      flushDraw(sample);
+    });
+  }
+  function flushDraw(p: Pt) {
     const target = screenToCanvas(p.cx, p.cy);
     // EMA stabilizer: move stab point a fraction toward target each event
     const s = stabPt.current ?? { x: target.x, y: target.y, p: p.pressure };
@@ -536,6 +581,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     });
   }
   function endDraw() {
+    if (drawRafRef.current !== null) { cancelAnimationFrame(drawRafRef.current); drawRafRef.current = null; }
+    if (pendingDraw.current) { flushDraw(pendingDraw.current); pendingDraw.current = null; }
     if (strokeRefs.current.length) {
       strokeRefs.current.forEach(endStroke);
       strokeRefs.current = [];
