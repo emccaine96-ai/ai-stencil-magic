@@ -1910,6 +1910,9 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           </div>
         </div>
       )}
+
+      {/* Picsart-style horizontal dock — bottom of viewport */}
+      <PicsartDock handlers={dockHandlers} hidden={fadeChrome} />
     </div>
   );
 }
