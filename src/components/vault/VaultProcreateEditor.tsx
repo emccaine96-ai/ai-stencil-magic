@@ -1759,6 +1759,9 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           willChange: "transform, opacity",
         }}
       >
+        <button onClick={() => setLeftOpen(false)} className="p-1 rounded hover:bg-white/10 text-neutral-400 self-end" aria-label="Hide tools">
+          <X size={12}/>
+        </button>
         <button onClick={() => setTool("brush")} className={`p-2 rounded ${tool === "brush" && !eliteTool ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Brush"><Pipette size={16} className="mx-auto rotate-180" /></button>
         <button onClick={() => setTool("pan")} className={`p-2 rounded ${tool === "pan" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Pan"><Hand size={16} className="mx-auto" /></button>
         <button onClick={() => { setTool("eraser"); setBrushId("eraser"); }} className={`p-2 rounded ${tool === "eraser" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Eraser"><Eraser size={16} className="mx-auto" /></button>
