@@ -518,51 +518,49 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   }
 
   // ---- Post-process filters -----------------------------------------------
-  function applyThreshold(level = 128) {
-    const ctx = ctxRef.current!;
-    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const d = img.data;
-    for (let i = 0; i < d.length; i += 4) {
-      // NTSC luminance
-      const l = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
-      const v = l < level ? 0 : 255;
-      d[i] = d[i+1] = d[i+2] = v;
+  // Filters now run in a Web Worker (editor-worker.ts) so the main thread
+  // stays at ~60fps even on 4K canvases.
+  async function runWorkerOp(op: Parameters<typeof runOp>[0], label: string) {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const w = ctx.canvas.width, h = ctx.canvas.height;
+    // Clone the bitmap (the worker transfers ownership of the buffer).
+    const src = ctx.getImageData(0, 0, w, h);
+    const cloned = new ImageData(new Uint8ClampedArray(src.data), w, h);
+    const t0 = performance.now();
+    try {
+      const out = await runOp({ ...op, data: cloned } as Parameters<typeof runOp>[0]);
+      ctx.putImageData(out, 0, 0);
+      pushUndo();
+      const ms = Math.round(performance.now() - t0);
+      toast.success(`${label} · ${ms}ms`);
+    } catch (err) {
+      console.error("[editor] worker op failed", err);
+      toast.error(`${label} failed`);
     }
-    ctx.putImageData(img, 0, 0);
-    pushUndo();
   }
-  function applyThermal() {
-    const ctx = ctxRef.current!;
-    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const d = img.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const l = (0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]) / 255;
-      const r = Math.round(60 + (255 - 60) * Math.pow(l, 1.2));
-      const g = Math.round(35 + (245 - 35) * Math.pow(l, 1.7));
-      const b = Math.round(95 + (235 - 95) * Math.pow(l, 1.1));
-      d[i] = r; d[i+1] = g; d[i+2] = b;
-    }
-    ctx.putImageData(img, 0, 0);
-    pushUndo();
-  }
+  function applyThreshold(level = 128) { runWorkerOp({ op: "threshold", data: null as never, level }, "Threshold"); }
+  function applyThermal()               { runWorkerOp({ op: "thermal-purple", data: null as never }, "Thermal Purple"); }
+  function applyThermalBlueCarbon()     { runWorkerOp({ op: "thermal-blue", data: null as never }, "Thermal Blue Carbon"); }
 
-  /** Premium stencil transfer hue. Darks → #2b3a8c violet-blue carbon; lights → cream. */
-  function applyThermalBlueCarbon() {
-    const ctx = ctxRef.current!;
-    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const d = img.data;
-    const CARBON = { r: 0x2b, g: 0x3a, b: 0x8c };
-    const CREAM  = { r: 0xfa, g: 0xf6, b: 0xea };
-    for (let i = 0; i < d.length; i += 4) {
-      const l = (0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]) / 255;
-      // Gamma curve favors mapping mid-darks to the carbon hue.
-      const t = Math.pow(l, 1.4);
-      d[i]   = Math.round(CARBON.r * (1 - t) + CREAM.r * t);
-      d[i+1] = Math.round(CARBON.g * (1 - t) + CREAM.g * t);
-      d[i+2] = Math.round(CARBON.b * (1 - t) + CREAM.b * t);
+  /** One-click: Otsu auto-threshold + morphological clean (open then close)
+   *  to produce a crisp pure-line stencil ready for the thermal printer. */
+  async function applyStencilOptimizer() {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const w = ctx.canvas.width, h = ctx.canvas.height;
+    const t0 = performance.now();
+    setSaveState("saving");
+    try {
+      let buf = ctx.getImageData(0, 0, w, h);
+      buf = await runOp({ op: "otsu", data: new ImageData(new Uint8ClampedArray(buf.data), w, h) });
+      buf = await runOp({ op: "morph", data: buf, passes: 1, kind: "open" });
+      buf = await runOp({ op: "morph", data: buf, passes: 1, kind: "close" });
+      ctx.putImageData(buf, 0, 0);
+      pushUndo();
+      toast.success(`Stencil optimized · ${Math.round(performance.now() - t0)}ms`);
+    } catch (err) {
+      console.error("[editor] optimizer failed", err);
+      toast.error("Optimizer failed");
     }
-    ctx.putImageData(img, 0, 0);
-    pushUndo();
   }
 
   function eyedropAt(cx: number, cy: number) {
