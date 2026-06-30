@@ -1217,6 +1217,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         <button onClick={doRedo} disabled={!canRedo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Redo"><Redo2 size={18} /></button>
         <button onClick={fitToScreen} className="p-1.5 rounded hover:bg-white/10" aria-label="Fit"><Maximize2 size={16} /></button>
         <button onClick={() => setView(v => ({ ...v, scale: 1, x: 0, y: 0 }))} className="p-1.5 rounded hover:bg-white/10" aria-label="Reset zoom"><RotateCcw size={16} /></button>
+        <button onClick={openAdjust} className="p-1.5 rounded hover:bg-white/10 flex items-center gap-1 text-[11px]" title="Curves / Levels"><Activity size={14}/> Adjust</button>
+        <button onClick={() => setShowHistory(s => !s)} className={`p-1.5 rounded flex items-center gap-1 text-[11px] ${showHistory ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} title="History timeline"><History size={14}/> History</button>
         <span className="text-[11px] text-neutral-400 tabular-nums w-12 text-right">{(view.scale * 100).toFixed(0)}%</span>
         {/* Canvas Size dropdown */}
         <div className="relative">
