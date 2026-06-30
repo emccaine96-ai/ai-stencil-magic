@@ -1417,6 +1417,44 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
             : "Autosave on"}
         </span>
       </div>
+
+      {/* Upscale progress overlay */}
+      {upscaleBusy !== null && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center" style={{ background: "rgba(13,13,15,0.75)", backdropFilter: "blur(8px)" }}>
+          <div className="rounded-xl border border-white/10 bg-[#121216] px-6 py-5 w-72 text-center">
+            <Rocket size={24} className="mx-auto text-[#A855F7] mb-2" />
+            <div className="text-sm font-bold mb-1">Lanczos Upscaling…</div>
+            <div className="text-[11px] text-neutral-400 mb-3">High-fidelity resampling in worker</div>
+            <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-[#A855F7] to-[#00F5D4] transition-all" style={{ width: `${upscaleBusy}%` }} />
+            </div>
+            <div className="text-[10px] text-neutral-500 mt-1 tabular-nums">{upscaleBusy}%</div>
+          </div>
+        </div>
+      )}
+
+      {/* Text tool input */}
+      {textPrompt && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center" style={{ background: "rgba(13,13,15,0.75)", backdropFilter: "blur(8px)" }}>
+          <div className="rounded-xl border border-white/10 bg-[#121216] p-4 w-80">
+            <div className="flex items-center gap-2 mb-3"><TypeIcon size={14} className="text-[#00F5D4]" /><div className="text-sm font-bold">Add Text</div></div>
+            <input autoFocus value={textValue} onChange={e => setTextValue(e.target.value)}
+              placeholder="Type text…"
+              className="w-full bg-black/40 border border-white/10 rounded px-2 py-2 text-sm mb-2" />
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[10px] text-neutral-400">Size</span>
+              <input type="range" min={12} max={400} value={textSize} onChange={e => setTextSize(+e.target.value)} className="flex-1" />
+              <span className="text-[10px] text-neutral-300 tabular-nums w-8 text-right">{textSize}</span>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { setTextPrompt(null); setTextValue(""); }}
+                className="flex-1 rounded bg-white/5 hover:bg-white/10 text-xs py-2">Cancel</button>
+              <button onClick={commitText}
+                className="flex-1 rounded bg-gradient-to-r from-[#00F5D4] to-[#00B8A9] text-black text-xs font-bold py-2">Place</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
