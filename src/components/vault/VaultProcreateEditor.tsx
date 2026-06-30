@@ -3,7 +3,7 @@ import {
   X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2,
   Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3, Image as ImageIcon, Eye, EyeOff,
   ChevronRight, ChevronLeft, Settings2, Brush as BrushIcon, Minimize2, Wand2,
-  Crop, Rocket, Type as TypeIcon, Stamp, Wand, Sliders,
+  Crop, Rocket, Type as TypeIcon, Stamp, Wand, Sliders, History, Activity,
 } from "lucide-react";
 import { saveDocument, saveEditorState, type DocumentData, type EditorState, type LayerState } from "@/lib/localDB";
 import { runOp } from "@/lib/worker-bridge";
@@ -13,6 +13,14 @@ import {
   DEFAULTS, BRUSH_LABELS, beginStroke, endStroke, strokeTo,
   type BrushId, type BrushSettings, type StrokeContext,
 } from "@/lib/brushes";
+import {
+  buildCurveLUT, buildLevelsLUT, applyLUT, lumaHistogram,
+  CURVES_PRESETS, LEVELS_PRESETS, type LevelsParams, type CurvePoint,
+} from "@/lib/curves-levels";
+import {
+  magicWand, refineMask, invertMask, maskToOverlayCanvas, maskToAlphaCanvas,
+  type WandResult,
+} from "@/lib/magic-wand";
 
 type Props = {
   doc: DocumentData;
@@ -45,7 +53,7 @@ const PALETTE = [
 ];
 
 type Tool = "brush" | "eraser" | "pan" | "eyedrop";
-type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple" | "clone";
+type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple" | "clone" | "wand";
 type Symmetry = "none" | "mirror-x" | "mirror-y" | "radial-8";
 
 // Canvas size presets (Picsart-style)
@@ -127,6 +135,31 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [textPrompt, setTextPrompt] = useState<{ x: number; y: number } | null>(null);
   const [textValue, setTextValue] = useState("");
   const [textSize, setTextSize] = useState(72);
+
+  // Curves/Levels modal + selection
+  const [showAdjust, setShowAdjust] = useState(false);
+  const [adjustTab, setAdjustTab] = useState<"curves" | "levels">("curves");
+  const [curvePreset, setCurvePreset] = useState<keyof typeof CURVES_PRESETS>("Stencil Clean");
+  const [levels, setLevels] = useState<LevelsParams>(LEVELS_PRESETS["Stencil Clean"]);
+  const [adjustPreview, setAdjustPreview] = useState(true);
+  const previewLUT = useRef<Uint8ClampedArray | null>(null);
+  const preAdjustSnapshot = useRef<ImageData | null>(null);
+
+  // Magic wand selection
+  const [selection, setSelection] = useState<WandResult | null>(null);
+  const selectionRef = useRef<WandResult | null>(null);
+  selectionRef.current = selection;
+  const selOverlayRef = useRef<HTMLCanvasElement | null>(null);
+  const [wandTolerance, setWandTolerance] = useState(32);
+  const [wandContiguous, setWandContiguous] = useState(true);
+  const [wandExpand, setWandExpand] = useState(0);
+  const [wandFeather, setWandFeather] = useState(0);
+  const wandBaseRef = useRef<WandResult | null>(null); // pre-refine seed
+
+  // History timeline
+  const [showHistory, setShowHistory] = useState(false);
+  const historyThumbs = useRef<string[]>([]);
+  const [historyTick, setHistoryTick] = useState(0);
 
   // Drawer + HUD state machines (Procreate-style collapsible workspace)
   // Panels start collapsed — they only appear when the user taps an edge tab.
@@ -273,11 +306,46 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     const ctx = ctxRef.current; if (!ctx) return;
     const snap = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
     undoStack.current.push(snap);
-    if (undoStack.current.length > 30) undoStack.current.shift();
+    // 6K safeguard: cap by total bytes (≈384MB) AND step count.
+    const MAX_BYTES = 384 * 1024 * 1024;
+    const MAX_STEPS = 60;
+    let total = 0;
+    for (const s of undoStack.current) total += s.data.byteLength;
+    while (undoStack.current.length > 1 && (total > MAX_BYTES || undoStack.current.length > MAX_STEPS)) {
+      const dropped = undoStack.current.shift()!;
+      total -= dropped.data.byteLength;
+      historyThumbs.current.shift();
+    }
+    // Thumbnail for history timeline
+    try {
+      const tc = document.createElement("canvas");
+      const TW = 64;
+      const ratio = ctx.canvas.height / ctx.canvas.width;
+      tc.width = TW; tc.height = Math.max(24, Math.round(TW * ratio));
+      tc.getContext("2d")!.drawImage(ctx.canvas, 0, 0, tc.width, tc.height);
+      historyThumbs.current.push(tc.toDataURL("image/jpeg", 0.55));
+    } catch { historyThumbs.current.push(""); }
+    setHistoryTick(t => t + 1);
     redoStack.current = [];
     setCanUndo(undoStack.current.length > 1);
     setCanRedo(false);
     scheduleAutosave();
+  }
+
+  /** Jump history to a given undo-stack index (non-destructive timeline scrub). */
+  function jumpHistory(index: number) {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const i = Math.max(0, Math.min(undoStack.current.length - 1, index));
+    // Move all snapshots after i into redo stack (keeps them reachable)
+    while (undoStack.current.length - 1 > i) {
+      const s = undoStack.current.pop()!;
+      redoStack.current.push(s);
+      historyThumbs.current.pop();
+    }
+    ctx.putImageData(undoStack.current[i], 0, 0);
+    setCanUndo(undoStack.current.length > 1);
+    setCanRedo(redoStack.current.length > 0);
+    setHistoryTick(t => t + 1);
   }
 
   // ---- Autosave (debounced 3s, also on visibilitychange/beforeunload) -------
@@ -348,9 +416,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     if (undoStack.current.length < 2) return;
     const cur = undoStack.current.pop()!;
     redoStack.current.push(cur);
+    historyThumbs.current.pop();
     ctx.putImageData(undoStack.current[undoStack.current.length - 1], 0, 0);
     setCanUndo(undoStack.current.length > 1);
     setCanRedo(true);
+    setHistoryTick(t => t + 1);
   }
   function doRedo() {
     const ctx = ctxRef.current; if (!ctx) return;
@@ -358,8 +428,17 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     if (!next) return;
     ctx.putImageData(next, 0, 0);
     undoStack.current.push(next);
+    // rebuild thumb
+    try {
+      const tc = document.createElement("canvas");
+      const TW = 64; const ratio = ctx.canvas.height / ctx.canvas.width;
+      tc.width = TW; tc.height = Math.max(24, Math.round(TW * ratio));
+      tc.getContext("2d")!.drawImage(ctx.canvas, 0, 0, tc.width, tc.height);
+      historyThumbs.current.push(tc.toDataURL("image/jpeg", 0.55));
+    } catch { historyThumbs.current.push(""); }
     setCanUndo(true);
     setCanRedo(redoStack.current.length > 0);
+    setHistoryTick(t => t + 1);
   }
 
   // ---- Pointer / gesture handling ------------------------------------------
@@ -763,6 +842,128 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     toast.success("Text added");
   }
 
+  // ===== Curves & Levels ====================================================
+
+  function currentLUT(): Uint8ClampedArray {
+    return adjustTab === "curves"
+      ? buildCurveLUT(CURVES_PRESETS[curvePreset])
+      : buildLevelsLUT(levels);
+  }
+
+  function openAdjust() {
+    const ctx = ctxRef.current; if (!ctx) return;
+    preAdjustSnapshot.current = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+    setShowAdjust(true);
+    setAdjustPreview(true);
+  }
+
+  /** Live, non-destructive preview using the cached pre-edit snapshot. */
+  function renderAdjustPreview() {
+    const ctx = ctxRef.current; const snap = preAdjustSnapshot.current;
+    if (!ctx || !snap) return;
+    if (!adjustPreview) { ctx.putImageData(snap, 0, 0); return; }
+    const lut = currentLUT();
+    previewLUT.current = lut;
+    const mask = selectionRef.current?.mask;
+    const out = applyLUT(snap, lut, mask);
+    ctx.putImageData(out, 0, 0);
+  }
+
+  // Re-render whenever adjust knobs change while modal is open
+  useEffect(() => {
+    if (showAdjust) renderAdjustPreview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAdjust, adjustTab, curvePreset, levels, adjustPreview]);
+
+  function applyAdjust() {
+    renderAdjustPreview();
+    preAdjustSnapshot.current = null;
+    setShowAdjust(false);
+    pushUndo();
+    toast.success(`${adjustTab === "curves" ? "Curves" : "Levels"} applied${selectionRef.current ? " (selection)" : ""}`);
+  }
+
+  function cancelAdjust() {
+    const ctx = ctxRef.current; const snap = preAdjustSnapshot.current;
+    if (ctx && snap) ctx.putImageData(snap, 0, 0);
+    preAdjustSnapshot.current = null;
+    setShowAdjust(false);
+  }
+
+  // ===== Magic Wand =========================================================
+
+  function pickWandAt(cx: number, cy: number) {
+    const ctx = ctxRef.current!;
+    const { x, y } = screenToCanvas(cx, cy);
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    if (x < 0 || y < 0 || x >= W || y >= H) return;
+    const t0 = performance.now();
+    const img = ctx.getImageData(0, 0, W, H);
+    const r = magicWand(img, Math.floor(x), Math.floor(y), wandTolerance, wandContiguous);
+    wandBaseRef.current = r;
+    const refined = (wandExpand || wandFeather) ? refineMask(r, wandExpand, wandFeather) : r;
+    setSelection(refined);
+    selOverlayRef.current = maskToOverlayCanvas(refined.mask, refined.w, refined.h);
+    toast.success(`Selection · ${Math.round(performance.now() - t0)}ms`);
+  }
+
+  // Re-refine when sliders change
+  useEffect(() => {
+    const base = wandBaseRef.current; if (!base) return;
+    const r = (wandExpand || wandFeather) ? refineMask(base, wandExpand, wandFeather) : base;
+    setSelection(r);
+    selOverlayRef.current = maskToOverlayCanvas(r.mask, r.w, r.h);
+  }, [wandExpand, wandFeather]);
+
+  function clearSelection() {
+    setSelection(null);
+    selOverlayRef.current = null;
+    wandBaseRef.current = null;
+    setWandExpand(0); setWandFeather(0);
+  }
+
+  function selectionInvert() {
+    const s = selectionRef.current; if (!s) return;
+    const inv = invertMask(s);
+    setSelection(inv);
+    wandBaseRef.current = inv;
+    selOverlayRef.current = maskToOverlayCanvas(inv.mask, inv.w, inv.h);
+  }
+
+  function selectionFill(hex: string) {
+    const ctx = ctxRef.current; const s = selectionRef.current; if (!ctx || !s) return;
+    const alpha = maskToAlphaCanvas(s.mask, s.w, s.h);
+    const tmp = document.createElement("canvas");
+    tmp.width = s.w; tmp.height = s.h;
+    const t = tmp.getContext("2d")!;
+    t.fillStyle = hex; t.fillRect(0, 0, s.w, s.h);
+    t.globalCompositeOperation = "destination-in";
+    t.drawImage(alpha, 0, 0);
+    ctx.drawImage(tmp, 0, 0);
+    pushUndo();
+  }
+
+  function selectionDelete() {
+    // erase to white (stencil substrate)
+    selectionFill("#ffffff");
+  }
+
+  function selectionApplyThreshold() {
+    const ctx = ctxRef.current; const s = selectionRef.current; if (!ctx || !s) return;
+    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+    const d = img.data;
+    for (let i = 0, m = 0; i < d.length; i += 4, m++) {
+      const w = s.mask[m] / 255; if (w <= 0) continue;
+      const y = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+      const v = y < 128 ? 0 : 255;
+      d[i]   = d[i]   * (1 - w) + v * w;
+      d[i+1] = d[i+1] * (1 - w) + v * w;
+      d[i+2] = d[i+2] * (1 - w) + v * w;
+    }
+    ctx.putImageData(img, 0, 0);
+    pushUndo();
+  }
+
   // (eyedropAt defined above)
 
   function onPointerDown(e: React.PointerEvent) {
@@ -797,6 +998,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     if (tool === "eyedrop") { eyedropAt(e.clientX, e.clientY); return; }
     if (tool === "pan") { setIsInteracting(true); return; }
     if (eliteTool) {
+      if (eliteTool === "wand") { pickWandAt(e.clientX, e.clientY); return; }
       drawingPointerId.current = e.pointerId;
       lastCanvasPt.current = { x: e.clientX, y: e.clientY };
       applyEliteAt(e.clientX, e.clientY, 0, 0);
@@ -982,6 +1184,16 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
               mixBlendMode: refLoaded && refVisible ? "multiply" : "normal",
             }}
           />
+          {/* Selection overlay (cyan tint of mask) */}
+          {selection && selOverlayRef.current && (
+            <img
+              src={selOverlayRef.current.toDataURL()}
+              alt=""
+              className="absolute inset-0 pointer-events-none animate-pulse"
+              style={{ mixBlendMode: "screen", opacity: 0.9 }}
+              draggable={false}
+            />
+          )}
         </div>
       </div>
 
@@ -1015,6 +1227,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         <button onClick={doRedo} disabled={!canRedo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Redo"><Redo2 size={18} /></button>
         <button onClick={fitToScreen} className="p-1.5 rounded hover:bg-white/10" aria-label="Fit"><Maximize2 size={16} /></button>
         <button onClick={() => setView(v => ({ ...v, scale: 1, x: 0, y: 0 }))} className="p-1.5 rounded hover:bg-white/10" aria-label="Reset zoom"><RotateCcw size={16} /></button>
+        <button onClick={openAdjust} className="p-1.5 rounded hover:bg-white/10 flex items-center gap-1 text-[11px]" title="Curves / Levels"><Activity size={14}/> Adjust</button>
+        <button onClick={() => setShowHistory(s => !s)} className={`p-1.5 rounded flex items-center gap-1 text-[11px] ${showHistory ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} title="History timeline"><History size={14}/> History</button>
         <span className="text-[11px] text-neutral-400 tabular-nums w-12 text-right">{(view.scale * 100).toFixed(0)}%</span>
         {/* Canvas Size dropdown */}
         <div className="relative">
@@ -1123,6 +1337,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
               ["liquify-inflate", "Inflate", Wind],
               ["liquify-deflate", "Deflate", Wind],
               ["clone", "Clone", Stamp],
+              ["wand", "Magic Wand", Wand],
             ] as const).map(([id, label, Icon]) => (
               <button key={id}
                 onClick={() => setEliteTool(eliteTool === id ? null : id)}
@@ -1455,7 +1670,160 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           </div>
         </div>
       )}
+
+      {/* Selection floating toolbar */}
+      {selection && (
+        <div className="absolute z-[12] flex flex-wrap items-center gap-1 px-2 py-1.5 rounded-lg"
+          style={{
+            left: "50%", transform: "translateX(-50%)", top: 60,
+            background: "rgba(18,18,22,0.92)", backdropFilter: "blur(12px)",
+            border: "1px solid rgba(0,245,212,0.35)",
+            boxShadow: "0 8px 32px -8px rgba(0,245,212,0.25)",
+          }}>
+          <span className="text-[10px] text-[#00F5D4] font-bold mr-1">SELECTION</span>
+          <button onClick={() => selectionFill(color)} className="px-2 py-1 rounded text-[10px] hover:bg-white/10">Fill</button>
+          <button onClick={selectionDelete} className="px-2 py-1 rounded text-[10px] hover:bg-white/10">Delete</button>
+          <button onClick={selectionInvert} className="px-2 py-1 rounded text-[10px] hover:bg-white/10">Invert</button>
+          <button onClick={selectionApplyThreshold} className="px-2 py-1 rounded text-[10px] hover:bg-white/10">Threshold</button>
+          <button onClick={openAdjust} className="px-2 py-1 rounded text-[10px] hover:bg-white/10 text-[#00F5D4]">Adjust…</button>
+          <div className="w-px h-4 bg-white/10 mx-1" />
+          <label className="text-[9px] text-neutral-400">Tol</label>
+          <input type="range" min={1} max={150} value={wandTolerance} onChange={e => setWandTolerance(+e.target.value)} className="w-16" />
+          <label className="flex items-center gap-1 text-[9px] text-neutral-400 ml-1">
+            <input type="checkbox" checked={wandContiguous} onChange={e => setWandContiguous(e.target.checked)} /> Contig
+          </label>
+          <div className="w-px h-4 bg-white/10 mx-1" />
+          <label className="text-[9px] text-neutral-400">Refine</label>
+          <input type="range" min={-20} max={20} value={wandExpand} onChange={e => setWandExpand(+e.target.value)} className="w-14" title="Expand/Contract" />
+          <input type="range" min={0} max={20} value={wandFeather} onChange={e => setWandFeather(+e.target.value)} className="w-14" title="Feather" />
+          <button onClick={clearSelection} className="ml-1 px-2 py-1 rounded text-[10px] bg-white/5 hover:bg-red-500/20">Clear</button>
+        </div>
+      )}
+
+      {/* History timeline (bottom strip) */}
+      {showHistory && (
+        <div className="absolute z-[11] flex items-center gap-1 px-2 py-1.5 overflow-x-auto"
+          style={{
+            left: 10, right: 10, bottom: 40,
+            background: "rgba(18,18,22,0.92)", backdropFilter: "blur(12px)",
+            border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10,
+            opacity: fadeChrome ? 0.15 : 1,
+            pointerEvents: fadeChrome ? "none" : "auto",
+          }}>
+          <History size={12} className="text-neutral-400 shrink-0" />
+          <span className="text-[10px] text-neutral-400 mr-1 shrink-0">{historyThumbs.current.length} steps</span>
+          {/* render via tick */}
+          <span className="hidden">{historyTick}</span>
+          {historyThumbs.current.map((src, i) => (
+            <button key={i} onClick={() => jumpHistory(i)}
+              className={`shrink-0 rounded overflow-hidden border ${i === historyThumbs.current.length - 1 ? "border-[#00F5D4]" : "border-white/10 hover:border-white/30"}`}
+              title={`Step ${i + 1}`}>
+              {src
+                ? <img src={src} alt="" className="h-12 w-auto block" draggable={false} />
+                : <div className="h-12 w-12 bg-black/40" />}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Adjust modal — Curves & Levels with presets and live preview */}
+      {showAdjust && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center"
+          style={{ background: "rgba(13,13,15,0.55)", backdropFilter: "blur(6px)" }}>
+          <div className="rounded-xl border border-white/10 bg-[#121216] w-[360px] max-w-[92vw] p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Activity size={14} className="text-[#A855F7]" />
+              <div className="text-sm font-bold">Tonal Adjust</div>
+              {selection && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#00F5D4]/15 text-[#00F5D4]">SELECTION</span>}
+              <div className="ml-auto flex gap-1 text-[10px]">
+                <button onClick={() => setAdjustTab("curves")} className={`px-2 py-1 rounded ${adjustTab === "curves" ? "bg-white/10 text-white" : "text-neutral-400"}`}>Curves</button>
+                <button onClick={() => setAdjustTab("levels")} className={`px-2 py-1 rounded ${adjustTab === "levels" ? "bg-white/10 text-white" : "text-neutral-400"}`}>Levels</button>
+              </div>
+            </div>
+
+            <AdjustHistogram src={preAdjustSnapshot.current} lut={currentLUT()} />
+
+            {adjustTab === "curves" ? (
+              <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-wider text-neutral-500">Preset</div>
+                <div className="grid grid-cols-2 gap-1">
+                  {(Object.keys(CURVES_PRESETS) as (keyof typeof CURVES_PRESETS)[]).map(k => (
+                    <button key={k} onClick={() => setCurvePreset(k)}
+                      className={`text-[10px] px-2 py-1.5 rounded border ${curvePreset === k ? "bg-[#A855F7]/20 text-[#A855F7] border-[#A855F7]/40" : "bg-black/30 border-white/5 text-neutral-300 hover:bg-white/10"}`}>
+                      {k}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-wider text-neutral-500">Preset</div>
+                <div className="flex flex-wrap gap-1">
+                  {(Object.keys(LEVELS_PRESETS) as (keyof typeof LEVELS_PRESETS)[]).map(k => (
+                    <button key={k} onClick={() => setLevels({ ...LEVELS_PRESETS[k] })}
+                      className="text-[10px] px-2 py-1 rounded bg-black/30 hover:bg-white/10 border border-white/5">{k}</button>
+                  ))}
+                </div>
+                <LevelRow label="In Black" min={0} max={254} value={levels.inBlack}
+                  onChange={v => setLevels(l => ({ ...l, inBlack: Math.min(v, l.inWhite - 1) }))} />
+                <LevelRow label="Gamma" min={10} max={300} value={Math.round(levels.gamma * 100)} display={(levels.gamma).toFixed(2)}
+                  onChange={v => setLevels(l => ({ ...l, gamma: v / 100 }))} />
+                <LevelRow label="In White" min={1} max={255} value={levels.inWhite}
+                  onChange={v => setLevels(l => ({ ...l, inWhite: Math.max(v, l.inBlack + 1) }))} />
+                <LevelRow label="Out Black" min={0} max={254} value={levels.outBlack}
+                  onChange={v => setLevels(l => ({ ...l, outBlack: v }))} />
+                <LevelRow label="Out White" min={1} max={255} value={levels.outWhite}
+                  onChange={v => setLevels(l => ({ ...l, outWhite: v }))} />
+              </div>
+            )}
+
+            <label className="flex items-center gap-2 text-[10px] text-neutral-400 mt-3">
+              <input type="checkbox" checked={adjustPreview} onChange={e => setAdjustPreview(e.target.checked)} /> Live preview
+            </label>
+
+            <div className="flex gap-2 mt-3">
+              <button onClick={cancelAdjust} className="flex-1 rounded bg-white/5 hover:bg-white/10 text-xs py-2">Cancel</button>
+              <button onClick={applyAdjust} className="flex-1 rounded bg-gradient-to-r from-[#A855F7] to-[#7c3aed] text-white text-xs font-bold py-2">Apply</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function LevelRow({ label, min, max, value, display, onChange }: {
+  label: string; min: number; max: number; value: number; display?: string; onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] text-neutral-400 w-16 shrink-0">{label}</span>
+      <input type="range" min={min} max={max} value={value} onChange={e => onChange(+e.target.value)} className="flex-1" />
+      <span className="text-[10px] tabular-nums text-neutral-300 w-10 text-right">{display ?? value}</span>
+    </div>
+  );
+}
+
+function AdjustHistogram({ src, lut }: { src: ImageData | null; lut: Uint8ClampedArray }) {
+  const hist = useMemo(() => src ? lumaHistogram(src) : null, [src]);
+  if (!hist) return null;
+  // SVG: 256-bar histogram + LUT curve
+  const W = 320, H = 70;
+  const bars: string[] = [];
+  for (let i = 0; i < 256; i++) {
+    const x = (i / 256) * W;
+    const bh = hist[i] * H;
+    bars.push(`M${x.toFixed(2)} ${H} L${x.toFixed(2)} ${(H - bh).toFixed(2)}`);
+  }
+  let curve = `M0 ${H - (lut[0] / 255) * H}`;
+  for (let i = 1; i < 256; i++) {
+    curve += ` L${((i / 256) * W).toFixed(2)} ${(H - (lut[i] / 255) * H).toFixed(2)}`;
+  }
+  return (
+    <svg width={W} height={H} className="block w-full h-[70px] mb-3 rounded bg-black/40 border border-white/5">
+      <path d={bars.join(" ")} stroke="rgba(255,255,255,0.4)" strokeWidth={1} fill="none" />
+      <path d={curve} stroke="#A855F7" strokeWidth={1.5} fill="none" />
+    </svg>
   );
 }
 
