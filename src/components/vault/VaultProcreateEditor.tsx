@@ -550,10 +550,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     const t0 = performance.now();
     setSaveState("saving");
     try {
-      let buf = ctx.getImageData(0, 0, w, h);
-      buf = await runOp({ op: "otsu", data: new ImageData(new Uint8ClampedArray(buf.data), w, h) });
-      buf = await runOp({ op: "morph", data: buf, passes: 1, kind: "open" });
-      buf = await runOp({ op: "morph", data: buf, passes: 1, kind: "close" });
+      const src = ctx.getImageData(0, 0, w, h);
+      const clone = (d: ImageData) => new ImageData(new Uint8ClampedArray(d.data), d.width, d.height);
+      let buf = await runOp({ op: "otsu", data: clone(src) });
+      buf = await runOp({ op: "morph", data: clone(buf), passes: 1, kind: "open" });
+      buf = await runOp({ op: "morph", data: clone(buf), passes: 1, kind: "close" });
       ctx.putImageData(buf, 0, 0);
       pushUndo();
       toast.success(`Stencil optimized · ${Math.round(performance.now() - t0)}ms`);
