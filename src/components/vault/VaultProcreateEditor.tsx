@@ -4,6 +4,7 @@ import {
   Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3, Image as ImageIcon, Eye, EyeOff,
   ChevronRight, ChevronLeft, Settings2, Brush as BrushIcon, Minimize2, Wand2,
   Crop, Rocket, Type as TypeIcon, Stamp, Wand, Sliders, History, Activity,
+  Pen, Check,
 } from "lucide-react";
 import { saveDocument, saveEditorState, type DocumentData, type EditorState, type LayerState } from "@/lib/localDB";
 import { runOp } from "@/lib/worker-bridge";
@@ -202,6 +203,29 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [immersive, setImmersive] = useState(false);
   const [isInteracting, setIsInteracting] = useState(false);
   const lastTapRef = useRef(0);
+
+  /** Picsart-first shell. The Procreate engine columns are gated behind
+   *  Draw mode and only mount when the user taps "Draw" in the dock. */
+  const [drawMode, setDrawMode] = useState(false);
+
+  /** Interactive crop overlay (in canvas-pixel coordinates). */
+  const [cropRect, setCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [cropAspect, setCropAspect] = useState<"free" | "1:1" | "4:5" | "16:9" | "9:16">("free");
+
+  const enterDrawMode = useCallback(() => {
+    setDrawMode(true);
+    setLeftOpen(true);
+    setRightOpen(true);
+    setHeaderVisible(true);
+    setTool("brush");
+    setEliteTool(null);
+  }, []);
+  const exitDrawMode = useCallback(() => {
+    setDrawMode(false);
+    setLeftOpen(false);
+    setRightOpen(false);
+    setEliteTool(null);
+  }, []);
 
   const collapseAll = useCallback(() => {
     const anyOpen = leftOpen || rightOpen || headerVisible;
@@ -1309,8 +1333,89 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       toast.error(`${label} failed`);
     }
   }
+
+  /** Open the interactive crop overlay sized to the current canvas. */
+  function openCropOverlay() {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const pad = Math.round(Math.min(W, H) * 0.08);
+    setCropRect({ x: pad, y: pad, w: W - pad * 2, h: H - pad * 2 });
+  }
+
+  /** Commit the crop: resize the canvas to the rect, copy pixels, keep ref aligned. */
+  function applyCrop() {
+    const r = cropRect; const ctx = ctxRef.current; const rctx = refCtxRef.current;
+    if (!r || !ctx || !rctx) { setCropRect(null); return; }
+    const w = Math.max(8, Math.round(r.w));
+    const h = Math.max(8, Math.round(r.h));
+    const x = Math.max(0, Math.round(r.x));
+    const y = Math.max(0, Math.round(r.y));
+    const sten = ctx.getImageData(x, y, Math.min(w, ctx.canvas.width - x), Math.min(h, ctx.canvas.height - y));
+    const refData = refLoaded
+      ? rctx.getImageData(x, y, Math.min(w, rctx.canvas.width - x), Math.min(h, rctx.canvas.height - y))
+      : null;
+    ctx.canvas.width = w; ctx.canvas.height = h;
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
+    ctx.putImageData(sten, 0, 0);
+    rctx.canvas.width = w; rctx.canvas.height = h;
+    if (refData) rctx.putImageData(refData, 0, 0);
+    undoStack.current = []; redoStack.current = [];
+    setCropRect(null);
+    pushUndo();
+    fitToScreen();
+    toast.success(`Cropped to ${w}×${h}`);
+  }
+
+  /** Drop a vector shape directly on the stencil layer. */
+  function dropShape(kind: "circle" | "rect" | "triangle") {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const r = Math.min(W, H) * 0.25;
+    const cx = W / 2, cy = H / 2;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, size * 0.4);
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    if (kind === "circle") ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    else if (kind === "rect") ctx.rect(cx - r, cy - r, r * 2, r * 2);
+    else { ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy + r); ctx.lineTo(cx - r, cy + r); ctx.closePath(); }
+    ctx.stroke();
+    ctx.restore();
+    pushUndo();
+    toast.success(`${kind[0].toUpperCase() + kind.slice(1)} added`);
+  }
+
+  /** Mask the canvas to a soft-edged rounded rectangle (vignette-style frame). */
+  function dropShapeMask() {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const m = Math.min(W, H) * 0.08;
+    const tmp = document.createElement("canvas");
+    tmp.width = W; tmp.height = H;
+    const t = tmp.getContext("2d")!;
+    t.drawImage(ctx.canvas, 0, 0);
+    // Build rounded-rect mask
+    ctx.save();
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
+    const r = Math.min(W, H) * 0.08;
+    ctx.beginPath();
+    ctx.moveTo(m + r, m);
+    ctx.arcTo(W - m, m, W - m, H - m, r);
+    ctx.arcTo(W - m, H - m, m, H - m, r);
+    ctx.arcTo(m, H - m, m, m, r);
+    ctx.arcTo(m, m, W - m, m, r);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(tmp, 0, 0);
+    ctx.restore();
+    pushUndo();
+    toast.success("Shape mask applied");
+  }
+
   const dockHandlers: PicsartDockHandlers = {
-    openCrop:      () => { setTool("pan"); toast.info("Pinch-zoom to frame, then use Resize"); },
+    openCrop:      () => openCropOverlay(),
     setSelectionMode: () => { setEliteTool("wand"); toast.info("Magic Wand: tap an area to select"); },
     openAdjust:    openAdjust,
     enhance:       applyStencilOptimizer,
@@ -1318,15 +1423,15 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     flipH:         () => runFilter(PF.flipHorizontal, "Flip H"),
     flipV:         () => runFilter(PF.flipVertical, "Flip V"),
     rotate90:      () => runFilter(PF.rotate90, "Rotate 90°"),
-    perspective:   () => toast.info("Perspective: drag corners (coming soon)"),
+    perspective:   () => { openCropOverlay(); toast.info("Drag handles to reframe"); },
     tiltShift:     () => runFilter((c) => PF.tiltShift(c, 0.35, 12), "Tilt Shift"),
-    aiExpand:      () => toast.info("AI Expand uses outpainting — coming soon"),
-    aiReplace:     () => toast.info("AI Replace — coming soon"),
+    aiExpand:      () => { setShowSizeMenu(true); toast.info("Pick a larger canvas to expand into"); },
+    aiReplace:     () => { setEliteTool("wand"); toast.info("Select region, then run a filter"); },
     dispersion:    () => runFilter((c) => PF.dispersion(c, 1500, 0.3), "Dispersion"),
-    stretch:       () => runFilter((c) => PF.pixelate(c, 6), "Stretch (pixel)"),
+    stretch:       () => { setEliteTool("liquify-push"); toast.info("Stretch: drag to push pixels"); },
     motion:        () => runFilter((c) => PF.gaussianBlur(c, 10), "Motion Blur"),
-    shapeCrop:     () => toast.info("Shape Crop: use Magic Wand → Invert → Delete"),
-    freeCrop:      () => toast.info("Free Crop: use Magic Wand selection"),
+    shapeCrop:     () => { setCropAspect("1:1"); openCropOverlay(); },
+    freeCrop:      () => { setCropAspect("free"); openCropOverlay(); },
     cloneStamp:    () => { setEliteTool("clone"); cloneSourceRef.current = null; cloneOffsetRef.current = null; toast.info("Clone: tap source, then paint"); },
     curves:        openAdjust,
     upscale6k:     () => upscaleTo(6144, 6144),
@@ -1353,17 +1458,17 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     cutout:        () => { setEliteTool("wand"); toast.info("Cutout: tap area, then Delete"); },
     text:          () => { const ctx = ctxRef.current!; setTextPrompt({ x: ctx.canvas.width / 2 - 100, y: ctx.canvas.height / 2 - 40 }); },
     addPhoto:      () => refFileInput.current?.click(),
-    openBrushes:   () => setRightOpen(true),
-    shapeMask:     () => toast.info("Shape Mask: use Selection → Shape"),
+    openBrushes:   () => enterDrawMode(),
+    shapeMask:     () => dropShapeMask(),
     frame:         () => runFilter((c) => PF.borderFrame(c, 32, "#0d0d0f"), "Frame"),
     callout:       () => { const ctx = ctxRef.current!; setTextPrompt({ x: ctx.canvas.width / 2 - 100, y: ctx.canvas.height / 2 - 40 }); toast.info("Type your callout"); },
-    draw:          () => { setTool("brush"); setEliteTool(null); },
+    draw:          () => enterDrawMode(),
     sticker:       () => refFileInput.current?.click(),
-    aiTryOn:       () => toast.info("AI Try On — coming soon"),
+    aiTryOn:       () => navigate({ to: "/plugins" }),
     apps:          () => navigate({ to: "/plugins" }),
     myFolders:     () => onClose(),
     border:        () => runFilter((c) => PF.borderFrame(c, 24, color), "Border"),
-    shape:         () => toast.info("Shape: tap to drop circle"),
+    shape:         () => dropShape("circle"),
     mask:          () => { setEliteTool("wand"); toast.info("Mask: tap area to define"); },
   };
 
@@ -1441,20 +1546,43 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       >
         <button onClick={onClose} className="p-1.5 rounded hover:bg-white/10" aria-label="Close"><X size={18} /></button>
         <div className="text-sm font-semibold truncate flex-1">{doc.name}</div>
+        {drawMode && (
+          <button
+            onClick={exitDrawMode}
+            className="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 bg-[#00F5D4] text-black"
+            title="Exit Draw mode"
+          >
+            <Check size={13}/> Done
+          </button>
+        )}
+        {drawMode && (
+          <button
+            onClick={() => setImmersive(v => !v)}
+            className={`px-2 py-1 rounded text-[10px] font-semibold ${immersive ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "bg-white/5 text-neutral-300 hover:bg-white/10"}`}
+            title="Fade panels while drawing"
+          >
+            {immersive ? "Procreate Mode" : "Procreate"}
+          </button>
+        )}
+        {/* Autosave on/off pill — always visible */}
         <button
-          onClick={() => setImmersive(v => !v)}
-          className={`px-2 py-1 rounded text-[10px] font-semibold ${immersive ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "bg-white/5 text-neutral-300 hover:bg-white/10"}`}
-          title="Fade panels while drawing"
+          onClick={() => autosave.setEnabled(!autosave.enabled)}
+          className={`px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border ${autosave.enabled ? "bg-[#00F5D4]/15 text-[#00F5D4] border-[#00F5D4]/40" : "bg-white/5 text-neutral-400 border-white/10 hover:bg-white/10"}`}
+          title={autosave.enabled ? "Autosave is on — tap to turn off" : "Autosave is off — tap to turn on"}
         >
-          {immersive ? "Procreate Mode On" : "Procreate Mode"}
+          <span style={{
+            width: 8, height: 8, borderRadius: 999,
+            background: autosave.enabled ? "#00F5D4" : "#666",
+          }} />
+          Autosave {autosave.enabled ? "On" : "Off"}
         </button>
-        <button onClick={collapseAll} className="p-1.5 rounded hover:bg-white/10" aria-label="Toggle all panels (Tab)"><Minimize2 size={16} /></button>
         <button onClick={doUndo} disabled={!canUndo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Undo"><Undo2 size={18} /></button>
         <button onClick={doRedo} disabled={!canRedo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Redo"><Redo2 size={18} /></button>
         <button onClick={fitToScreen} className="p-1.5 rounded hover:bg-white/10" aria-label="Fit"><Maximize2 size={16} /></button>
         <button onClick={() => setView(v => ({ ...v, scale: 1, x: 0, y: 0 }))} className="p-1.5 rounded hover:bg-white/10" aria-label="Reset zoom"><RotateCcw size={16} /></button>
-        <button onClick={openAdjust} className="p-1.5 rounded hover:bg-white/10 flex items-center gap-1 text-[11px]" title="Curves / Levels"><Activity size={14}/> Adjust</button>
-        <button onClick={() => setShowHistory(s => !s)} className={`p-1.5 rounded flex items-center gap-1 text-[11px] ${showHistory ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} title="History timeline"><History size={14}/> History</button>
+        {drawMode && (
+          <button onClick={() => setShowHistory(s => !s)} className={`p-1.5 rounded flex items-center gap-1 text-[11px] ${showHistory ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} title="History timeline"><History size={14}/></button>
+        )}
         <span className="text-[11px] text-neutral-400 tabular-nums w-12 text-right">{(view.scale * 100).toFixed(0)}%</span>
         {/* Canvas Size dropdown */}
         <div className="relative">
@@ -1520,7 +1648,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         </button>
       </header>
 
-      {/* COLUMN 1 — Engines (left floating glass panel) */}
+      {/* COLUMN 1 — Engines (left floating glass panel) — Draw mode only */}
+      {drawMode && (
       <aside
         className="absolute overflow-y-auto p-3 space-y-4 text-xs"
         style={{
@@ -1601,8 +1730,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           </button>
         </div>
       </aside>
+      )}
 
-      {/* COLUMN 2 — Tool dock (60px) */}
+      {/* COLUMN 2 — Tool dock (60px) — Draw mode only */}
+      {drawMode && (
       <aside
         className="absolute flex flex-col gap-2 p-2"
         style={{
@@ -1643,8 +1774,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
             className="w-full h-8 bg-transparent rounded cursor-pointer" />
         </label>
       </aside>
+      )}
 
-      {/* COLUMN 3 — Layers + 500-brush library (right floating panel) */}
+      {/* COLUMN 3 — Layers + 500-brush library (right floating panel) — Draw mode only */}
+      {drawMode && (
       <aside
         className="absolute flex flex-col"
         style={{
@@ -1755,9 +1888,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           })}
         </div>
       </aside>
+      )}
 
-      {/* Edge dock tabs — appear when a column is collapsed */}
-      {!leftOpen && (
+      {/* Edge dock tabs — only in Draw mode */}
+      {drawMode && !leftOpen && (
         <button
           onClick={() => setLeftOpen(true)}
           aria-label="Open engines panel"
@@ -1776,7 +1910,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           <Settings2 size={16} />
         </button>
       )}
-      {leftOpen && (
+      {drawMode && leftOpen && (
         <button
           onClick={() => setLeftOpen(false)}
           aria-label="Collapse engines panel"
@@ -1796,7 +1930,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           <ChevronLeft size={14} className="mx-auto" />
         </button>
       )}
-      {!rightOpen && (
+      {drawMode && !rightOpen && (
         <button
           onClick={() => setRightOpen(true)}
           aria-label="Open brush vault"
@@ -1815,7 +1949,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           <BrushIcon size={16} />
         </button>
       )}
-      {rightOpen && (
+      {drawMode && rightOpen && (
         <button
           onClick={() => setRightOpen(false)}
           aria-label="Collapse brush vault"
@@ -2054,6 +2188,21 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
       {/* Picsart-style horizontal dock — bottom of viewport */}
       <PicsartDock handlers={dockHandlers} hidden={fadeChrome} />
+
+      {/* Interactive crop overlay */}
+      {cropRect && (
+        <CropOverlay
+          view={view}
+          canvasW={ctxRef.current?.canvas.width ?? 1024}
+          canvasH={ctxRef.current?.canvas.height ?? 1024}
+          rect={cropRect}
+          aspect={cropAspect}
+          onChange={setCropRect}
+          onAspect={setCropAspect}
+          onApply={applyCrop}
+          onCancel={() => setCropRect(null)}
+        />
+      )}
     </div>
   );
 }
@@ -2102,3 +2251,152 @@ function formatAgo(ts: number): string {
 }
 
 export default VaultProcreateEditor;
+
+/* ===================== Crop Overlay ====================================== */
+type CropProps = {
+  view: { x: number; y: number; scale: number };
+  canvasW: number;
+  canvasH: number;
+  rect: { x: number; y: number; w: number; h: number };
+  aspect: "free" | "1:1" | "4:5" | "16:9" | "9:16";
+  onChange: (r: { x: number; y: number; w: number; h: number }) => void;
+  onAspect: (a: "free" | "1:1" | "4:5" | "16:9" | "9:16") => void;
+  onApply: () => void;
+  onCancel: () => void;
+};
+function CropOverlay({ view, canvasW, canvasH, rect, aspect, onChange, onAspect, onApply, onCancel }: CropProps) {
+  // Convert canvas-space rect → screen-space px
+  const sx = view.x + rect.x * view.scale;
+  const sy = view.y + rect.y * view.scale;
+  const sw = rect.w * view.scale;
+  const sh = rect.h * view.scale;
+
+  const aspectRatio = aspect === "free" ? 0
+    : aspect === "1:1" ? 1
+    : aspect === "4:5" ? 4/5
+    : aspect === "16:9" ? 16/9
+    : 9/16;
+
+  const drag = useRef<{ mode: "move" | "tl" | "tr" | "bl" | "br"; startX: number; startY: number; orig: typeof rect } | null>(null);
+
+  function onDown(mode: "move" | "tl" | "tr" | "bl" | "br") {
+    return (e: React.PointerEvent) => {
+      e.stopPropagation();
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+      drag.current = { mode, startX: e.clientX, startY: e.clientY, orig: { ...rect } };
+    };
+  }
+  function onMove(e: React.PointerEvent) {
+    if (!drag.current) return;
+    const dxScreen = e.clientX - drag.current.startX;
+    const dyScreen = e.clientY - drag.current.startY;
+    const dx = dxScreen / view.scale;
+    const dy = dyScreen / view.scale;
+    const o = drag.current.orig;
+    let r = { ...o };
+    if (drag.current.mode === "move") {
+      r.x = Math.max(0, Math.min(canvasW - o.w, o.x + dx));
+      r.y = Math.max(0, Math.min(canvasH - o.h, o.y + dy));
+    } else {
+      // Resize from a corner
+      const left = drag.current.mode === "tl" || drag.current.mode === "bl";
+      const top  = drag.current.mode === "tl" || drag.current.mode === "tr";
+      let x = o.x, y = o.y, w = o.w, h = o.h;
+      if (left) { x = Math.min(o.x + o.w - 16, o.x + dx); w = o.x + o.w - x; }
+      else      { w = Math.max(16, o.w + dx); }
+      if (top)  { y = Math.min(o.y + o.h - 16, o.y + dy); h = o.y + o.h - y; }
+      else      { h = Math.max(16, o.h + dy); }
+      if (aspectRatio > 0) {
+        // Lock by adjusting height to width
+        h = w / aspectRatio;
+        if (top) y = o.y + o.h - h;
+      }
+      // Clamp into canvas
+      x = Math.max(0, x); y = Math.max(0, y);
+      w = Math.min(canvasW - x, w); h = Math.min(canvasH - y, h);
+      r = { x, y, w, h };
+    }
+    onChange(r);
+  }
+  function onUp(e: React.PointerEvent) {
+    drag.current = null;
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+  }
+
+  const aspects: { id: CropProps["aspect"]; label: string }[] = [
+    { id: "free", label: "Free" },
+    { id: "1:1", label: "1:1" },
+    { id: "4:5", label: "4:5" },
+    { id: "16:9", label: "16:9" },
+    { id: "9:16", label: "9:16" },
+  ];
+
+  return (
+    <div className="absolute inset-0 z-[15]" style={{ pointerEvents: "none" }}>
+      {/* Dim mask outside rect via 4 rectangles */}
+      <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.55)", clipPath: `polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${sx}px ${sy}px, ${sx}px ${sy+sh}px, ${sx+sw}px ${sy+sh}px, ${sx+sw}px ${sy}px, ${sx}px ${sy}px)`, pointerEvents: "none" }} />
+      {/* Crop frame */}
+      <div
+        onPointerDown={onDown("move")}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        className="absolute cursor-move"
+        style={{
+          left: sx, top: sy, width: sw, height: sh,
+          border: "2px solid #00F5D4",
+          boxShadow: "0 0 0 1px rgba(0,0,0,0.4)",
+          pointerEvents: "auto",
+          touchAction: "none",
+        }}
+      >
+        {/* Rule-of-thirds */}
+        <div className="absolute inset-0 pointer-events-none" style={{
+          backgroundImage: "linear-gradient(to right, rgba(255,255,255,0.25) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.25) 1px, transparent 1px)",
+          backgroundSize: `${100/3}% 100%, 100% ${100/3}%`,
+        }} />
+        {/* Corner handles */}
+        {(["tl","tr","bl","br"] as const).map(c => (
+          <div
+            key={c}
+            onPointerDown={onDown(c)}
+            onPointerMove={onMove}
+            onPointerUp={onUp}
+            onPointerCancel={onUp}
+            className="absolute"
+            style={{
+              width: 20, height: 20,
+              background: "#00F5D4",
+              borderRadius: 4,
+              left: c.includes("l") ? -10 : "auto",
+              right: c.includes("r") ? -10 : "auto",
+              top: c.includes("t") ? -10 : "auto",
+              bottom: c.includes("b") ? -10 : "auto",
+              cursor: c === "tl" || c === "br" ? "nwse-resize" : "nesw-resize",
+              touchAction: "none",
+            }}
+          />
+        ))}
+      </div>
+      {/* Toolbar */}
+      <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-1.5 rounded-xl"
+        style={{
+          top: 60, pointerEvents: "auto",
+          background: "rgba(18,18,22,0.95)", backdropFilter: "blur(12px)",
+          border: "1px solid rgba(0,245,212,0.4)",
+          boxShadow: "0 8px 32px -8px rgba(0,245,212,0.3)",
+        }}>
+        <span className="text-[10px] text-[#00F5D4] font-bold mr-1">CROP</span>
+        {aspects.map(a => (
+          <button key={a.id} onClick={() => onAspect(a.id)}
+            className={`px-2 py-1 rounded text-[10px] ${aspect === a.id ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "text-neutral-300 hover:bg-white/10"}`}>
+            {a.label}
+          </button>
+        ))}
+        <div className="w-px h-4 bg-white/10 mx-1" />
+        <button onClick={onCancel} className="px-2 py-1 rounded text-[10px] bg-white/5 hover:bg-white/10">Cancel</button>
+        <button onClick={onApply} className="px-2.5 py-1 rounded text-[10px] font-bold bg-[#00F5D4] text-black">Apply</button>
+      </div>
+    </div>
+  );
+}
