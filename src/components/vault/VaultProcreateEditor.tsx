@@ -1728,7 +1728,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       <div
         className="absolute left-1/2 -translate-x-1/2 px-3 py-1 text-[10px] font-medium tabular-nums flex items-center gap-2"
         style={{
-          bottom: 12, zIndex: 10,
+          bottom: 84, zIndex: 13,
           borderRadius: 999,
           background: "rgba(18,18,22,0.85)",
           border: "1px solid rgba(255,255,255,0.08)",
@@ -1826,7 +1826,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       {showHistory && (
         <div className="absolute z-[11] flex items-center gap-1 px-2 py-1.5 overflow-x-auto"
           style={{
-            left: 10, right: 10, bottom: 40,
+            left: 10, right: 10, bottom: 110,
             background: "rgba(18,18,22,0.92)", backdropFilter: "blur(12px)",
             border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10,
             opacity: fadeChrome ? 0.15 : 1,
