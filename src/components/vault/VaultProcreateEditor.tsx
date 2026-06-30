@@ -507,15 +507,17 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
     // Single pointer
     if (tool === "eyedrop") { eyedropAt(e.clientX, e.clientY); return; }
-    if (tool === "pan") return;
+    if (tool === "pan") { setIsInteracting(true); return; }
     if (eliteTool) {
       drawingPointerId.current = e.pointerId;
       lastCanvasPt.current = { x: e.clientX, y: e.clientY };
       applyEliteAt(e.clientX, e.clientY, 0, 0);
+      setIsInteracting(true);
       return;
     }
     drawingPointerId.current = e.pointerId;
     beginDraw(p);
+    setIsInteracting(true);
   }
 
   function onPointerMove(e: React.PointerEvent) {
@@ -576,6 +578,19 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       drawingPointerId.current = null;
     }
     if (pointers.current.size < 2) pinchStart.current = null;
+    if (pointers.current.size === 0) {
+      setIsInteracting(false);
+      // Double-tap on workspace background → toggle all chrome
+      const now = performance.now();
+      const target = e.target as HTMLElement;
+      const onBackground = target === wrapRef.current || target?.tagName === "CANVAS" || target?.parentElement === wrapRef.current?.firstChild;
+      if (onBackground && now - lastTapRef.current < 320) {
+        collapseAll();
+        lastTapRef.current = 0;
+      } else {
+        lastTapRef.current = now;
+      }
+    }
   }
 
   // Wheel zoom
