@@ -1,92 +1,95 @@
-Goal
+# Phase 7 — Vault Editor Pro Overhaul
 
-Ship two big upgrades to the stencil workspace in one pass, without breaking what already works:
+Goal: make `VaultProcreateEditor` a top-tier tattoo stencil editor with reliable Vault persistence. No changes to `/create` except a tiny save-confirmation hook.
 
-1. Replace the post-generation editing panel with a real 10-knob real-time canvas engine, add a 3D Tonal Map overlay, add 3 pre-generation shading filter buttons, and add a Saved Generations / Storage Vault to the top menu.
-2. Add a "Master Color & Studio Suite" dropdown (top-right) with a 4K Lanczos upscaler, k-means + Delta-E ink reconciliation, interactive color wheel with mixing recipes & harmonies, and a Three.js "Try It On 3D" skin viewport.
+## 1. Persistence bugs (highest priority)
 
-Everything client-side, no extra backend calls, purple ink color `#A855F7` preserved.
+**src/lib/vault.ts (`saveStencil`)**
+- Make it awaitable + return the new `DocumentData` (already does, but callers in `create.tsx` may not await). Add a `try/catch` with a console + toast hook.
+- Add `listDocuments` re-export so vault page can refresh after save without a stale read.
 
-## Scope by section
+**src/routes/create.tsx**
+- Minimal hook: ensure `await saveStencil(...)` resolves before navigating; show a toast "Saved to Vault" on success and "Save failed" on error. No other changes.
 
-### A. Storage Vault (new route + auto-save)
+**src/routes/vault.tsx**
+- On mount + on `visibilitychange` + on `focus`, re-run `listDocuments()` so a freshly generated stencil shows up.
 
-- New `src/lib/vault.ts` wrapping IndexedDB (no extra deps — native `indexedDB`) with `saveStencil({photo, stencil, params})`, `listStencils()`, `getStencil(id)`, `deleteStencil(id)`. Persists across reboots.
-- Hook into `generate()` in `create.tsx`: as soon as `setStencil(...)` fires, also `vault.saveStencil(...)` in the background. No user action required.
-- New route `src/routes/vault.tsx` → "Saved Generations / Storage Vault" grid: thumbnail, timestamp, style, "Open in editor", "Download", "Delete". Loads via TanStack Query.
-- Make storage accessable from the main drop-down menu whe you find the other options the dogs and dont the and how it works and exetera.. add the storage in that menu don't merge or anything just add that extra option for storage in that menu drop-down 
+**src/lib/localDB.ts**
+- Add `getDocumentWithLayers(id)` that returns `{ doc, editorState }` with safe JSON parse + schema migration fallback.
+- Add `saveEditorState(id, editorState, thumbnail?)` that stringifies + bumps `lastEdited` (used by autosave).
 
-### B. 10-knob real-time editor (replaces current "Edit stencil" panel)
+## 2. Worker offload for heavy ops
 
-- Rewrite `postProcessStencil` into a `composeStencil(srcStencilImageData, knobs): ImageData` pipeline running fully in the browser. All knobs map exactly 0–100:
-  1. Contrast / Threshold — luminance cutoff → ink vs white.
-  2. Line thickness — morphological erode (thicken) / dilate (thin) on a binary mask; kernel radius 0–5px.
-  3. Detail density — Sobel magnitude threshold; lower threshold = more edges.
-  4. Noise reduction — separable Gaussian blur on source before edges; radius 0–8px.
-  5. Shadow depth — gamma curve on dark luminances (<30%).
-  6. Midtone boost — Bezier curve on 33–66% luminance band.
-  7. Highlights suppression — clamp/compress >80% luminance.
-  8. Fine line sharpness — unsharp mask `[0,-1,0;-1,5,-1;0,-1,0]` blended by slider.
-  9. Paper grain — generated seamless noise overlay, alpha 0–0.4.
+**src/lib/editor-worker.ts (new)** — Web Worker handling:
+- `threshold` (stencil optimizer)
+- `morphology` (erode/dilate cleanup)
+- `stipple` density map
+- `liquify` mesh warp pass
+- `smudge` sample/blur
+- `tonalMap3D` (reuses shading-filters logic)
 
-10. Thermal intensity — leave this step out unless it was gonna make my app have better quality they worked but if what you had on this step made those sliders better than they are do it if it was gonna downgrade them don't those two were the only sliders that worked only change if it upgrade them just
+Main thread posts `{ op, imageBitmap, params }` and receives an `ImageBitmap` back via `transferControlToOffscreen`-free path (worker creates bitmap, transfers). Falls back to in-thread if `Worker`/`OffscreenCanvas` missing.
 
-### C. 3D Tonal Map Guide overlay
+**src/lib/worker-bridge.ts (new)** — Thin promise wrapper around the worker with op id correlation + AbortController.
 
-- New toggle button "3D Tonal Map Guide" above the preview. When ON, render the stencil layer *unchanged* and stack a transparent overlay:
-  - Compute luminance from the *original photo*, segment into Dark / Mid / Light via 2 Otsu thresholds.
-  - Marching-squares contour the boundaries between zones.
-  - Draw dashed strokes: Dark→Mid = `#B91C1C`, Mid→Light = `#F97316`, Light→Highlight = `#FACC15`.
-- Implementation in `src/lib/tonal-map.ts`, drawn into a separate canvas layered with `pointer-events: none`.
+## 3. Layered canvas architecture
 
-### D. 3 pre-generation shading filter buttons
+**src/components/vault/VaultProcreateEditor.tsx** — refactored, not nuked:
+- One `<canvas>` per `LayerState` stacked absolutely; composited only when exporting/saving.
+- Active layer receives pointer events; others are `pointer-events: none`.
+- `LayerPanel` (right drawer): add/duplicate/delete/reorder, opacity, blend mode dropdown (16 modes from `localDB.BlendMode`), visibility, lock, alpha-lock, clip-to-below.
+- Reference layer = Layer 0 (existing image drop), now becomes a `LayerState` with `name: "Reference"` + `locked: true` by default.
+- Onion skin toggle: shows previous undo snapshot of active layer at 30% under live strokes.
 
-- Above the Generate button: "Whip", "Pendulum", "Stipple" toggle row (plus "None" default). Selection is appended to the generation prompt AND applied as a post-pass to the returned stencil so behavior is consistent regardless of model output.
-- Whip → directional exponential-scatter dot field from shadow boundaries.
-- Pendulum → U-curve density distribution across midtones.
-- Stipple → blue-noise dithering replacing gray gradients with dot field.
+## 4. Stroke pipeline perf
 
-### E. Master Color & Studio Suite dropdown (top-right of `/create`)
+- Replace per-move `getImageData` paths with a **draw queue** flushed inside a single `requestAnimationFrame`.
+- Stabilizer (EMA) and predictive Bézier stay on main thread but emit batched stamp arrays (no per-stamp ctx state changes — set `globalAlpha`/`fillStyle` once per flush).
+- Stamp cache from `brush-worker-render.getStamp` reused; ensure cache key includes flow + jitter.
+- Pressure simulation fallback for mouse: velocity-based pressure curve `p = clamp(1 - speed/maxSpeed, 0.2, 1)`.
+- Symmetry engine reuses the same flushed stamp batch (mirror by matrix, not by re-rendering).
 
-Single elegant collapsible panel with 4 sub-tools:
+## 5. Pro tattoo tools
 
-1. **Image Upscaler** — uses existing `src/lib/lanczos.worker.ts`. UI: dimension preview, target (2K/4K), progress bar, add download upscale option in a small button on the bottom of  upload canvas not inside make it look professional  don't replace upload . 4K max (3840×2160) — true 8K refused with a clear message because it exceeds browser memory in practice.
-2. **Ink Inventory** — uses existing `src/lib/ink-library.ts`. Runs k-means on the uploaded photo, shows 5–10 dominant colors as ink-cap chips with "Brand — Name (#hex)" + ΔE.
-3. **Color Wheel + Mixing** — HSL wheel canvas, click any hue → opens drawer with `mixRecipe(hex)` percentages. Harmony tabs (Complementary, Triadic, Split-Complementary, Analogous) draw overlays on the wheel.
-4. **Try It On 3D** — Three.js scene with neutral cylindrical body parts (forearm, bicep, calf, chest) loaded as procedural meshes (no external GLB to keep bundle small), stencil projected as a texture with `MultiplyBlending`. Orbit controls. Lazy-loaded so Three.js (~500KB) doesn't load on first paint.
+- **Stencil Optimizer** button (top toolbar): worker `threshold` (Otsu) + `morphology` open/close → clean 1-bit lines.
+- **Line Taper**: stroke post-process that scales alpha/width by t at stroke ends (already partly in brushes; expose as toggle).
+- **Needle Sim presets**: 3RL, 5RL, 9RL, 7M1, 13M1 — preset brushes wired into the existing 500-library under a "Needle Sim" category.
+- **Dot Density Map**: worker generates stipple pattern from the reference layer's luminance, paints into active layer.
+- **Skin Texture Overlay**: subtle pore noise layer at 8% multiply, toggleable.
+- **3D Tonal Map**: reuses `src/lib/tonal-map.ts` via worker.
 
-### F. Architecture / safety
+## 6. Export
 
-- All new modules pure client-side. No new server functions.
-- Lazy-load heavy modules (Three.js viewport, color wheel) via `React.lazy` so the create-page initial bundle stays small.
-- `processedUrl` regeneration runs in a single `useEffect` with `AbortController`-like cancellation flag to prevent leaks on rapid slider drags.
+Top-toolbar Export menu:
+- PNG (transparent, current zoom)
+- PNG 4K (upscale via Lanczos worker we already have)
+- PDF stencil sheet (reuse `pdf-export.ts`)
+- PSD (reuse `psd-export.ts`) with current layer stack
 
-## Files
+## 7. Autosave + restore
 
-Created:
+- `useAutosave(docId, getEditorState)` hook: debounced 3s + on `visibilitychange` + on `beforeunload`.
+- Calls `saveEditorState` and regenerates a small thumbnail (`makeThumbnail` of composited PNG every 30s max).
+- On open, `getDocumentWithLayers` rehydrates every layer's `dataUrl` into its canvas.
 
-- `src/lib/vault.ts` — IndexedDB wrapper
-- `src/lib/edit-pipeline.ts` — 10-knob canvas pipeline
-- `src/lib/tonal-map.ts` — 3-zone contour overlay
-- `src/lib/shading-filters.ts` — whip / pendulum / stipple
-- `src/routes/vault.tsx` — Storage Vault page
-- `src/components/master-suite/MasterSuite.tsx` — dropdown shell
-- `src/components/master-suite/Upscaler.tsx`
-- `src/components/master-suite/InkInventory.tsx`
-- `src/components/master-suite/ColorWheel.tsx`
-- `src/components/master-suite/SkinViewport.tsx` (lazy)
+## 8. UI/UX polish
 
-Edited:
+- Floating panels stay closed by default (already fixed). Add a thin status pill bottom-center with: zoom %, active layer name, autosave state ("Saved · 2s ago").
+- Error boundary around the editor: catches a thrown render and shows "Editor crashed — your work is autosaved. Reload?" with a Reload button.
+- Loading skeleton while `getDocumentWithLayers` resolves.
 
-- `src/routes/create.tsx` — wire new editor, vault auto-save, suite dropdown, shading filter buttons, tonal map toggle
-- `src/routes/index.tsx` and `src/routes/create.tsx` headers — add Vault nav link
+## Technical notes (for review)
 
-Already in place from previous turn: `src/lib/lanczos.worker.ts`, `src/lib/ink-library.ts`, `three` + `@types/three` installed.
+- Worker built as a standard `new Worker(new URL("./editor-worker.ts", import.meta.url), { type: "module" })` — Vite handles it.
+- All worker ops are pure functions of `(ImageData, params) → ImageData` so they're trivially testable.
+- Layered canvas memory: at 4096² × 4 bytes × N layers we cap at 8 layers visible; older layers get rasterized into a "Background" merge when limit hit (with undo entry).
+- Purple ink `#A855F7` preserved across UI accents; only canvas pixel data is user-controlled.
+- No changes to `/create` other than awaited save + toast.
 
-## Known trade-offs / things to confirm
+## Out of scope (this phase)
 
-- **True 8K upscaling**: I'll cap at 4K (3840×2160). Browsers run out of memory above this for the intermediate float buffer (~256MB for 8K). I'll show a tooltip explaining this.
-- **3D viewport models**: Procedural cylindrical/capsule meshes (no external GLB) — fast, no asset hosting, but stylized. If you want photoreal models later we'd need to host GLBs. Make and option for this 
-- **Suite dropdown placement on mobile**: Top-right dropdown will become a full-width sheet under 640px to remain usable.
-- **Per-knob CPU cost**: At 1024px working size, full 10-knob pipeline runs in ~80–200ms on a midrange laptop — fine for sliders with the 60ms debounce; might feel a touch heavy on phones for the heaviest knobs (Gaussian r=8, unsharp at full strength). Acceptable? Don't take nothing out that is in my app now or change any currently working features. only change unworking things and add what I asked to add don't downgrade my app any or change anything in it add three new filter as described alongside current filter don't take any of them out please 
-- The apps results and features are lovely so I need them all only add what I need and fix top advanced editing sliders in the drop-down menu 
+- CRDT collab UI (engine already exists, no UI wiring this round).
+- Plugin SDK runtime.
+- Cloud sync of layers (stays local IndexedDB).
+
+Confirm and I'll ship it.
