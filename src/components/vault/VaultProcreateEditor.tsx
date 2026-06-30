@@ -1333,6 +1333,87 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       toast.error(`${label} failed`);
     }
   }
+
+  /** Open the interactive crop overlay sized to the current canvas. */
+  function openCropOverlay() {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const pad = Math.round(Math.min(W, H) * 0.08);
+    setCropRect({ x: pad, y: pad, w: W - pad * 2, h: H - pad * 2 });
+  }
+
+  /** Commit the crop: resize the canvas to the rect, copy pixels, keep ref aligned. */
+  function applyCrop() {
+    const r = cropRect; const ctx = ctxRef.current; const rctx = refCtxRef.current;
+    if (!r || !ctx || !rctx) { setCropRect(null); return; }
+    const w = Math.max(8, Math.round(r.w));
+    const h = Math.max(8, Math.round(r.h));
+    const x = Math.max(0, Math.round(r.x));
+    const y = Math.max(0, Math.round(r.y));
+    const sten = ctx.getImageData(x, y, Math.min(w, ctx.canvas.width - x), Math.min(h, ctx.canvas.height - y));
+    const refData = refLoaded
+      ? rctx.getImageData(x, y, Math.min(w, rctx.canvas.width - x), Math.min(h, rctx.canvas.height - y))
+      : null;
+    ctx.canvas.width = w; ctx.canvas.height = h;
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
+    ctx.putImageData(sten, 0, 0);
+    rctx.canvas.width = w; rctx.canvas.height = h;
+    if (refData) rctx.putImageData(refData, 0, 0);
+    undoStack.current = []; redoStack.current = [];
+    setCropRect(null);
+    pushUndo();
+    fitToScreen();
+    toast.success(`Cropped to ${w}×${h}`);
+  }
+
+  /** Drop a vector shape directly on the stencil layer. */
+  function dropShape(kind: "circle" | "rect" | "triangle") {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const r = Math.min(W, H) * 0.25;
+    const cx = W / 2, cy = H / 2;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, size * 0.4);
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    if (kind === "circle") ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    else if (kind === "rect") ctx.rect(cx - r, cy - r, r * 2, r * 2);
+    else { ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy + r); ctx.lineTo(cx - r, cy + r); ctx.closePath(); }
+    ctx.stroke();
+    ctx.restore();
+    pushUndo();
+    toast.success(`${kind[0].toUpperCase() + kind.slice(1)} added`);
+  }
+
+  /** Mask the canvas to a soft-edged rounded rectangle (vignette-style frame). */
+  function dropShapeMask() {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const m = Math.min(W, H) * 0.08;
+    const tmp = document.createElement("canvas");
+    tmp.width = W; tmp.height = H;
+    const t = tmp.getContext("2d")!;
+    t.drawImage(ctx.canvas, 0, 0);
+    // Build rounded-rect mask
+    ctx.save();
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
+    const r = Math.min(W, H) * 0.08;
+    ctx.beginPath();
+    ctx.moveTo(m + r, m);
+    ctx.arcTo(W - m, m, W - m, H - m, r);
+    ctx.arcTo(W - m, H - m, m, H - m, r);
+    ctx.arcTo(m, H - m, m, m, r);
+    ctx.arcTo(m, m, W - m, m, r);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(tmp, 0, 0);
+    ctx.restore();
+    pushUndo();
+    toast.success("Shape mask applied");
+  }
+
   const dockHandlers: PicsartDockHandlers = {
     openCrop:      () => openCropOverlay(),
     setSelectionMode: () => { setEliteTool("wand"); toast.info("Magic Wand: tap an area to select"); },
