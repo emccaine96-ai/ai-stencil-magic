@@ -842,6 +842,128 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     toast.success("Text added");
   }
 
+  // ===== Curves & Levels ====================================================
+
+  function currentLUT(): Uint8ClampedArray {
+    return adjustTab === "curves"
+      ? buildCurveLUT(CURVES_PRESETS[curvePreset])
+      : buildLevelsLUT(levels);
+  }
+
+  function openAdjust() {
+    const ctx = ctxRef.current; if (!ctx) return;
+    preAdjustSnapshot.current = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+    setShowAdjust(true);
+    setAdjustPreview(true);
+  }
+
+  /** Live, non-destructive preview using the cached pre-edit snapshot. */
+  function renderAdjustPreview() {
+    const ctx = ctxRef.current; const snap = preAdjustSnapshot.current;
+    if (!ctx || !snap) return;
+    if (!adjustPreview) { ctx.putImageData(snap, 0, 0); return; }
+    const lut = currentLUT();
+    previewLUT.current = lut;
+    const mask = selectionRef.current?.mask;
+    const out = applyLUT(snap, lut, mask);
+    ctx.putImageData(out, 0, 0);
+  }
+
+  // Re-render whenever adjust knobs change while modal is open
+  useEffect(() => {
+    if (showAdjust) renderAdjustPreview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAdjust, adjustTab, curvePreset, levels, adjustPreview]);
+
+  function applyAdjust() {
+    renderAdjustPreview();
+    preAdjustSnapshot.current = null;
+    setShowAdjust(false);
+    pushUndo();
+    toast.success(`${adjustTab === "curves" ? "Curves" : "Levels"} applied${selectionRef.current ? " (selection)" : ""}`);
+  }
+
+  function cancelAdjust() {
+    const ctx = ctxRef.current; const snap = preAdjustSnapshot.current;
+    if (ctx && snap) ctx.putImageData(snap, 0, 0);
+    preAdjustSnapshot.current = null;
+    setShowAdjust(false);
+  }
+
+  // ===== Magic Wand =========================================================
+
+  function pickWandAt(cx: number, cy: number) {
+    const ctx = ctxRef.current!;
+    const { x, y } = screenToCanvas(cx, cy);
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    if (x < 0 || y < 0 || x >= W || y >= H) return;
+    const t0 = performance.now();
+    const img = ctx.getImageData(0, 0, W, H);
+    const r = magicWand(img, Math.floor(x), Math.floor(y), wandTolerance, wandContiguous);
+    wandBaseRef.current = r;
+    const refined = (wandExpand || wandFeather) ? refineMask(r, wandExpand, wandFeather) : r;
+    setSelection(refined);
+    selOverlayRef.current = maskToOverlayCanvas(refined.mask, refined.w, refined.h);
+    toast.success(`Selection · ${Math.round(performance.now() - t0)}ms`);
+  }
+
+  // Re-refine when sliders change
+  useEffect(() => {
+    const base = wandBaseRef.current; if (!base) return;
+    const r = (wandExpand || wandFeather) ? refineMask(base, wandExpand, wandFeather) : base;
+    setSelection(r);
+    selOverlayRef.current = maskToOverlayCanvas(r.mask, r.w, r.h);
+  }, [wandExpand, wandFeather]);
+
+  function clearSelection() {
+    setSelection(null);
+    selOverlayRef.current = null;
+    wandBaseRef.current = null;
+    setWandExpand(0); setWandFeather(0);
+  }
+
+  function selectionInvert() {
+    const s = selectionRef.current; if (!s) return;
+    const inv = invertMask(s);
+    setSelection(inv);
+    wandBaseRef.current = inv;
+    selOverlayRef.current = maskToOverlayCanvas(inv.mask, inv.w, inv.h);
+  }
+
+  function selectionFill(hex: string) {
+    const ctx = ctxRef.current; const s = selectionRef.current; if (!ctx || !s) return;
+    const alpha = maskToAlphaCanvas(s.mask, s.w, s.h);
+    const tmp = document.createElement("canvas");
+    tmp.width = s.w; tmp.height = s.h;
+    const t = tmp.getContext("2d")!;
+    t.fillStyle = hex; t.fillRect(0, 0, s.w, s.h);
+    t.globalCompositeOperation = "destination-in";
+    t.drawImage(alpha, 0, 0);
+    ctx.drawImage(tmp, 0, 0);
+    pushUndo();
+  }
+
+  function selectionDelete() {
+    // erase to white (stencil substrate)
+    selectionFill("#ffffff");
+  }
+
+  function selectionApplyThreshold() {
+    const ctx = ctxRef.current; const s = selectionRef.current; if (!ctx || !s) return;
+    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+    const d = img.data;
+    for (let i = 0, m = 0; i < d.length; i += 4, m++) {
+      const w = s.mask[m] / 255; if (w <= 0) continue;
+      const y = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+      const v = y < 128 ? 0 : 255;
+      d[i]   = d[i]   * (1 - w) + v * w;
+      d[i+1] = d[i+1] * (1 - w) + v * w;
+      d[i+2] = d[i+2] * (1 - w) + v * w;
+    }
+    ctx.putImageData(img, 0, 0);
+    pushUndo();
+  }
+
   // (eyedropAt defined above)
 
   function onPointerDown(e: React.PointerEvent) {
