@@ -61,6 +61,10 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* Hide scrollbar for horizontal dock scrollers */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
 :root {
   --radius: 1rem;
   /* Stencil AI dark-violet brand */
