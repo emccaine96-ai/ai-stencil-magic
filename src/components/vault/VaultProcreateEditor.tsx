@@ -1912,10 +1912,21 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
               <input type="range" min={12} max={400} value={textSize} onChange={e => setTextSize(+e.target.value)} className="flex-1" />
               <span className="text-[10px] text-neutral-300 tabular-nums w-8 text-right">{textSize}</span>
             </div>
+            <label className="flex items-center gap-2 mb-2 text-[11px] text-neutral-300">
+              <input type="checkbox" checked={curvedText} onChange={e => setCurvedText(e.target.checked)} />
+              Curved text (arc)
+            </label>
+            {curvedText && (
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[10px] text-neutral-400">Radius</span>
+                <input type="range" min={60} max={800} value={textRadius} onChange={e => setTextRadius(+e.target.value)} className="flex-1" />
+                <span className="text-[10px] text-neutral-300 tabular-nums w-10 text-right">{textRadius}</span>
+              </div>
+            )}
             <div className="flex gap-2">
               <button onClick={() => { setTextPrompt(null); setTextValue(""); }}
                 className="flex-1 rounded bg-white/5 hover:bg-white/10 text-xs py-2">Cancel</button>
-              <button onClick={commitText}
+              <button onClick={() => commitTextAdvanced(curvedText, textRadius)}
                 className="flex-1 rounded bg-gradient-to-r from-[#00F5D4] to-[#00B8A9] text-black text-xs font-bold py-2">Place</button>
             </div>
           </div>
