@@ -1457,6 +1457,28 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           willChange: "transform, opacity",
         }}
       >
+        {/* Autosave preferences */}
+        <AutosaveSettings
+          enabled={autosave.enabled}
+          intervalMs={autosave.intervalMs}
+          onToggle={autosave.setEnabled}
+          onIntervalChange={autosave.setIntervalMs}
+          onSaveNow={saveNow}
+          statusLabel={
+            saveState === "saving" ? "Saving…"
+            : saveState === "error" ? "Save failed"
+            : !autosave.enabled ? "Off"
+            : savedAgo ? `Saved ${formatAgo(savedAgo)}`
+            : "Ready"
+          }
+          statusColor={
+            saveState === "error" ? "#f87171"
+            : saveState === "saving" ? "#A855F7"
+            : !autosave.enabled ? "#9ca3af"
+            : "#00F5D4"
+          }
+        />
+
         {/* Layer manager */}
         <div className="p-3 border-b border-white/5">
           <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Layers</div>
