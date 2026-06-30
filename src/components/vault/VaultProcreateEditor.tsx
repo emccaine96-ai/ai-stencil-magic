@@ -214,11 +214,14 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
   const enterDrawMode = useCallback(() => {
     setDrawMode(true);
-    setLeftOpen(true);
-    setRightOpen(true);
+    // Start with columns collapsed so the canvas is fully visible.
+    // User reveals each panel by tapping the edge dock tab on the side.
+    setLeftOpen(false);
+    setRightOpen(false);
     setHeaderVisible(true);
     setTool("brush");
     setEliteTool(null);
+    toast.info("Draw mode — tap edge tabs to open Engines / Brushes", { duration: 2500 });
   }, []);
   const exitDrawMode = useCallback(() => {
     setDrawMode(false);
@@ -1470,7 +1473,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     border:        () => runFilter((c) => PF.borderFrame(c, 24, color), "Border"),
     shape:         () => dropShape("circle"),
     mask:          () => { setEliteTool("wand"); toast.info("Mask: tap area to define"); },
-  };
+    // Extended shape primitives surfaced in dock popup
+    shapeRect:     () => dropShape("rect"),
+    shapeTriangle: () => dropShape("triangle"),
+  } as PicsartDockHandlers & { shapeRect: () => void; shapeTriangle: () => void };
 
   // ---- UI ------------------------------------------------------------------
   return (
@@ -1666,6 +1672,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           willChange: "transform, opacity",
         }}
       >
+        <div className="flex items-center justify-between -mt-1 -mx-1 mb-1">
+          <span className="text-[10px] uppercase tracking-wider text-[#00F5D4] font-bold">Engines</span>
+          <button onClick={() => setLeftOpen(false)} className="p-1 rounded hover:bg-white/10 text-neutral-400" aria-label="Hide engines">
+            <X size={14}/>
+          </button>
+        </div>
         <div>
           <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Engine A · Stabilizer</div>
           <input type="range" min={0} max={90} value={Math.round(stabilizer * 100)}
@@ -1750,6 +1762,9 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           willChange: "transform, opacity",
         }}
       >
+        <button onClick={() => setLeftOpen(false)} className="p-1 rounded hover:bg-white/10 text-neutral-400 self-end" aria-label="Hide tools">
+          <X size={12}/>
+        </button>
         <button onClick={() => setTool("brush")} className={`p-2 rounded ${tool === "brush" && !eliteTool ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Brush"><Pipette size={16} className="mx-auto rotate-180" /></button>
         <button onClick={() => setTool("pan")} className={`p-2 rounded ${tool === "pan" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Pan"><Hand size={16} className="mx-auto" /></button>
         <button onClick={() => { setTool("eraser"); setBrushId("eraser"); }} className={`p-2 rounded ${tool === "eraser" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Eraser"><Eraser size={16} className="mx-auto" /></button>
@@ -1795,6 +1810,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         }}
       >
         {/* Autosave preferences */}
+        <div className="flex items-center justify-between px-3 pt-2">
+          <span className="text-[10px] uppercase tracking-wider text-[#00F5D4] font-bold">Brushes & Layers</span>
+          <button onClick={() => setRightOpen(false)} className="p-1 rounded hover:bg-white/10 text-neutral-400" aria-label="Hide brushes">
+            <X size={14}/>
+          </button>
+        </div>
         <AutosaveSettings
           enabled={autosave.enabled}
           intervalMs={autosave.intervalMs}
