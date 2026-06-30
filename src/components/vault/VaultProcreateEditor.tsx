@@ -392,20 +392,39 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     }
   }, [doc.id, refLoaded, refVisible, refOpacity]);
 
-  function scheduleAutosave() {
-    if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
-    autosaveTimer.current = window.setTimeout(() => { autosaveNow(); }, 3000);
-  }
+  /** Mark the canvas dirty; the periodic flusher will pick it up. */
+  function scheduleAutosave() { autosaveDirty.current = true; }
 
+  /** Manual save bypasses interval + dirty check. */
+  const saveNow = useCallback(async () => {
+    autosaveDirty.current = false;
+    await autosaveNow();
+  }, [autosaveNow]);
+
+  // Interval-based autosave driven by user preferences.
   useEffect(() => {
-    const onVis = () => { if (document.visibilityState === "hidden") autosaveNow(); };
-    const onBye = () => { autosaveNow(); };
+    if (!autosave.enabled) return;
+    const id = window.setInterval(() => {
+      if (autosaveDirty.current) {
+        autosaveDirty.current = false;
+        autosaveNow();
+      }
+    }, Math.max(60_000, autosave.intervalMs));
+    return () => window.clearInterval(id);
+  }, [autosave.enabled, autosave.intervalMs, autosaveNow]);
+
+  // Safety-net flush on tab hide / unload — runs regardless of the toggle so
+  // the user never loses work just because they switched apps on mobile.
+  useEffect(() => {
+    const flushIfDirty = () => { if (autosaveDirty.current) { autosaveDirty.current = false; autosaveNow(); } };
+    const onVis = () => { if (document.visibilityState === "hidden") flushIfDirty(); };
     document.addEventListener("visibilitychange", onVis);
-    window.addEventListener("beforeunload", onBye);
+    window.addEventListener("beforeunload", flushIfDirty);
+    window.addEventListener("pagehide", flushIfDirty);
     return () => {
       document.removeEventListener("visibilitychange", onVis);
-      window.removeEventListener("beforeunload", onBye);
-      if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+      window.removeEventListener("beforeunload", flushIfDirty);
+      window.removeEventListener("pagehide", flushIfDirty);
     };
   }, [autosaveNow]);
 
