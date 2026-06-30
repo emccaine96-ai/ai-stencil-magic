@@ -1125,6 +1125,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
     if (e.pointerId === drawingPointerId.current) {
       if (eliteTool) {
+        // Throttle pixel-heavy elite tools (smudge/liquify/heal) to ~30fps on mobile.
+        const now = performance.now();
+        if (now - lastEliteTs.current < ELITE_THROTTLE_MS) return;
+        lastEliteTs.current = now;
         const last = lastCanvasPt.current ?? { x: e.clientX, y: e.clientY };
         const dx = e.clientX - last.x;
         const dy = e.clientY - last.y;
