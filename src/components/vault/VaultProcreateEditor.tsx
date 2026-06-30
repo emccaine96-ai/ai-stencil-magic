@@ -119,6 +119,14 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const autosaveTimer = useRef<number | null>(null);
   const lastVelocity = useRef(0);
   const lastMoveTs = useRef(0);
+  const cloneSourceRef = useRef<{ x: number; y: number } | null>(null);
+  const cloneOffsetRef = useRef<{ dx: number; dy: number } | null>(null);
+  const [showSizeMenu, setShowSizeMenu] = useState(false);
+  const [showProMenu, setShowProMenu] = useState(false);
+  const [upscaleBusy, setUpscaleBusy] = useState<number | null>(null);
+  const [textPrompt, setTextPrompt] = useState<{ x: number; y: number } | null>(null);
+  const [textValue, setTextValue] = useState("");
+  const [textSize, setTextSize] = useState(72);
 
   // Drawer + HUD state machines (Procreate-style collapsible workspace)
   // Panels start collapsed — they only appear when the user taps an edge tab.
