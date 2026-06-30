@@ -900,6 +900,83 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     ctx.restore();
   }
 
+  /** Heal/Patch: Gaussian-style average of a soft disc, painted back over
+   *  the target. Removes blemishes & cleans up scanned stencil noise. */
+  function healAt(cx: number, cy: number) {
+    const ctx = ctxRef.current!;
+    const { x, y } = screenToCanvas(cx, cy);
+    const r = Math.max(6, size * 0.8);
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const ix = Math.max(0, Math.floor(x - r));
+    const iy = Math.max(0, Math.floor(y - r));
+    const w = Math.min(W - ix, Math.ceil(r * 2));
+    const h = Math.min(H - iy, Math.ceil(r * 2));
+    if (w <= 0 || h <= 0) return;
+    const patch = ctx.getImageData(ix, iy, w, h);
+    const d = patch.data;
+    // Compute weighted mean RGB inside the disc.
+    let sr = 0, sg = 0, sb = 0, sw = 0;
+    const cxL = x - ix, cyL = y - iy;
+    for (let py = 0; py < h; py++) {
+      for (let px = 0; px < w; px++) {
+        const dd = Math.hypot(px - cxL, py - cyL);
+        if (dd > r) continue;
+        const wgt = 1 - dd / r;
+        const i = (py * w + px) * 4;
+        sr += d[i] * wgt; sg += d[i+1] * wgt; sb += d[i+2] * wgt; sw += wgt;
+      }
+    }
+    if (sw <= 0) return;
+    const mr = sr / sw, mg = sg / sw, mb = sb / sw;
+    // Blend mean back with soft falloff (alpha based on disc distance).
+    for (let py = 0; py < h; py++) {
+      for (let px = 0; px < w; px++) {
+        const dd = Math.hypot(px - cxL, py - cyL);
+        if (dd > r) continue;
+        const a = (1 - dd / r) * Math.min(1, opacity);
+        const i = (py * w + px) * 4;
+        d[i]   = d[i]   * (1 - a) + mr * a;
+        d[i+1] = d[i+1] * (1 - a) + mg * a;
+        d[i+2] = d[i+2] * (1 - a) + mb * a;
+      }
+    }
+    ctx.putImageData(patch, ix, iy);
+  }
+
+  /** Place text — optionally along a circular arc (curved text). */
+  function commitTextAdvanced(curved: boolean, radius: number) {
+    if (!textPrompt || !textValue.trim()) { setTextPrompt(null); setTextValue(""); return; }
+    const ctx = ctxRef.current!;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.font = `bold ${textSize}px system-ui, -apple-system, sans-serif`;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    if (!curved) {
+      ctx.textBaseline = "top"; ctx.textAlign = "left";
+      ctx.fillText(textValue, textPrompt.x, textPrompt.y);
+    } else {
+      // Render each char around an arc centered at textPrompt.
+      const cxA = textPrompt.x, cyA = textPrompt.y;
+      const chars = [...textValue];
+      const angleStep = (textSize * 0.85) / radius; // rad per char
+      const totalA = angleStep * (chars.length - 1);
+      let a = -totalA / 2 - Math.PI / 2; // start at top
+      for (const ch of chars) {
+        ctx.save();
+        ctx.translate(cxA + Math.cos(a) * radius, cyA + Math.sin(a) * radius);
+        ctx.rotate(a + Math.PI / 2);
+        ctx.fillText(ch, 0, 0);
+        ctx.restore();
+        a += angleStep;
+      }
+    }
+    ctx.restore();
+    pushUndo();
+    setTextPrompt(null); setTextValue("");
+    toast.success(curved ? "Curved text added" : "Text added");
+  }
+
   /** Place text onto stencil layer. */
   function commitText() {
     if (!textPrompt || !textValue.trim()) { setTextPrompt(null); setTextValue(""); return; }
