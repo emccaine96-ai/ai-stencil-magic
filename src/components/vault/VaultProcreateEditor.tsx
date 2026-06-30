@@ -146,28 +146,52 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     const refCanvas = refCanvasRef.current!;
     const refCtx = refCanvas.getContext("2d", { willReadFrequently: true })!;
     refCtxRef.current = refCtx;
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      canvas.width = img.naturalWidth || 1024;
-      canvas.height = img.naturalHeight || 1024;
+
+    // Prefer restoring full layered editor state (autosave); fall back to the
+    // original AI image. Layer 0 = Reference, Layer 1 = Stencil/drawing.
+    let layers: LayerState[] | null = null;
+    if (doc.layeredEditorData) {
+      try { layers = (JSON.parse(doc.layeredEditorData) as EditorState).layers; }
+      catch { layers = null; }
+    }
+
+    const stencilSrc = layers?.find(l => l.name === "Stencil")?.dataUrl
+      ?? doc.originalAIImage ?? doc.thumbnail;
+    const refSrc = layers?.find(l => l.name === "Reference")?.dataUrl ?? null;
+
+    const loadInto = (target: HTMLCanvasElement, targetCtx: CanvasRenderingContext2D, src: string | null, fillWhite: boolean) =>
+      new Promise<void>((resolve) => {
+        if (!src) { resolve(); return; }
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          if (fillWhite) {
+            target.width = img.naturalWidth || 1024;
+            target.height = img.naturalHeight || 1024;
+            targetCtx.fillStyle = "#ffffff";
+            targetCtx.fillRect(0, 0, target.width, target.height);
+          }
+          targetCtx.drawImage(img, 0, 0);
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = src;
+      });
+
+    (async () => {
+      // Stencil layer drives the document size.
+      await loadInto(canvas, ctx, stencilSrc, true);
+      if (!canvas.width) { canvas.width = 1024; canvas.height = 1024; ctx.fillStyle = "#ffffff"; ctx.fillRect(0,0,1024,1024); }
       refCanvas.width = canvas.width;
       refCanvas.height = canvas.height;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
+      if (refSrc) {
+        await loadInto(refCanvas, refCtx, refSrc, false);
+        setRefLoaded(true);
+      }
       fitToScreen();
       pushUndo();
-    };
-    img.onerror = () => {
-      canvas.width = 1024; canvas.height = 1024;
-      refCanvas.width = 1024; refCanvas.height = 1024;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, 1024, 1024);
-      fitToScreen();
-      pushUndo();
-    };
-    img.src = doc.originalAIImage ?? doc.thumbnail;
+      if (layers) toast.success("Restored from autosave");
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);
 
