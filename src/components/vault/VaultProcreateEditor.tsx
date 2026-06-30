@@ -2188,6 +2188,21 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
       {/* Picsart-style horizontal dock — bottom of viewport */}
       <PicsartDock handlers={dockHandlers} hidden={fadeChrome} />
+
+      {/* Interactive crop overlay */}
+      {cropRect && (
+        <CropOverlay
+          view={view}
+          canvasW={ctxRef.current?.canvas.width ?? 1024}
+          canvasH={ctxRef.current?.canvas.height ?? 1024}
+          rect={cropRect}
+          aspect={cropAspect}
+          onChange={setCropRect}
+          onAspect={setCropAspect}
+          onApply={applyCrop}
+          onCancel={() => setCropRect(null)}
+        />
+      )}
     </div>
   );
 }
