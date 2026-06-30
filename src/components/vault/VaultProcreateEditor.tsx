@@ -1888,9 +1888,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           })}
         </div>
       </aside>
+      )}
 
-      {/* Edge dock tabs — appear when a column is collapsed */}
-      {!leftOpen && (
+      {/* Edge dock tabs — only in Draw mode */}
+      {drawMode && !leftOpen && (
         <button
           onClick={() => setLeftOpen(true)}
           aria-label="Open engines panel"
