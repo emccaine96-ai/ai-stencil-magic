@@ -1910,7 +1910,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           <Settings2 size={16} />
         </button>
       )}
-      {leftOpen && (
+      {drawMode && leftOpen && (
         <button
           onClick={() => setLeftOpen(false)}
           aria-label="Collapse engines panel"
@@ -1930,7 +1930,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           <ChevronLeft size={14} className="mx-auto" />
         </button>
       )}
-      {!rightOpen && (
+      {drawMode && !rightOpen && (
         <button
           onClick={() => setRightOpen(true)}
           aria-label="Open brush vault"
@@ -1949,7 +1949,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           <BrushIcon size={16} />
         </button>
       )}
-      {rightOpen && (
+      {drawMode && rightOpen && (
         <button
           onClick={() => setRightOpen(false)}
           aria-label="Collapse brush vault"
