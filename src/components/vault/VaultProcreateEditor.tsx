@@ -1184,6 +1184,16 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
               mixBlendMode: refLoaded && refVisible ? "multiply" : "normal",
             }}
           />
+          {/* Selection overlay (cyan tint of mask) */}
+          {selection && selOverlayRef.current && (
+            <img
+              src={selOverlayRef.current.toDataURL()}
+              alt=""
+              className="absolute inset-0 pointer-events-none animate-pulse"
+              style={{ mixBlendMode: "screen", opacity: 0.9 }}
+              draggable={false}
+            />
+          )}
         </div>
       </div>
 
