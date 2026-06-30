@@ -1774,8 +1774,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
             className="w-full h-8 bg-transparent rounded cursor-pointer" />
         </label>
       </aside>
+      )}
 
-      {/* COLUMN 3 — Layers + 500-brush library (right floating panel) */}
+      {/* COLUMN 3 — Layers + 500-brush library (right floating panel) — Draw mode only */}
+      {drawMode && (
       <aside
         className="absolute flex flex-col"
         style={{
