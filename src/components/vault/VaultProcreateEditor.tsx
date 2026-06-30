@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2,
   Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3, Image as ImageIcon, Eye, EyeOff,
-  ChevronRight, ChevronLeft, Settings2, Brush as BrushIcon, Minimize2,
+  ChevronRight, ChevronLeft, Settings2, Brush as BrushIcon, Minimize2, Wand2,
 } from "lucide-react";
-import { saveDocument, type DocumentData } from "@/lib/localDB";
+import { saveDocument, saveEditorState, type DocumentData, type EditorState, type LayerState } from "@/lib/localDB";
+import { runOp } from "@/lib/worker-bridge";
+import { toast } from "sonner";
 import {
   DEFAULTS, BRUSH_LABELS, beginStroke, endStroke, strokeTo,
   type BrushId, type BrushSettings, type StrokeContext,
