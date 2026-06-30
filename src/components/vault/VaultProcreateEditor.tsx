@@ -3,7 +3,7 @@ import {
   X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2,
   Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3, Image as ImageIcon, Eye, EyeOff,
   ChevronRight, ChevronLeft, Settings2, Brush as BrushIcon, Minimize2, Wand2,
-  Crop, Rocket, Type as TypeIcon, Stamp, Wand, Sliders,
+  Crop, Rocket, Type as TypeIcon, Stamp, Wand, Sliders, History, Activity,
 } from "lucide-react";
 import { saveDocument, saveEditorState, type DocumentData, type EditorState, type LayerState } from "@/lib/localDB";
 import { runOp } from "@/lib/worker-bridge";
@@ -13,6 +13,14 @@ import {
   DEFAULTS, BRUSH_LABELS, beginStroke, endStroke, strokeTo,
   type BrushId, type BrushSettings, type StrokeContext,
 } from "@/lib/brushes";
+import {
+  buildCurveLUT, buildLevelsLUT, applyLUT, lumaHistogram,
+  CURVES_PRESETS, LEVELS_PRESETS, type LevelsParams, type CurvePoint,
+} from "@/lib/curves-levels";
+import {
+  magicWand, refineMask, invertMask, maskToOverlayCanvas, maskToAlphaCanvas,
+  type WandResult,
+} from "@/lib/magic-wand";
 
 type Props = {
   doc: DocumentData;
@@ -45,7 +53,7 @@ const PALETTE = [
 ];
 
 type Tool = "brush" | "eraser" | "pan" | "eyedrop";
-type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple" | "clone";
+type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple" | "clone" | "wand";
 type Symmetry = "none" | "mirror-x" | "mirror-y" | "radial-8";
 
 // Canvas size presets (Picsart-style)
