@@ -1807,6 +1807,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         }}
       >
         {/* Autosave preferences */}
+        <div className="flex items-center justify-between px-3 pt-2">
+          <span className="text-[10px] uppercase tracking-wider text-[#00F5D4] font-bold">Brushes & Layers</span>
+          <button onClick={() => setRightOpen(false)} className="p-1 rounded hover:bg-white/10 text-neutral-400" aria-label="Hide brushes">
+            <X size={14}/>
+          </button>
+        </div>
         <AutosaveSettings
           enabled={autosave.enabled}
           intervalMs={autosave.intervalMs}
