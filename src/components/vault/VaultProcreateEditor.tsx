@@ -937,6 +937,104 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           })}
         </div>
       </aside>
+
+      {/* Edge dock tabs — appear when a column is collapsed */}
+      {!leftOpen && (
+        <button
+          onClick={() => setLeftOpen(true)}
+          aria-label="Open engines panel"
+          className="absolute flex items-center justify-center hover:bg-white/15"
+          style={{
+            left: 0, top: "50%", transform: "translateY(-50%)",
+            width: 32, height: 48, zIndex: 11,
+            background: "rgba(18,18,22,0.9)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderLeft: "none",
+            borderRadius: "0 8px 8px 0",
+            backdropFilter: "blur(12px)",
+            color: "#00F5D4",
+          }}
+        >
+          <Settings2 size={16} />
+        </button>
+      )}
+      {leftOpen && (
+        <button
+          onClick={() => setLeftOpen(false)}
+          aria-label="Collapse engines panel"
+          className="absolute hover:bg-white/15"
+          style={{
+            left: 340, top: "50%", transform: "translateY(-50%)",
+            width: 18, height: 48, zIndex: 11,
+            background: "rgba(18,18,22,0.85)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: "0 8px 8px 0",
+            color: "#9ca3af",
+            transition: "transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.2s",
+            opacity: fadeChrome ? 0.15 : 1,
+            pointerEvents: fadeChrome ? "none" : "auto",
+          }}
+        >
+          <ChevronLeft size={14} className="mx-auto" />
+        </button>
+      )}
+      {!rightOpen && (
+        <button
+          onClick={() => setRightOpen(true)}
+          aria-label="Open brush vault"
+          className="absolute flex items-center justify-center hover:bg-white/15"
+          style={{
+            right: 0, top: "50%", transform: "translateY(-50%)",
+            width: 32, height: 48, zIndex: 11,
+            background: "rgba(18,18,22,0.9)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRight: "none",
+            borderRadius: "8px 0 0 8px",
+            backdropFilter: "blur(12px)",
+            color: "#00F5D4",
+          }}
+        >
+          <BrushIcon size={16} />
+        </button>
+      )}
+      {rightOpen && (
+        <button
+          onClick={() => setRightOpen(false)}
+          aria-label="Collapse brush vault"
+          className="absolute hover:bg-white/15"
+          style={{
+            right: 300, top: "50%", transform: "translateY(-50%)",
+            width: 18, height: 48, zIndex: 11,
+            background: "rgba(18,18,22,0.85)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: "8px 0 0 8px",
+            color: "#9ca3af",
+            transition: "transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.2s",
+            opacity: fadeChrome ? 0.15 : 1,
+            pointerEvents: fadeChrome ? "none" : "auto",
+          }}
+        >
+          <ChevronRight size={14} className="mx-auto" />
+        </button>
+      )}
+      {!headerVisible && (
+        <button
+          onClick={() => setHeaderVisible(true)}
+          aria-label="Show header"
+          className="absolute flex items-center justify-center hover:bg-white/15"
+          style={{
+            top: 0, left: "50%", transform: "translateX(-50%)",
+            width: 56, height: 22, zIndex: 11,
+            background: "rgba(18,18,22,0.9)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderTop: "none",
+            borderRadius: "0 0 10px 10px",
+            color: "#00F5D4",
+          }}
+        >
+          <ChevronRight size={14} className="rotate-90" />
+        </button>
+      )}
     </div>
   );
 }
