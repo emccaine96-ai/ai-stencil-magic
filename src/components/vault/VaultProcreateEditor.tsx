@@ -1327,6 +1327,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
               ["liquify-inflate", "Inflate", Wind],
               ["liquify-deflate", "Deflate", Wind],
               ["clone", "Clone", Stamp],
+              ["wand", "Magic Wand", Wand],
             ] as const).map(([id, label, Icon]) => (
               <button key={id}
                 onClick={() => setEliteTool(eliteTool === id ? null : id)}
