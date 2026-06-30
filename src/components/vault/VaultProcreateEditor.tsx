@@ -416,9 +416,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     if (undoStack.current.length < 2) return;
     const cur = undoStack.current.pop()!;
     redoStack.current.push(cur);
+    historyThumbs.current.pop();
     ctx.putImageData(undoStack.current[undoStack.current.length - 1], 0, 0);
     setCanUndo(undoStack.current.length > 1);
     setCanRedo(true);
+    setHistoryTick(t => t + 1);
   }
   function doRedo() {
     const ctx = ctxRef.current; if (!ctx) return;
@@ -426,8 +428,17 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     if (!next) return;
     ctx.putImageData(next, 0, 0);
     undoStack.current.push(next);
+    // rebuild thumb
+    try {
+      const tc = document.createElement("canvas");
+      const TW = 64; const ratio = ctx.canvas.height / ctx.canvas.width;
+      tc.width = TW; tc.height = Math.max(24, Math.round(TW * ratio));
+      tc.getContext("2d")!.drawImage(ctx.canvas, 0, 0, tc.width, tc.height);
+      historyThumbs.current.push(tc.toDataURL("image/jpeg", 0.55));
+    } catch { historyThumbs.current.push(""); }
     setCanUndo(true);
     setCanRedo(redoStack.current.length > 0);
+    setHistoryTick(t => t + 1);
   }
 
   // ---- Pointer / gesture handling ------------------------------------------
