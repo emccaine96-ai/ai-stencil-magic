@@ -126,7 +126,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [refVisible, setRefVisible] = useState(true);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [savedAgo, setSavedAgo] = useState<number | null>(null);
-  const autosaveTimer = useRef<number | null>(null);
+  const autosaveDirty = useRef<boolean>(false);
+  const autosave = useAutosavePrefs();
   const lastVelocity = useRef(0);
   const lastMoveTs = useRef(0);
   const cloneSourceRef = useRef<{ x: number; y: number } | null>(null);
