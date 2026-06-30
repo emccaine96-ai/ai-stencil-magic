@@ -1673,7 +1673,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           {saveState === "saving" ? "Saving…"
             : saveState === "error" ? "Save failed"
             : savedAgo ? `Saved ${formatAgo(savedAgo)}`
-            : "Autosave on"}
+            : autosave.enabled ? "Autosave on" : "Autosave off"}
         </span>
       </div>
 
