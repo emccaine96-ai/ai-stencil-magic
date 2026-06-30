@@ -1016,6 +1016,65 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         <button onClick={fitToScreen} className="p-1.5 rounded hover:bg-white/10" aria-label="Fit"><Maximize2 size={16} /></button>
         <button onClick={() => setView(v => ({ ...v, scale: 1, x: 0, y: 0 }))} className="p-1.5 rounded hover:bg-white/10" aria-label="Reset zoom"><RotateCcw size={16} /></button>
         <span className="text-[11px] text-neutral-400 tabular-nums w-12 text-right">{(view.scale * 100).toFixed(0)}%</span>
+        {/* Canvas Size dropdown */}
+        <div className="relative">
+          <button onClick={() => { setShowSizeMenu(s => !s); setShowProMenu(false); }}
+            className="p-1.5 rounded hover:bg-white/10 flex items-center gap-1 text-[11px]" title="Canvas Size">
+            <Crop size={14} /> Size
+          </button>
+          {showSizeMenu && (
+            <div className="absolute right-0 mt-1 w-56 rounded-lg border border-white/10 bg-[#121216] shadow-xl p-1 z-20">
+              {SIZE_PRESETS.map(p => (
+                <button key={p.id} onClick={() => applyCanvasPreset(p)}
+                  className="w-full text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10">
+                  {p.label}
+                </button>
+              ))}
+              <button onClick={() => {
+                const v = window.prompt("Custom size W×H (e.g. 3000x4000)");
+                if (!v) return;
+                const m = v.match(/(\d+)\s*[x×]\s*(\d+)/i);
+                if (!m) { toast.error("Bad format"); return; }
+                applyCanvasPreset({ id: "custom", label: "Custom", w: +m[1], h: +m[2] });
+              }} className="w-full text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10 text-[#00F5D4]">
+                Custom…
+              </button>
+            </div>
+          )}
+        </div>
+        {/* Pro Tools dropdown (filters + upscale + text) */}
+        <div className="relative">
+          <button onClick={() => { setShowProMenu(s => !s); setShowSizeMenu(false); }}
+            className="p-1.5 rounded hover:bg-white/10 flex items-center gap-1 text-[11px]" title="Pro Tools">
+            <Sliders size={14} /> Pro
+          </button>
+          {showProMenu && (
+            <div className="absolute right-0 mt-1 w-56 rounded-lg border border-white/10 bg-[#121216] shadow-xl p-1 z-20">
+              <button onClick={() => { setShowProMenu(false); upscaleTo(6144, 6144); }}
+                className="w-full flex items-center gap-2 text-left px-2 py-2 text-[11px] rounded bg-gradient-to-r from-[#A855F7] to-[#7c3aed] text-white font-bold mb-1">
+                <Rocket size={12} /> Upscale to 6K (Lanczos)
+              </button>
+              <button onClick={() => { setShowProMenu(false); upscaleTo(4096, 4096); }}
+                className="w-full text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10">Upscale 4K</button>
+              <div className="h-px bg-white/5 my-1" />
+              <button onClick={() => { setShowProMenu(false); applyStencilClean(); }}
+                className="w-full text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10">✦ Stencil Clean</button>
+              <button onClick={() => { setShowProMenu(false); applyLineSharpen(); }}
+                className="w-full text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10">✦ Line Sharpen</button>
+              <button onClick={() => { setShowProMenu(false); applyTattooReady(); }}
+                className="w-full text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10 text-[#00F5D4] font-semibold">✦ Tattoo Ready</button>
+              <div className="h-px bg-white/5 my-1" />
+              <button onClick={() => { setShowProMenu(false); setEliteTool("clone"); cloneSourceRef.current = null; cloneOffsetRef.current = null; toast.info("Clone: tap to set source, then paint"); }}
+                className="w-full flex items-center gap-2 text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10">
+                <Stamp size={12} /> Clone Stamp
+              </button>
+              <button onClick={() => { setShowProMenu(false); const ctx = ctxRef.current!; setTextPrompt({ x: ctx.canvas.width / 2 - 100, y: ctx.canvas.height / 2 - 40 }); }}
+                className="w-full flex items-center gap-2 text-left px-2 py-1.5 text-[11px] rounded hover:bg-white/10">
+                <TypeIcon size={12} /> Add Text
+              </button>
+            </div>
+          )}
+        </div>
         <button onClick={onSave} className="ml-1 rounded-full bg-gradient-to-r from-[#00F5D4] to-[#00B8A9] text-black px-3 py-1.5 text-xs font-bold flex items-center gap-1">
           <Save size={14} /> Save Stencil
         </button>
