@@ -1139,8 +1139,43 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           <ChevronRight size={14} className="rotate-90" />
         </button>
       )}
+
+      {/* Status pill — bottom center */}
+      <div
+        className="absolute left-1/2 -translate-x-1/2 px-3 py-1 text-[10px] font-medium tabular-nums flex items-center gap-2"
+        style={{
+          bottom: 12, zIndex: 10,
+          borderRadius: 999,
+          background: "rgba(18,18,22,0.85)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          backdropFilter: "blur(12px)",
+          color: "rgba(255,255,255,0.75)",
+          opacity: fadeChrome ? 0.15 : 1,
+          pointerEvents: "none",
+          transition: "opacity 0.2s",
+        }}
+      >
+        <span>{(view.scale * 100).toFixed(0)}%</span>
+        <span className="text-neutral-600">·</span>
+        <span>{eliteTool ? eliteTool.replace("liquify-", "") : (tool === "eraser" ? "eraser" : BRUSH_LABELS[brushId])}</span>
+        <span className="text-neutral-600">·</span>
+        <span style={{ color: saveState === "error" ? "#f87171" : saveState === "saving" ? "#A855F7" : "#00F5D4" }}>
+          {saveState === "saving" ? "Saving…"
+            : saveState === "error" ? "Save failed"
+            : savedAgo ? `Saved ${formatAgo(savedAgo)}`
+            : "Autosave on"}
+        </span>
+      </div>
     </div>
   );
+}
+
+function formatAgo(ts: number): string {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  return `${m}m ago`;
 }
 
 export default VaultProcreateEditor;
