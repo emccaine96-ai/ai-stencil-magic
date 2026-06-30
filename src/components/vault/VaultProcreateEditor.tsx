@@ -1670,7 +1670,160 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           </div>
         </div>
       )}
+
+      {/* Selection floating toolbar */}
+      {selection && (
+        <div className="absolute z-[12] flex flex-wrap items-center gap-1 px-2 py-1.5 rounded-lg"
+          style={{
+            left: "50%", transform: "translateX(-50%)", top: 60,
+            background: "rgba(18,18,22,0.92)", backdropFilter: "blur(12px)",
+            border: "1px solid rgba(0,245,212,0.35)",
+            boxShadow: "0 8px 32px -8px rgba(0,245,212,0.25)",
+          }}>
+          <span className="text-[10px] text-[#00F5D4] font-bold mr-1">SELECTION</span>
+          <button onClick={() => selectionFill(color)} className="px-2 py-1 rounded text-[10px] hover:bg-white/10">Fill</button>
+          <button onClick={selectionDelete} className="px-2 py-1 rounded text-[10px] hover:bg-white/10">Delete</button>
+          <button onClick={selectionInvert} className="px-2 py-1 rounded text-[10px] hover:bg-white/10">Invert</button>
+          <button onClick={selectionApplyThreshold} className="px-2 py-1 rounded text-[10px] hover:bg-white/10">Threshold</button>
+          <button onClick={openAdjust} className="px-2 py-1 rounded text-[10px] hover:bg-white/10 text-[#00F5D4]">Adjust…</button>
+          <div className="w-px h-4 bg-white/10 mx-1" />
+          <label className="text-[9px] text-neutral-400">Tol</label>
+          <input type="range" min={1} max={150} value={wandTolerance} onChange={e => setWandTolerance(+e.target.value)} className="w-16" />
+          <label className="flex items-center gap-1 text-[9px] text-neutral-400 ml-1">
+            <input type="checkbox" checked={wandContiguous} onChange={e => setWandContiguous(e.target.checked)} /> Contig
+          </label>
+          <div className="w-px h-4 bg-white/10 mx-1" />
+          <label className="text-[9px] text-neutral-400">Refine</label>
+          <input type="range" min={-20} max={20} value={wandExpand} onChange={e => setWandExpand(+e.target.value)} className="w-14" title="Expand/Contract" />
+          <input type="range" min={0} max={20} value={wandFeather} onChange={e => setWandFeather(+e.target.value)} className="w-14" title="Feather" />
+          <button onClick={clearSelection} className="ml-1 px-2 py-1 rounded text-[10px] bg-white/5 hover:bg-red-500/20">Clear</button>
+        </div>
+      )}
+
+      {/* History timeline (bottom strip) */}
+      {showHistory && (
+        <div className="absolute z-[11] flex items-center gap-1 px-2 py-1.5 overflow-x-auto"
+          style={{
+            left: 10, right: 10, bottom: 40,
+            background: "rgba(18,18,22,0.92)", backdropFilter: "blur(12px)",
+            border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10,
+            opacity: fadeChrome ? 0.15 : 1,
+            pointerEvents: fadeChrome ? "none" : "auto",
+          }}>
+          <History size={12} className="text-neutral-400 shrink-0" />
+          <span className="text-[10px] text-neutral-400 mr-1 shrink-0">{historyThumbs.current.length} steps</span>
+          {/* render via tick */}
+          <span className="hidden">{historyTick}</span>
+          {historyThumbs.current.map((src, i) => (
+            <button key={i} onClick={() => jumpHistory(i)}
+              className={`shrink-0 rounded overflow-hidden border ${i === historyThumbs.current.length - 1 ? "border-[#00F5D4]" : "border-white/10 hover:border-white/30"}`}
+              title={`Step ${i + 1}`}>
+              {src
+                ? <img src={src} alt="" className="h-12 w-auto block" draggable={false} />
+                : <div className="h-12 w-12 bg-black/40" />}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Adjust modal — Curves & Levels with presets and live preview */}
+      {showAdjust && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center"
+          style={{ background: "rgba(13,13,15,0.55)", backdropFilter: "blur(6px)" }}>
+          <div className="rounded-xl border border-white/10 bg-[#121216] w-[360px] max-w-[92vw] p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Activity size={14} className="text-[#A855F7]" />
+              <div className="text-sm font-bold">Tonal Adjust</div>
+              {selection && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#00F5D4]/15 text-[#00F5D4]">SELECTION</span>}
+              <div className="ml-auto flex gap-1 text-[10px]">
+                <button onClick={() => setAdjustTab("curves")} className={`px-2 py-1 rounded ${adjustTab === "curves" ? "bg-white/10 text-white" : "text-neutral-400"}`}>Curves</button>
+                <button onClick={() => setAdjustTab("levels")} className={`px-2 py-1 rounded ${adjustTab === "levels" ? "bg-white/10 text-white" : "text-neutral-400"}`}>Levels</button>
+              </div>
+            </div>
+
+            <AdjustHistogram src={preAdjustSnapshot.current} lut={currentLUT()} />
+
+            {adjustTab === "curves" ? (
+              <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-wider text-neutral-500">Preset</div>
+                <div className="grid grid-cols-2 gap-1">
+                  {(Object.keys(CURVES_PRESETS) as (keyof typeof CURVES_PRESETS)[]).map(k => (
+                    <button key={k} onClick={() => setCurvePreset(k)}
+                      className={`text-[10px] px-2 py-1.5 rounded border ${curvePreset === k ? "bg-[#A855F7]/20 text-[#A855F7] border-[#A855F7]/40" : "bg-black/30 border-white/5 text-neutral-300 hover:bg-white/10"}`}>
+                      {k}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-wider text-neutral-500">Preset</div>
+                <div className="flex flex-wrap gap-1">
+                  {(Object.keys(LEVELS_PRESETS) as (keyof typeof LEVELS_PRESETS)[]).map(k => (
+                    <button key={k} onClick={() => setLevels({ ...LEVELS_PRESETS[k] })}
+                      className="text-[10px] px-2 py-1 rounded bg-black/30 hover:bg-white/10 border border-white/5">{k}</button>
+                  ))}
+                </div>
+                <LevelRow label="In Black" min={0} max={254} value={levels.inBlack}
+                  onChange={v => setLevels(l => ({ ...l, inBlack: Math.min(v, l.inWhite - 1) }))} />
+                <LevelRow label="Gamma" min={10} max={300} value={Math.round(levels.gamma * 100)} display={(levels.gamma).toFixed(2)}
+                  onChange={v => setLevels(l => ({ ...l, gamma: v / 100 }))} />
+                <LevelRow label="In White" min={1} max={255} value={levels.inWhite}
+                  onChange={v => setLevels(l => ({ ...l, inWhite: Math.max(v, l.inBlack + 1) }))} />
+                <LevelRow label="Out Black" min={0} max={254} value={levels.outBlack}
+                  onChange={v => setLevels(l => ({ ...l, outBlack: v }))} />
+                <LevelRow label="Out White" min={1} max={255} value={levels.outWhite}
+                  onChange={v => setLevels(l => ({ ...l, outWhite: v }))} />
+              </div>
+            )}
+
+            <label className="flex items-center gap-2 text-[10px] text-neutral-400 mt-3">
+              <input type="checkbox" checked={adjustPreview} onChange={e => setAdjustPreview(e.target.checked)} /> Live preview
+            </label>
+
+            <div className="flex gap-2 mt-3">
+              <button onClick={cancelAdjust} className="flex-1 rounded bg-white/5 hover:bg-white/10 text-xs py-2">Cancel</button>
+              <button onClick={applyAdjust} className="flex-1 rounded bg-gradient-to-r from-[#A855F7] to-[#7c3aed] text-white text-xs font-bold py-2">Apply</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function LevelRow({ label, min, max, value, display, onChange }: {
+  label: string; min: number; max: number; value: number; display?: string; onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] text-neutral-400 w-16 shrink-0">{label}</span>
+      <input type="range" min={min} max={max} value={value} onChange={e => onChange(+e.target.value)} className="flex-1" />
+      <span className="text-[10px] tabular-nums text-neutral-300 w-10 text-right">{display ?? value}</span>
+    </div>
+  );
+}
+
+function AdjustHistogram({ src, lut }: { src: ImageData | null; lut: Uint8ClampedArray }) {
+  const hist = useMemo(() => src ? lumaHistogram(src) : null, [src]);
+  if (!hist) return null;
+  // SVG: 256-bar histogram + LUT curve
+  const W = 320, H = 70;
+  const bars: string[] = [];
+  for (let i = 0; i < 256; i++) {
+    const x = (i / 256) * W;
+    const bh = hist[i] * H;
+    bars.push(`M${x.toFixed(2)} ${H} L${x.toFixed(2)} ${(H - bh).toFixed(2)}`);
+  }
+  let curve = `M0 ${H - (lut[0] / 255) * H}`;
+  for (let i = 1; i < 256; i++) {
+    curve += ` L${((i / 256) * W).toFixed(2)} ${(H - (lut[i] / 255) * H).toFixed(2)}`;
+  }
+  return (
+    <svg width={W} height={H} className="block w-full h-[70px] mb-3 rounded bg-black/40 border border-white/5">
+      <path d={bars.join(" ")} stroke="rgba(255,255,255,0.4)" strokeWidth={1} fill="none" />
+      <path d={curve} stroke="#A855F7" strokeWidth={1.5} fill="none" />
+    </svg>
   );
 }
 
