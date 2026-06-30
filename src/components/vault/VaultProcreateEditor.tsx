@@ -21,6 +21,8 @@ import {
   magicWand, refineMask, invertMask, maskToOverlayCanvas, maskToAlphaCanvas,
   type WandResult,
 } from "@/lib/magic-wand";
+import { useAutosavePrefs } from "@/hooks/use-autosave-prefs";
+import { AutosaveSettings } from "./AutosaveSettings";
 
 type Props = {
   doc: DocumentData;
