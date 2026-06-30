@@ -998,6 +998,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     if (tool === "eyedrop") { eyedropAt(e.clientX, e.clientY); return; }
     if (tool === "pan") { setIsInteracting(true); return; }
     if (eliteTool) {
+      if (eliteTool === "wand") { pickWandAt(e.clientX, e.clientY); return; }
       drawingPointerId.current = e.pointerId;
       lastCanvasPt.current = { x: e.clientX, y: e.clientY };
       applyEliteAt(e.clientX, e.clientY, 0, 0);
