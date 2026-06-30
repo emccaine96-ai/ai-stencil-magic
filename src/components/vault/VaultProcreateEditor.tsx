@@ -1473,7 +1473,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     border:        () => runFilter((c) => PF.borderFrame(c, 24, color), "Border"),
     shape:         () => dropShape("circle"),
     mask:          () => { setEliteTool("wand"); toast.info("Mask: tap area to define"); },
-  };
+    // Extended shape primitives surfaced in dock popup
+    shapeRect:     () => dropShape("rect"),
+    shapeTriangle: () => dropShape("triangle"),
+  } as PicsartDockHandlers & { shapeRect: () => void; shapeTriangle: () => void };
 
   // ---- UI ------------------------------------------------------------------
   return (
