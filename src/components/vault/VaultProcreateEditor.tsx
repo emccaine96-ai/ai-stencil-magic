@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2,
   Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3, Image as ImageIcon, Eye, EyeOff,
-  ChevronRight, ChevronLeft, Settings2, Brush as BrushIcon, Minimize2,
+  ChevronRight, ChevronLeft, Settings2, Brush as BrushIcon, Minimize2, Wand2,
 } from "lucide-react";
-import { saveDocument, type DocumentData } from "@/lib/localDB";
+import { saveDocument, saveEditorState, type DocumentData, type EditorState, type LayerState } from "@/lib/localDB";
+import { runOp } from "@/lib/worker-bridge";
+import { toast } from "sonner";
 import {
   DEFAULTS, BRUSH_LABELS, beginStroke, endStroke, strokeTo,
   type BrushId, type BrushSettings, type StrokeContext,
@@ -100,6 +102,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [refLoaded, setRefLoaded] = useState(false);
   const [refOpacity, setRefOpacity] = useState(0.4);
   const [refVisible, setRefVisible] = useState(true);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [savedAgo, setSavedAgo] = useState<number | null>(null);
+  const autosaveTimer = useRef<number | null>(null);
+  const lastVelocity = useRef(0);
+  const lastMoveTs = useRef(0);
 
   // Drawer + HUD state machines (Procreate-style collapsible workspace)
   // Panels start collapsed — they only appear when the user taps an edge tab.
@@ -139,28 +146,52 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     const refCanvas = refCanvasRef.current!;
     const refCtx = refCanvas.getContext("2d", { willReadFrequently: true })!;
     refCtxRef.current = refCtx;
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      canvas.width = img.naturalWidth || 1024;
-      canvas.height = img.naturalHeight || 1024;
+
+    // Prefer restoring full layered editor state (autosave); fall back to the
+    // original AI image. Layer 0 = Reference, Layer 1 = Stencil/drawing.
+    let layers: LayerState[] | null = null;
+    if (doc.layeredEditorData) {
+      try { layers = (JSON.parse(doc.layeredEditorData) as EditorState).layers; }
+      catch { layers = null; }
+    }
+
+    const stencilSrc = layers?.find(l => l.name === "Stencil")?.dataUrl
+      ?? doc.originalAIImage ?? doc.thumbnail;
+    const refSrc = layers?.find(l => l.name === "Reference")?.dataUrl ?? null;
+
+    const loadInto = (target: HTMLCanvasElement, targetCtx: CanvasRenderingContext2D, src: string | null, fillWhite: boolean) =>
+      new Promise<void>((resolve) => {
+        if (!src) { resolve(); return; }
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          if (fillWhite) {
+            target.width = img.naturalWidth || 1024;
+            target.height = img.naturalHeight || 1024;
+            targetCtx.fillStyle = "#ffffff";
+            targetCtx.fillRect(0, 0, target.width, target.height);
+          }
+          targetCtx.drawImage(img, 0, 0);
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = src;
+      });
+
+    (async () => {
+      // Stencil layer drives the document size.
+      await loadInto(canvas, ctx, stencilSrc, true);
+      if (!canvas.width) { canvas.width = 1024; canvas.height = 1024; ctx.fillStyle = "#ffffff"; ctx.fillRect(0,0,1024,1024); }
       refCanvas.width = canvas.width;
       refCanvas.height = canvas.height;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
+      if (refSrc) {
+        await loadInto(refCanvas, refCtx, refSrc, false);
+        setRefLoaded(true);
+      }
       fitToScreen();
       pushUndo();
-    };
-    img.onerror = () => {
-      canvas.width = 1024; canvas.height = 1024;
-      refCanvas.width = 1024; refCanvas.height = 1024;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, 1024, 1024);
-      fitToScreen();
-      pushUndo();
-    };
-    img.src = doc.originalAIImage ?? doc.thumbnail;
+      if (layers) toast.success("Restored from autosave");
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);
 
@@ -226,7 +257,72 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     redoStack.current = [];
     setCanUndo(undoStack.current.length > 1);
     setCanRedo(false);
+    scheduleAutosave();
   }
+
+  // ---- Autosave (debounced 3s, also on visibilitychange/beforeunload) -------
+  const autosaveNow = useCallback(async () => {
+    const canvas = canvasRef.current; const refCanvas = refCanvasRef.current;
+    if (!canvas) return;
+    setSaveState("saving");
+    try {
+      const stencilUrl = canvas.toDataURL("image/png");
+      const refUrl = refLoaded && refCanvas ? refCanvas.toDataURL("image/png") : "";
+      const editorState: EditorState = {
+        width: canvas.width,
+        height: canvas.height,
+        activeLayerId: "stencil",
+        layers: [
+          ...(refUrl ? [{
+            id: "reference", name: "Reference" as const,
+            visible: refVisible, locked: true, alphaLock: false, clipping: false,
+            opacity: refOpacity, blendMode: "normal" as const, dataUrl: refUrl,
+          } satisfies LayerState] : []),
+          {
+            id: "stencil", name: "Stencil",
+            visible: true, locked: false, alphaLock: false, clipping: false,
+            opacity: 1, blendMode: "normal", dataUrl: stencilUrl,
+          },
+        ],
+      };
+      // Lightweight thumbnail (~512px wide).
+      const tc = document.createElement("canvas");
+      const TW = 384;
+      const ratio = canvas.height / canvas.width;
+      tc.width = TW; tc.height = Math.round(TW * ratio);
+      tc.getContext("2d")!.drawImage(canvas, 0, 0, tc.width, tc.height);
+      const thumb = tc.toDataURL("image/jpeg", 0.7);
+      await saveEditorState(doc.id, editorState, thumb);
+      setSaveState("saved");
+      setSavedAgo(Date.now());
+    } catch (err) {
+      console.error("[editor] autosave failed", err);
+      setSaveState("error");
+    }
+  }, [doc.id, refLoaded, refVisible, refOpacity]);
+
+  function scheduleAutosave() {
+    if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = window.setTimeout(() => { autosaveNow(); }, 3000);
+  }
+
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === "hidden") autosaveNow(); };
+    const onBye = () => { autosaveNow(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("beforeunload", onBye);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("beforeunload", onBye);
+      if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+    };
+  }, [autosaveNow]);
+
+  // tick the "Saved 12s ago" label
+  useEffect(() => {
+    const t = window.setInterval(() => { if (savedAgo) setSavedAgo(s => s); }, 5000);
+    return () => window.clearInterval(t);
+  }, [savedAgo]);
   function doUndo() {
     const ctx = ctxRef.current; if (!ctx) return;
     if (undoStack.current.length < 2) return;
@@ -422,51 +518,50 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   }
 
   // ---- Post-process filters -----------------------------------------------
-  function applyThreshold(level = 128) {
-    const ctx = ctxRef.current!;
-    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const d = img.data;
-    for (let i = 0; i < d.length; i += 4) {
-      // NTSC luminance
-      const l = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
-      const v = l < level ? 0 : 255;
-      d[i] = d[i+1] = d[i+2] = v;
+  // Filters now run in a Web Worker (editor-worker.ts) so the main thread
+  // stays at ~60fps even on 4K canvases.
+  async function runWorkerOp(op: Parameters<typeof runOp>[0], label: string) {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const w = ctx.canvas.width, h = ctx.canvas.height;
+    // Clone the bitmap (the worker transfers ownership of the buffer).
+    const src = ctx.getImageData(0, 0, w, h);
+    const cloned = new ImageData(new Uint8ClampedArray(src.data), w, h);
+    const t0 = performance.now();
+    try {
+      const out = await runOp({ ...op, data: cloned } as Parameters<typeof runOp>[0]);
+      ctx.putImageData(out, 0, 0);
+      pushUndo();
+      const ms = Math.round(performance.now() - t0);
+      toast.success(`${label} · ${ms}ms`);
+    } catch (err) {
+      console.error("[editor] worker op failed", err);
+      toast.error(`${label} failed`);
     }
-    ctx.putImageData(img, 0, 0);
-    pushUndo();
   }
-  function applyThermal() {
-    const ctx = ctxRef.current!;
-    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const d = img.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const l = (0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]) / 255;
-      const r = Math.round(60 + (255 - 60) * Math.pow(l, 1.2));
-      const g = Math.round(35 + (245 - 35) * Math.pow(l, 1.7));
-      const b = Math.round(95 + (235 - 95) * Math.pow(l, 1.1));
-      d[i] = r; d[i+1] = g; d[i+2] = b;
-    }
-    ctx.putImageData(img, 0, 0);
-    pushUndo();
-  }
+  function applyThreshold(level = 128) { runWorkerOp({ op: "threshold", data: null as never, level }, "Threshold"); }
+  function applyThermal()               { runWorkerOp({ op: "thermal-purple", data: null as never }, "Thermal Purple"); }
+  function applyThermalBlueCarbon()     { runWorkerOp({ op: "thermal-blue", data: null as never }, "Thermal Blue Carbon"); }
 
-  /** Premium stencil transfer hue. Darks → #2b3a8c violet-blue carbon; lights → cream. */
-  function applyThermalBlueCarbon() {
-    const ctx = ctxRef.current!;
-    const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const d = img.data;
-    const CARBON = { r: 0x2b, g: 0x3a, b: 0x8c };
-    const CREAM  = { r: 0xfa, g: 0xf6, b: 0xea };
-    for (let i = 0; i < d.length; i += 4) {
-      const l = (0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]) / 255;
-      // Gamma curve favors mapping mid-darks to the carbon hue.
-      const t = Math.pow(l, 1.4);
-      d[i]   = Math.round(CARBON.r * (1 - t) + CREAM.r * t);
-      d[i+1] = Math.round(CARBON.g * (1 - t) + CREAM.g * t);
-      d[i+2] = Math.round(CARBON.b * (1 - t) + CREAM.b * t);
+  /** One-click: Otsu auto-threshold + morphological clean (open then close)
+   *  to produce a crisp pure-line stencil ready for the thermal printer. */
+  async function applyStencilOptimizer() {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const w = ctx.canvas.width, h = ctx.canvas.height;
+    const t0 = performance.now();
+    setSaveState("saving");
+    try {
+      const src = ctx.getImageData(0, 0, w, h);
+      const clone = (d: ImageData) => new ImageData(new Uint8ClampedArray(d.data), d.width, d.height);
+      let buf = await runOp({ op: "otsu", data: clone(src) });
+      buf = await runOp({ op: "morph", data: clone(buf), passes: 1, kind: "open" });
+      buf = await runOp({ op: "morph", data: clone(buf), passes: 1, kind: "close" });
+      ctx.putImageData(buf, 0, 0);
+      pushUndo();
+      toast.success(`Stencil optimized · ${Math.round(performance.now() - t0)}ms`);
+    } catch (err) {
+      console.error("[editor] optimizer failed", err);
+      toast.error("Optimizer failed");
     }
-    ctx.putImageData(img, 0, 0);
-    pushUndo();
   }
 
   function eyedropAt(cx: number, cy: number) {
@@ -488,6 +583,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       type: e.pointerType,
     };
     pointers.current.set(e.pointerId, p);
+    lastMoveTs.current = performance.now();
+    lastVelocity.current = 0;
 
     // Two fingers = pinch/pan, kill any active draw
     if (pointers.current.size === 2) {
@@ -524,8 +621,20 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   function onPointerMove(e: React.PointerEvent) {
     if (!pointers.current.has(e.pointerId)) return;
     const p = pointers.current.get(e.pointerId)!;
+    // Mouse pressure simulation: faster strokes → lower pressure, smooths over time.
+    if (e.pointerType === "mouse" && e.pointerId === drawingPointerId.current) {
+      const now = performance.now();
+      const dt = Math.max(1, now - lastMoveTs.current);
+      const v = Math.hypot(e.clientX - p.cx, e.clientY - p.cy) / dt;
+      lastVelocity.current = lastVelocity.current * 0.7 + v * 0.3;
+      lastMoveTs.current = now;
+      // map 0..1.5 px/ms → pressure 1..0.25
+      const sim = Math.max(0.25, Math.min(1, 1 - lastVelocity.current / 1.5));
+      p.pressure = sim;
+    } else {
+      p.pressure = e.pressure > 0 ? e.pressure : p.pressure;
+    }
     p.cx = e.clientX; p.cy = e.clientY;
-    p.pressure = e.pressure > 0 ? e.pressure : p.pressure;
 
     if (pointers.current.size >= 2 && pinchStart.current) {
       const [a, b] = [...pointers.current.values()];
@@ -781,6 +890,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         </div>
         <div>
           <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Post Process</div>
+          <button onClick={applyStencilOptimizer}
+            className="w-full flex items-center gap-1 justify-center rounded px-2 py-2 text-[11px] mb-1 font-bold text-black"
+            style={{ background: "linear-gradient(135deg,#A855F7,#7c3aed)", color: "#fff" }}>
+            <Wand2 size={12} /> Stencil Optimizer
+          </button>
           <button onClick={() => applyThreshold(128)}
             className="w-full flex items-center gap-1 justify-center rounded bg-black/30 hover:bg-white/10 px-2 py-2 text-[11px] mb-1 border border-white/5">
             <Contrast size={12} /> Run Stencil Threshold Map
@@ -1026,8 +1140,43 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           <ChevronRight size={14} className="rotate-90" />
         </button>
       )}
+
+      {/* Status pill — bottom center */}
+      <div
+        className="absolute left-1/2 -translate-x-1/2 px-3 py-1 text-[10px] font-medium tabular-nums flex items-center gap-2"
+        style={{
+          bottom: 12, zIndex: 10,
+          borderRadius: 999,
+          background: "rgba(18,18,22,0.85)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          backdropFilter: "blur(12px)",
+          color: "rgba(255,255,255,0.75)",
+          opacity: fadeChrome ? 0.15 : 1,
+          pointerEvents: "none",
+          transition: "opacity 0.2s",
+        }}
+      >
+        <span>{(view.scale * 100).toFixed(0)}%</span>
+        <span className="text-neutral-600">·</span>
+        <span>{eliteTool ? eliteTool.replace("liquify-", "") : (tool === "eraser" ? "eraser" : BRUSH_LABELS[brushId])}</span>
+        <span className="text-neutral-600">·</span>
+        <span style={{ color: saveState === "error" ? "#f87171" : saveState === "saving" ? "#A855F7" : "#00F5D4" }}>
+          {saveState === "saving" ? "Saving…"
+            : saveState === "error" ? "Save failed"
+            : savedAgo ? `Saved ${formatAgo(savedAgo)}`
+            : "Autosave on"}
+        </span>
+      </div>
     </div>
   );
+}
+
+function formatAgo(ts: number): string {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  return `${m}m ago`;
 }
 
 export default VaultProcreateEditor;

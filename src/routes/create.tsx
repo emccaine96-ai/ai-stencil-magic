@@ -4,6 +4,7 @@ import { ChevronLeft, Upload, Loader2, Download, ChevronsLeftRight, Settings, Ke
 import logo from "@/assets/stencil-logo.png";
 import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/create")({
   head: () => ({
@@ -91,7 +92,17 @@ function CreatePage() {
   // Auto-save every new stencil to the local Storage Vault (IndexedDB).
   useEffect(() => {
     if (!stencil) return;
-    saveStencil({ stencil, photo, style, meta: { intensity } }).catch(() => {});
+    let cancelled = false;
+    (async () => {
+      try {
+        const saved = await saveStencil({ stencil, photo, style, meta: { intensity } });
+        if (!cancelled && saved) toast.success("Saved to Storage Vault");
+      } catch (err) {
+        if (!cancelled) toast.error("Couldn't save to Vault — try again");
+        console.error("[create] auto-save failed", err);
+      }
+    })();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stencil]);
 

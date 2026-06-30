@@ -23,13 +23,19 @@ export async function saveStencil(input: {
   meta?: Record<string, unknown>;
 }): Promise<DocumentData | void> {
   if (typeof window === "undefined") return;
-  const thumb = await makeThumbnail(input.stencil);
-  return createDocument({
-    name: `${input.style[0]?.toUpperCase()}${input.style.slice(1)} stencil`,
-    tags: [input.style],
-    thumbnail: thumb,
-    originalAIImage: input.stencil,
-    style: input.style,
-    layeredEditorData: null,
-  });
+  try {
+    const thumb = await makeThumbnail(input.stencil);
+    const doc = await createDocument({
+      name: `${input.style[0]?.toUpperCase()}${input.style.slice(1)} stencil`,
+      tags: [input.style],
+      thumbnail: thumb,
+      originalAIImage: input.stencil,
+      style: input.style,
+      layeredEditorData: null,
+    });
+    return doc;
+  } catch (err) {
+    console.error("[vault] saveStencil failed", err);
+    throw err;
+  }
 }

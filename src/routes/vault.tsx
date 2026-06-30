@@ -41,7 +41,17 @@ function VaultPage() {
     const [d, f] = await Promise.all([listDocuments(), listFolders()]);
     setDocs(d); setFolders(f);
   }
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    refresh();
+    const onFocus = () => refresh();
+    const onVis = () => { if (document.visibilityState === "visible") refresh(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
 
   const allTags = useMemo(() => {
     const s = new Set<string>();
