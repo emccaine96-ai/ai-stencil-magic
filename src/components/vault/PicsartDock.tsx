@@ -138,7 +138,7 @@ export function buildCategories(h: PicsartDockHandlers): DockCategory[] {
         { id: "push", label: "Liquify Push", icon: Wind, run: h.liquifyPush },
         { id: "inflate", label: "Inflate", icon: Circle, run: h.liquifyInflate },
         { id: "deflate", label: "Deflate", icon: Circle, run: h.liquifyDeflate },
-        { id: "heal", label: "Heal", icon: Sparkles, run: h.smudge },
+        { id: "heal", label: "Heal", icon: Sparkles, run: h.heal },
       ],
     },
     {
