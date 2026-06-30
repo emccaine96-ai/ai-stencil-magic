@@ -1730,8 +1730,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           </button>
         </div>
       </aside>
+      )}
 
-      {/* COLUMN 2 — Tool dock (60px) */}
+      {/* COLUMN 2 — Tool dock (60px) — Draw mode only */}
+      {drawMode && (
       <aside
         className="absolute flex flex-col gap-2 p-2"
         style={{
