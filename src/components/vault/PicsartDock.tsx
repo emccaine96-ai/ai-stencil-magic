@@ -64,6 +64,7 @@ export type PicsartDockHandlers = {
   lensFlare: () => void;
   // retouch
   smudge: () => void;
+  heal: () => void;
   liquifyPush: () => void;
   liquifyInflate: () => void;
   liquifyDeflate: () => void;
