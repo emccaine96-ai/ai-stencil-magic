@@ -1669,7 +1669,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         <span className="text-neutral-600">·</span>
         <span>{eliteTool ? eliteTool.replace("liquify-", "") : (tool === "eraser" ? "eraser" : BRUSH_LABELS[brushId])}</span>
         <span className="text-neutral-600">·</span>
-        <span style={{ color: saveState === "error" ? "#f87171" : saveState === "saving" ? "#A855F7" : "#00F5D4" }}>
+        <span style={{ color:
+          saveState === "error" ? "#f87171"
+          : saveState === "saving" ? "#A855F7"
+          : !autosave.enabled ? "#9ca3af"
+          : "#00F5D4" }}>
           {saveState === "saving" ? "Saving…"
             : saveState === "error" ? "Save failed"
             : savedAgo ? `Saved ${formatAgo(savedAgo)}`
