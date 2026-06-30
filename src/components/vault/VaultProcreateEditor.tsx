@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   X, Save, Undo2, Redo2, Eraser, Hand, Pipette, RotateCcw, Maximize2,
   Droplet, Wind, Sparkles, Contrast, Thermometer, Grid3x3, Image as ImageIcon, Eye, EyeOff,
+  ChevronRight, ChevronLeft, Settings2, Brush as BrushIcon, Minimize2,
 } from "lucide-react";
 import { saveDocument, type DocumentData } from "@/lib/localDB";
 import {
@@ -99,6 +100,35 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [refLoaded, setRefLoaded] = useState(false);
   const [refOpacity, setRefOpacity] = useState(0.4);
   const [refVisible, setRefVisible] = useState(true);
+
+  // Drawer + HUD state machines (Procreate-style collapsible workspace)
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
+  const [headerVisible, setHeaderVisible] = useState(true);
+  const [immersive, setImmersive] = useState(false);
+  const [isInteracting, setIsInteracting] = useState(false);
+  const lastTapRef = useRef(0);
+
+  const collapseAll = useCallback(() => {
+    const anyOpen = leftOpen || rightOpen || headerVisible;
+    setLeftOpen(!anyOpen);
+    setRightOpen(!anyOpen);
+    setHeaderVisible(!anyOpen);
+  }, [leftOpen, rightOpen, headerVisible]);
+
+  // Tab key toggles all chrome
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
+      if (e.key === "Tab") { e.preventDefault(); collapseAll(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [collapseAll]);
+
+  // Whether sidebars should fade out for stylus painting
+  const fadeChrome = immersive && isInteracting;
 
   // ---- Init canvas from doc -------------------------------------------------
   useEffect(() => {
