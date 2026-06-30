@@ -595,6 +595,184 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     setTool("brush");
   }
 
+  // ===== Pro tools: resize, upscale, filters, clone stamp, text =============
+
+  /** Resize the document canvas (both Stencil + Reference). Optionally rescales
+   *  existing pixel content with bilinear; otherwise keeps top-left aligned. */
+  function resizeCanvas(newW: number, newH: number, scaleContent: boolean) {
+    const ctx = ctxRef.current!; const c = ctx.canvas;
+    const rctx = refCtxRef.current!; const rc = rctx.canvas;
+    const oldStencil = document.createElement("canvas");
+    oldStencil.width = c.width; oldStencil.height = c.height;
+    oldStencil.getContext("2d")!.drawImage(c, 0, 0);
+    const oldRef = document.createElement("canvas");
+    oldRef.width = rc.width; oldRef.height = rc.height;
+    oldRef.getContext("2d")!.drawImage(rc, 0, 0);
+
+    c.width = newW; c.height = newH;
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, newW, newH);
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+    if (scaleContent) ctx.drawImage(oldStencil, 0, 0, newW, newH);
+    else ctx.drawImage(oldStencil, 0, 0);
+
+    rc.width = newW; rc.height = newH;
+    rctx.imageSmoothingEnabled = true; rctx.imageSmoothingQuality = "high";
+    if (refLoaded) {
+      if (scaleContent) rctx.drawImage(oldRef, 0, 0, newW, newH);
+      else rctx.drawImage(oldRef, 0, 0);
+    }
+    undoStack.current = []; redoStack.current = [];
+    pushUndo();
+    fitToScreen();
+    toast.success(`Canvas ${newW}×${newH}`);
+  }
+
+  function applyCanvasPreset(p: typeof SIZE_PRESETS[number]) {
+    const ctx = ctxRef.current!;
+    const cur = `${ctx.canvas.width}×${ctx.canvas.height}`;
+    const scale = window.confirm(
+      `Resize ${cur} → ${p.w}×${p.h}\n\nOK = scale content to fit\nCancel = keep pixels at top-left`
+    );
+    if (p.w * p.h > 16e6) {
+      const go = window.confirm(`Large canvas (${(p.w * p.h / 1e6).toFixed(1)}MP). This may use significant memory on mobile. Continue?`);
+      if (!go) return;
+    }
+    resizeCanvas(p.w, p.h, scale);
+    setShowSizeMenu(false);
+  }
+
+  /** Lanczos-3 upscale to 6K (or any target) via Web Worker. */
+  async function upscaleTo(targetW: number, targetH: number) {
+    const ctx = ctxRef.current!;
+    if (targetW * targetH > 40e6) {
+      const ok = window.confirm(`${(targetW * targetH / 1e6).toFixed(1)}MP target — heavy on mobile. Continue?`);
+      if (!ok) return;
+    }
+    setUpscaleBusy(0);
+    try {
+      const src = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+      const t0 = performance.now();
+      const out = await lanczosResize(src, targetW, targetH, (p) => setUpscaleBusy(Math.round(p * 100)));
+      ctx.canvas.width = targetW; ctx.canvas.height = targetH;
+      ctx.putImageData(out, 0, 0);
+      // also resize ref canvas to match (preserve aspect by scaling existing content)
+      if (refCtxRef.current) {
+        const rctx = refCtxRef.current; const rc = rctx.canvas;
+        const old = document.createElement("canvas");
+        old.width = rc.width; old.height = rc.height;
+        old.getContext("2d")!.drawImage(rc, 0, 0);
+        rc.width = targetW; rc.height = targetH;
+        if (refLoaded) { rctx.imageSmoothingQuality = "high"; rctx.drawImage(old, 0, 0, targetW, targetH); }
+      }
+      undoStack.current = []; redoStack.current = [];
+      pushUndo(); fitToScreen();
+      toast.success(`Upscaled to ${targetW}×${targetH} · ${Math.round(performance.now() - t0)}ms`);
+    } catch (e) {
+      console.error("[editor] upscale failed", e);
+      toast.error("Upscale failed");
+    } finally {
+      setUpscaleBusy(null);
+    }
+  }
+
+  /** One-tap pro filters (chained worker ops). */
+  async function applyStencilClean() {
+    const ctx = ctxRef.current!; if (!ctx) return;
+    const t0 = performance.now();
+    try {
+      const w = ctx.canvas.width, h = ctx.canvas.height;
+      const src = ctx.getImageData(0, 0, w, h);
+      const clone = (d: ImageData) => new ImageData(new Uint8ClampedArray(d.data), d.width, d.height);
+      let buf = await runOp({ op: "otsu", data: clone(src) });
+      buf = await runOp({ op: "morph", data: clone(buf), passes: 2, kind: "open" });
+      ctx.putImageData(buf, 0, 0); pushUndo();
+      toast.success(`Stencil Clean · ${Math.round(performance.now() - t0)}ms`);
+    } catch { toast.error("Stencil Clean failed"); }
+  }
+  async function applyLineSharpen() {
+    // unsharp mask: blur via downscale/upscale, subtract.
+    const ctx = ctxRef.current!; if (!ctx) return;
+    const w = ctx.canvas.width, h = ctx.canvas.height;
+    const src = ctx.getImageData(0, 0, w, h);
+    const dw = Math.max(2, Math.round(w / 2)), dh = Math.max(2, Math.round(h / 2));
+    const small = await lanczosResize(new ImageData(new Uint8ClampedArray(src.data), w, h), dw, dh);
+    const blurred = await lanczosResize(small, w, h);
+    const out = new ImageData(new Uint8ClampedArray(src.data), w, h);
+    const a = 1.6; // amount
+    const sd = src.data, bd = blurred.data, od = out.data;
+    for (let i = 0; i < od.length; i += 4) {
+      od[i]   = Math.max(0, Math.min(255, sd[i]   + a * (sd[i]   - bd[i])));
+      od[i+1] = Math.max(0, Math.min(255, sd[i+1] + a * (sd[i+1] - bd[i+1])));
+      od[i+2] = Math.max(0, Math.min(255, sd[i+2] + a * (sd[i+2] - bd[i+2])));
+    }
+    ctx.putImageData(out, 0, 0); pushUndo();
+    toast.success("Line Sharpen");
+  }
+  async function applyTattooReady() {
+    // Sharpen → Otsu → close. Final print-ready pass.
+    await applyLineSharpen();
+    const ctx = ctxRef.current!;
+    try {
+      const w = ctx.canvas.width, h = ctx.canvas.height;
+      const src = ctx.getImageData(0, 0, w, h);
+      const clone = (d: ImageData) => new ImageData(new Uint8ClampedArray(d.data), d.width, d.height);
+      let buf = await runOp({ op: "otsu", data: clone(src) });
+      buf = await runOp({ op: "morph", data: clone(buf), passes: 1, kind: "close" });
+      ctx.putImageData(buf, 0, 0); pushUndo();
+      toast.success("Tattoo Ready ✓");
+    } catch { toast.error("Tattoo Ready failed"); }
+  }
+
+  /** Clone stamp: alt-click (or first tap while tool=clone) sets source. */
+  function cloneStampAt(cx: number, cy: number) {
+    const ctx = ctxRef.current!;
+    const { x, y } = screenToCanvas(cx, cy);
+    if (!cloneSourceRef.current) {
+      cloneSourceRef.current = { x, y };
+      toast.success("Clone source set — paint to stamp");
+      return;
+    }
+    if (!cloneOffsetRef.current) {
+      cloneOffsetRef.current = { dx: x - cloneSourceRef.current.x, dy: y - cloneSourceRef.current.y };
+    }
+    const off = cloneOffsetRef.current;
+    const sx = x - off.dx, sy = y - off.dy;
+    const r = Math.max(4, size * 0.5);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalAlpha = opacity;
+    ctx.drawImage(ctx.canvas, sx - r, sy - r, r * 2, r * 2, x - r, y - r, r * 2, r * 2);
+    ctx.restore();
+  }
+
+  /** Place text onto stencil layer. */
+  function commitText() {
+    if (!textPrompt || !textValue.trim()) { setTextPrompt(null); setTextValue(""); return; }
+    const ctx = ctxRef.current!;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.font = `bold ${textSize}px system-ui, -apple-system, sans-serif`;
+    ctx.textBaseline = "top";
+    ctx.fillText(textValue, textPrompt.x, textPrompt.y);
+    ctx.restore();
+    pushUndo();
+    setTextPrompt(null); setTextValue("");
+    toast.success("Text added");
+  }
+
+  function _unusedEyedropAt(cx: number, cy: number) {
+    const ctx = ctxRef.current!;
+    const { x, y } = screenToCanvas(cx, cy);
+    const ix = Math.floor(x), iy = Math.floor(y);
+    if (ix < 0 || iy < 0 || ix >= ctx.canvas.width || iy >= ctx.canvas.height) return;
+    const d = ctx.getImageData(ix, iy, 1, 1).data;
+    if (d[3] === 0) return;
+    setColor("#" + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, "0")).join(""));
+    setTool("brush");
+  }
+
   function onPointerDown(e: React.PointerEvent) {
     (e.target as Element).setPointerCapture?.(e.pointerId);
     const p: Pt = {
