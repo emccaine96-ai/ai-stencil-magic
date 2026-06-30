@@ -444,6 +444,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   // ---- Elite engines (B Stippler, C Smudge, D Liquify) ---------------------
   function applyEliteAt(cx: number, cy: number, dx: number, dy: number) {
     if (!eliteTool) return;
+    if (eliteTool === "clone") { cloneStampAt(cx, cy); return; }
     const ctx = ctxRef.current!;
     const { x, y } = screenToCanvas(cx, cy);
     const r = Math.max(6, size * 1.5);
