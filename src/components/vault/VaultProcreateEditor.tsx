@@ -1546,20 +1546,43 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       >
         <button onClick={onClose} className="p-1.5 rounded hover:bg-white/10" aria-label="Close"><X size={18} /></button>
         <div className="text-sm font-semibold truncate flex-1">{doc.name}</div>
+        {drawMode && (
+          <button
+            onClick={exitDrawMode}
+            className="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 bg-[#00F5D4] text-black"
+            title="Exit Draw mode"
+          >
+            <Check size={13}/> Done
+          </button>
+        )}
+        {drawMode && (
+          <button
+            onClick={() => setImmersive(v => !v)}
+            className={`px-2 py-1 rounded text-[10px] font-semibold ${immersive ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "bg-white/5 text-neutral-300 hover:bg-white/10"}`}
+            title="Fade panels while drawing"
+          >
+            {immersive ? "Procreate Mode" : "Procreate"}
+          </button>
+        )}
+        {/* Autosave on/off pill — always visible */}
         <button
-          onClick={() => setImmersive(v => !v)}
-          className={`px-2 py-1 rounded text-[10px] font-semibold ${immersive ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "bg-white/5 text-neutral-300 hover:bg-white/10"}`}
-          title="Fade panels while drawing"
+          onClick={() => autosave.setEnabled(!autosave.enabled)}
+          className={`px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border ${autosave.enabled ? "bg-[#00F5D4]/15 text-[#00F5D4] border-[#00F5D4]/40" : "bg-white/5 text-neutral-400 border-white/10 hover:bg-white/10"}`}
+          title={autosave.enabled ? "Autosave is on — tap to turn off" : "Autosave is off — tap to turn on"}
         >
-          {immersive ? "Procreate Mode On" : "Procreate Mode"}
+          <span style={{
+            width: 8, height: 8, borderRadius: 999,
+            background: autosave.enabled ? "#00F5D4" : "#666",
+          }} />
+          Autosave {autosave.enabled ? "On" : "Off"}
         </button>
-        <button onClick={collapseAll} className="p-1.5 rounded hover:bg-white/10" aria-label="Toggle all panels (Tab)"><Minimize2 size={16} /></button>
         <button onClick={doUndo} disabled={!canUndo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Undo"><Undo2 size={18} /></button>
         <button onClick={doRedo} disabled={!canRedo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Redo"><Redo2 size={18} /></button>
         <button onClick={fitToScreen} className="p-1.5 rounded hover:bg-white/10" aria-label="Fit"><Maximize2 size={16} /></button>
         <button onClick={() => setView(v => ({ ...v, scale: 1, x: 0, y: 0 }))} className="p-1.5 rounded hover:bg-white/10" aria-label="Reset zoom"><RotateCcw size={16} /></button>
-        <button onClick={openAdjust} className="p-1.5 rounded hover:bg-white/10 flex items-center gap-1 text-[11px]" title="Curves / Levels"><Activity size={14}/> Adjust</button>
-        <button onClick={() => setShowHistory(s => !s)} className={`p-1.5 rounded flex items-center gap-1 text-[11px] ${showHistory ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} title="History timeline"><History size={14}/> History</button>
+        {drawMode && (
+          <button onClick={() => setShowHistory(s => !s)} className={`p-1.5 rounded flex items-center gap-1 text-[11px] ${showHistory ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} title="History timeline"><History size={14}/></button>
+        )}
         <span className="text-[11px] text-neutral-400 tabular-nums w-12 text-right">{(view.scale * 100).toFixed(0)}%</span>
         {/* Canvas Size dropdown */}
         <div className="relative">
