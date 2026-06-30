@@ -172,7 +172,11 @@ export function buildCategories(h: PicsartDockHandlers): DockCategory[] {
     },
     {
       id: "shape", label: "Shape", icon: Shapes,
-      actions: [{ id: "shape", label: "Shape", icon: Shapes, run: h.shape }],
+      actions: [
+        { id: "shape-circle",   label: "Circle",    icon: Circle, run: () => h.shape() },
+        { id: "shape-rect",     label: "Rectangle", icon: Square, run: () => (h as any).shapeRect?.() ?? h.shape() },
+        { id: "shape-triangle", label: "Triangle",  icon: Shapes, run: () => (h as any).shapeTriangle?.() ?? h.shape() },
+      ],
     },
     {
       id: "mask", label: "Mask", icon: Layers,
