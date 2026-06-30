@@ -816,6 +816,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           background: "rgba(18,18,22,0.85)",
           backdropFilter: "blur(12px)",
           border: "1px solid rgba(255,255,255,0.06)",
+          transform: leftOpen ? "translateX(0)" : "translateX(calc(-280px - 20px))",
+          transition: "transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.2s",
+          opacity: fadeChrome ? 0.15 : 1,
+          pointerEvents: fadeChrome ? "none" : "auto",
+          willChange: "transform, opacity",
         }}
       >
         <button onClick={() => setTool("brush")} className={`p-2 rounded ${tool === "brush" && !eliteTool ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Brush"><Pipette size={16} className="mx-auto rotate-180" /></button>
@@ -853,6 +858,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           background: "rgba(18,18,22,0.85)",
           backdropFilter: "blur(12px)",
           border: "1px solid rgba(255,255,255,0.06)",
+          transform: rightOpen ? "translateX(0)" : "translateX(105%)",
+          transition: "transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.2s",
+          opacity: fadeChrome ? 0.15 : 1,
+          pointerEvents: fadeChrome || !rightOpen ? "none" : "auto",
+          willChange: "transform, opacity",
         }}
       >
         {/* Layer manager */}
