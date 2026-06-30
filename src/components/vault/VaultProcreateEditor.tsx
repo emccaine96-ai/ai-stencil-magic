@@ -58,8 +58,29 @@ const PALETTE = [
 ];
 
 type Tool = "brush" | "eraser" | "pan" | "eyedrop";
-type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple" | "clone" | "wand";
+type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple" | "clone" | "wand" | "heal";
 type Symmetry = "none" | "mirror-x" | "mirror-y" | "radial-8";
+
+/** Detect coarse pointer / Android to throttle pixel-heavy ops harder. */
+const IS_MOBILE = typeof window !== "undefined"
+  && (window.matchMedia?.("(pointer: coarse)").matches
+    || /Android|iPhone|iPad/i.test(navigator.userAgent || ""));
+const ELITE_THROTTLE_MS = IS_MOBILE ? 33 : 16; // ~30 vs ~60 fps cap
+
+/** Dense-brush spacing: smaller spacing for hard-edge brushes to avoid
+ *  banding, larger for soft scatter brushes for speed. Returns px between
+ *  stamps as a fraction of brush diameter. */
+export function getDynamicSpacing(brush: BrushId, size: number): number {
+  const dense: BrushId[] = [
+    "hard-round", "fine-liner", "ink-pen", "wet-ink", "tattoo-liner-3rl",
+    "tattoo-liner-9rl", "technical-pen", "dip-pen", "gel-pen", "marker",
+  ];
+  const sparse: BrushId[] = ["spray", "stipple", "dotwork", "noise-grain", "halftone-dots"];
+  const base = dense.includes(brush) ? 0.08 : sparse.includes(brush) ? 0.45 : 0.18;
+  // Big brushes can step further w/o visible banding
+  const scale = size > 60 ? 1.35 : size > 28 ? 1.1 : 1.0;
+  return Math.max(0.5, size * base * scale);
+}
 
 // Canvas size presets (Picsart-style)
 const SIZE_PRESETS: { id: string; label: string; w: number; h: number }[] = [
@@ -114,7 +135,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [tool, setTool] = useState<Tool>("brush");
   const [eliteTool, setEliteTool] = useState<EliteTool | null>(null);
   const [symmetry, setSymmetry] = useState<Symmetry>("none");
-  const [stabilizer, setStabilizer] = useState(0.35); // 0..0.9 EMA weight toward target
+  const [stabilizer, setStabilizer] = useState(0.5); // 0..0.9 EMA weight toward target
   const [color, setColor] = useState("#000000");
   const [size, setSize] = useState(18);
   const [opacity, setOpacity] = useState(1);
@@ -135,6 +156,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const lastMoveTs = useRef(0);
   const cloneSourceRef = useRef<{ x: number; y: number } | null>(null);
   const cloneOffsetRef = useRef<{ dx: number; dy: number } | null>(null);
+  /** Pending pointer sample for RAF-batched draw flush. */
+  const pendingDraw = useRef<Pt | null>(null);
+  const drawRafRef = useRef<number | null>(null);
+  const lastEliteTs = useRef(0);
+  const [curvedText, setCurvedText] = useState(false);
+  const [textRadius, setTextRadius] = useState(180);
   const [showSizeMenu, setShowSizeMenu] = useState(false);
   const [showProMenu, setShowProMenu] = useState(false);
   const [upscaleBusy, setUpscaleBusy] = useState<number | null>(null);
@@ -205,6 +232,9 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     const refCanvas = refCanvasRef.current!;
     const refCtx = refCanvas.getContext("2d", { willReadFrequently: true })!;
     refCtxRef.current = refCtx;
+    // Speed: never resample on draw; brushes should write exact pixels.
+    ctx.imageSmoothingEnabled = false;
+    refCtx.imageSmoothingEnabled = false;
 
     // Prefer restoring full layered editor state (autosave); fall back to the
     // original AI image. Layer 0 = Reference, Layer 1 = Stencil/drawing.
@@ -520,6 +550,21 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   }
   function continueDraw(p: Pt) {
     if (!strokeRefs.current.length) return;
+    // RAF batch: only the latest sample is processed per frame. The previous
+    // implementation drew on every pointermove (often 120+ Hz on Pixel/iOS),
+    // which created jank with dense brushes. We drop intermediate moves; the
+    // EMA stabilizer below still smooths the visible stroke.
+    pendingDraw.current = p;
+    if (drawRafRef.current !== null) return;
+    drawRafRef.current = requestAnimationFrame(() => {
+      drawRafRef.current = null;
+      const sample = pendingDraw.current;
+      pendingDraw.current = null;
+      if (!sample || !strokeRefs.current.length) return;
+      flushDraw(sample);
+    });
+  }
+  function flushDraw(p: Pt) {
     const target = screenToCanvas(p.cx, p.cy);
     // EMA stabilizer: move stab point a fraction toward target each event
     const s = stabPt.current ?? { x: target.x, y: target.y, p: p.pressure };
@@ -536,6 +581,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     });
   }
   function endDraw() {
+    if (drawRafRef.current !== null) { cancelAnimationFrame(drawRafRef.current); drawRafRef.current = null; }
+    if (pendingDraw.current) { flushDraw(pendingDraw.current); pendingDraw.current = null; }
     if (strokeRefs.current.length) {
       strokeRefs.current.forEach(endStroke);
       strokeRefs.current = [];
@@ -549,6 +596,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   function applyEliteAt(cx: number, cy: number, dx: number, dy: number) {
     if (!eliteTool) return;
     if (eliteTool === "clone") { cloneStampAt(cx, cy); return; }
+    if (eliteTool === "heal") { healAt(cx, cy); return; }
     const ctx = ctxRef.current!;
     const { x, y } = screenToCanvas(cx, cy);
     const r = Math.max(6, size * 1.5);
@@ -852,6 +900,83 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     ctx.restore();
   }
 
+  /** Heal/Patch: Gaussian-style average of a soft disc, painted back over
+   *  the target. Removes blemishes & cleans up scanned stencil noise. */
+  function healAt(cx: number, cy: number) {
+    const ctx = ctxRef.current!;
+    const { x, y } = screenToCanvas(cx, cy);
+    const r = Math.max(6, size * 0.8);
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const ix = Math.max(0, Math.floor(x - r));
+    const iy = Math.max(0, Math.floor(y - r));
+    const w = Math.min(W - ix, Math.ceil(r * 2));
+    const h = Math.min(H - iy, Math.ceil(r * 2));
+    if (w <= 0 || h <= 0) return;
+    const patch = ctx.getImageData(ix, iy, w, h);
+    const d = patch.data;
+    // Compute weighted mean RGB inside the disc.
+    let sr = 0, sg = 0, sb = 0, sw = 0;
+    const cxL = x - ix, cyL = y - iy;
+    for (let py = 0; py < h; py++) {
+      for (let px = 0; px < w; px++) {
+        const dd = Math.hypot(px - cxL, py - cyL);
+        if (dd > r) continue;
+        const wgt = 1 - dd / r;
+        const i = (py * w + px) * 4;
+        sr += d[i] * wgt; sg += d[i+1] * wgt; sb += d[i+2] * wgt; sw += wgt;
+      }
+    }
+    if (sw <= 0) return;
+    const mr = sr / sw, mg = sg / sw, mb = sb / sw;
+    // Blend mean back with soft falloff (alpha based on disc distance).
+    for (let py = 0; py < h; py++) {
+      for (let px = 0; px < w; px++) {
+        const dd = Math.hypot(px - cxL, py - cyL);
+        if (dd > r) continue;
+        const a = (1 - dd / r) * Math.min(1, opacity);
+        const i = (py * w + px) * 4;
+        d[i]   = d[i]   * (1 - a) + mr * a;
+        d[i+1] = d[i+1] * (1 - a) + mg * a;
+        d[i+2] = d[i+2] * (1 - a) + mb * a;
+      }
+    }
+    ctx.putImageData(patch, ix, iy);
+  }
+
+  /** Place text — optionally along a circular arc (curved text). */
+  function commitTextAdvanced(curved: boolean, radius: number) {
+    if (!textPrompt || !textValue.trim()) { setTextPrompt(null); setTextValue(""); return; }
+    const ctx = ctxRef.current!;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.font = `bold ${textSize}px system-ui, -apple-system, sans-serif`;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    if (!curved) {
+      ctx.textBaseline = "top"; ctx.textAlign = "left";
+      ctx.fillText(textValue, textPrompt.x, textPrompt.y);
+    } else {
+      // Render each char around an arc centered at textPrompt.
+      const cxA = textPrompt.x, cyA = textPrompt.y;
+      const chars = [...textValue];
+      const angleStep = (textSize * 0.85) / radius; // rad per char
+      const totalA = angleStep * (chars.length - 1);
+      let a = -totalA / 2 - Math.PI / 2; // start at top
+      for (const ch of chars) {
+        ctx.save();
+        ctx.translate(cxA + Math.cos(a) * radius, cyA + Math.sin(a) * radius);
+        ctx.rotate(a + Math.PI / 2);
+        ctx.fillText(ch, 0, 0);
+        ctx.restore();
+        a += angleStep;
+      }
+    }
+    ctx.restore();
+    pushUndo();
+    setTextPrompt(null); setTextValue("");
+    toast.success(curved ? "Curved text added" : "Text added");
+  }
+
   /** Place text onto stencil layer. */
   function commitText() {
     if (!textPrompt || !textValue.trim()) { setTextPrompt(null); setTextValue(""); return; }
@@ -1078,6 +1203,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
     if (e.pointerId === drawingPointerId.current) {
       if (eliteTool) {
+        // Throttle pixel-heavy elite tools (smudge/liquify/heal) to ~30fps on mobile.
+        const now = performance.now();
+        if (now - lastEliteTs.current < ELITE_THROTTLE_MS) return;
+        lastEliteTs.current = now;
         const last = lastCanvasPt.current ?? { x: e.clientX, y: e.clientY };
         const dx = e.clientX - last.x;
         const dy = e.clientY - last.y;
@@ -1216,6 +1345,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     sepia:         () => runFilter(PF.sepia, "Sepia"),
     lensFlare:     () => runFilter((c) => PF.lensFlare(c), "Lens Flare"),
     smudge:        () => { setEliteTool("smudge"); toast.info("Smudge: drag to blend"); },
+    heal:          () => { setEliteTool("heal"); toast.info("Heal: tap blemishes to remove"); },
     liquifyPush:   () => { setEliteTool("liquify-push"); toast.info("Liquify Push"); },
     liquifyInflate:() => { setEliteTool("liquify-inflate"); toast.info("Liquify Inflate"); },
     liquifyDeflate:() => { setEliteTool("liquify-deflate"); toast.info("Liquify Deflate"); },
@@ -1783,10 +1913,21 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
               <input type="range" min={12} max={400} value={textSize} onChange={e => setTextSize(+e.target.value)} className="flex-1" />
               <span className="text-[10px] text-neutral-300 tabular-nums w-8 text-right">{textSize}</span>
             </div>
+            <label className="flex items-center gap-2 mb-2 text-[11px] text-neutral-300">
+              <input type="checkbox" checked={curvedText} onChange={e => setCurvedText(e.target.checked)} />
+              Curved text (arc)
+            </label>
+            {curvedText && (
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[10px] text-neutral-400">Radius</span>
+                <input type="range" min={60} max={800} value={textRadius} onChange={e => setTextRadius(+e.target.value)} className="flex-1" />
+                <span className="text-[10px] text-neutral-300 tabular-nums w-10 text-right">{textRadius}</span>
+              </div>
+            )}
             <div className="flex gap-2">
               <button onClick={() => { setTextPrompt(null); setTextValue(""); }}
                 className="flex-1 rounded bg-white/5 hover:bg-white/10 text-xs py-2">Cancel</button>
-              <button onClick={commitText}
+              <button onClick={() => commitTextAdvanced(curvedText, textRadius)}
                 className="flex-1 rounded bg-gradient-to-r from-[#00F5D4] to-[#00B8A9] text-black text-xs font-bold py-2">Place</button>
             </div>
           </div>
