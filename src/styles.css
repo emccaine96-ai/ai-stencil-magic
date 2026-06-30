@@ -146,10 +146,35 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: ui-sans-serif, system-ui, -apple-system, "Inter", sans-serif;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
   }
 
   html {
     color-scheme: dark;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Respect device notches / Android gesture pill on fixed bars that opt in. */
+  .safe-pad-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+  .safe-pad-top    { padding-top: max(env(safe-area-inset-top), 0px); }
+
+  /* On touch-only devices, kill hover-stuck states from desktop CSS. */
+  @media (hover: none) {
+    .hover\:bg-white\/10:hover { background-color: transparent; }
+    .hover\:bg-white\/15:hover { background-color: transparent; }
+    .hover\:text-white:hover   { color: inherit; }
+  }
+
+  /* Ensure tap targets meet Android guideline on small viewports. */
+  @media (max-width: 768px) {
+    button, [role="button"], a {
+      min-height: 36px;
+    }
+    input[type="range"] { height: 28px; }
   }
 
   .font-script {

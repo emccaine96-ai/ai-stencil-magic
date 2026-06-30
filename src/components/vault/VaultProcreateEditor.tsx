@@ -21,6 +21,8 @@ import {
   magicWand, refineMask, invertMask, maskToOverlayCanvas, maskToAlphaCanvas,
   type WandResult,
 } from "@/lib/magic-wand";
+import { useAutosavePrefs } from "@/hooks/use-autosave-prefs";
+import { AutosaveSettings } from "./AutosaveSettings";
 
 type Props = {
   doc: DocumentData;
@@ -124,7 +126,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [refVisible, setRefVisible] = useState(true);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [savedAgo, setSavedAgo] = useState<number | null>(null);
-  const autosaveTimer = useRef<number | null>(null);
+  const autosaveDirty = useRef<boolean>(false);
+  const autosave = useAutosavePrefs();
   const lastVelocity = useRef(0);
   const lastMoveTs = useRef(0);
   const cloneSourceRef = useRef<{ x: number; y: number } | null>(null);
@@ -389,20 +392,39 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     }
   }, [doc.id, refLoaded, refVisible, refOpacity]);
 
-  function scheduleAutosave() {
-    if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
-    autosaveTimer.current = window.setTimeout(() => { autosaveNow(); }, 3000);
-  }
+  /** Mark the canvas dirty; the periodic flusher will pick it up. */
+  function scheduleAutosave() { autosaveDirty.current = true; }
 
+  /** Manual save bypasses interval + dirty check. */
+  const saveNow = useCallback(async () => {
+    autosaveDirty.current = false;
+    await autosaveNow();
+  }, [autosaveNow]);
+
+  // Interval-based autosave driven by user preferences.
   useEffect(() => {
-    const onVis = () => { if (document.visibilityState === "hidden") autosaveNow(); };
-    const onBye = () => { autosaveNow(); };
+    if (!autosave.enabled) return;
+    const id = window.setInterval(() => {
+      if (autosaveDirty.current) {
+        autosaveDirty.current = false;
+        autosaveNow();
+      }
+    }, Math.max(60_000, autosave.intervalMs));
+    return () => window.clearInterval(id);
+  }, [autosave.enabled, autosave.intervalMs, autosaveNow]);
+
+  // Safety-net flush on tab hide / unload — runs regardless of the toggle so
+  // the user never loses work just because they switched apps on mobile.
+  useEffect(() => {
+    const flushIfDirty = () => { if (autosaveDirty.current) { autosaveDirty.current = false; autosaveNow(); } };
+    const onVis = () => { if (document.visibilityState === "hidden") flushIfDirty(); };
     document.addEventListener("visibilitychange", onVis);
-    window.addEventListener("beforeunload", onBye);
+    window.addEventListener("beforeunload", flushIfDirty);
+    window.addEventListener("pagehide", flushIfDirty);
     return () => {
       document.removeEventListener("visibilitychange", onVis);
-      window.removeEventListener("beforeunload", onBye);
-      if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+      window.removeEventListener("beforeunload", flushIfDirty);
+      window.removeEventListener("pagehide", flushIfDirty);
     };
   }, [autosaveNow]);
 
@@ -1435,6 +1457,28 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           willChange: "transform, opacity",
         }}
       >
+        {/* Autosave preferences */}
+        <AutosaveSettings
+          enabled={autosave.enabled}
+          intervalMs={autosave.intervalMs}
+          onToggle={autosave.setEnabled}
+          onIntervalChange={autosave.setIntervalMs}
+          onSaveNow={saveNow}
+          statusLabel={
+            saveState === "saving" ? "Saving…"
+            : saveState === "error" ? "Save failed"
+            : !autosave.enabled ? "Off"
+            : savedAgo ? `Saved ${formatAgo(savedAgo)}`
+            : "Ready"
+          }
+          statusColor={
+            saveState === "error" ? "#f87171"
+            : saveState === "saving" ? "#A855F7"
+            : !autosave.enabled ? "#9ca3af"
+            : "#00F5D4"
+          }
+        />
+
         {/* Layer manager */}
         <div className="p-3 border-b border-white/5">
           <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Layers</div>
@@ -1625,11 +1669,15 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         <span className="text-neutral-600">·</span>
         <span>{eliteTool ? eliteTool.replace("liquify-", "") : (tool === "eraser" ? "eraser" : BRUSH_LABELS[brushId])}</span>
         <span className="text-neutral-600">·</span>
-        <span style={{ color: saveState === "error" ? "#f87171" : saveState === "saving" ? "#A855F7" : "#00F5D4" }}>
+        <span style={{ color:
+          saveState === "error" ? "#f87171"
+          : saveState === "saving" ? "#A855F7"
+          : !autosave.enabled ? "#9ca3af"
+          : "#00F5D4" }}>
           {saveState === "saving" ? "Saving…"
             : saveState === "error" ? "Save failed"
             : savedAgo ? `Saved ${formatAgo(savedAgo)}`
-            : "Autosave on"}
+            : autosave.enabled ? "Autosave on" : "Autosave off"}
         </span>
       </div>
 
