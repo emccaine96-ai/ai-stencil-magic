@@ -204,6 +204,29 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [isInteracting, setIsInteracting] = useState(false);
   const lastTapRef = useRef(0);
 
+  /** Picsart-first shell. The Procreate engine columns are gated behind
+   *  Draw mode and only mount when the user taps "Draw" in the dock. */
+  const [drawMode, setDrawMode] = useState(false);
+
+  /** Interactive crop overlay (in canvas-pixel coordinates). */
+  const [cropRect, setCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [cropAspect, setCropAspect] = useState<"free" | "1:1" | "4:5" | "16:9" | "9:16">("free");
+
+  const enterDrawMode = useCallback(() => {
+    setDrawMode(true);
+    setLeftOpen(true);
+    setRightOpen(true);
+    setHeaderVisible(true);
+    setTool("brush");
+    setEliteTool(null);
+  }, []);
+  const exitDrawMode = useCallback(() => {
+    setDrawMode(false);
+    setLeftOpen(false);
+    setRightOpen(false);
+    setEliteTool(null);
+  }, []);
+
   const collapseAll = useCallback(() => {
     const anyOpen = leftOpen || rightOpen || headerVisible;
     setLeftOpen(!anyOpen);
