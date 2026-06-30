@@ -214,11 +214,14 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
   const enterDrawMode = useCallback(() => {
     setDrawMode(true);
-    setLeftOpen(true);
-    setRightOpen(true);
+    // Start with columns collapsed so the canvas is fully visible.
+    // User reveals each panel by tapping the edge dock tab on the side.
+    setLeftOpen(false);
+    setRightOpen(false);
     setHeaderVisible(true);
     setTool("brush");
     setEliteTool(null);
+    toast.info("Draw mode — tap edge tabs to open Engines / Brushes", { duration: 2500 });
   }, []);
   const exitDrawMode = useCallback(() => {
     setDrawMode(false);
