@@ -889,6 +889,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         </div>
         <div>
           <div className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Post Process</div>
+          <button onClick={applyStencilOptimizer}
+            className="w-full flex items-center gap-1 justify-center rounded px-2 py-2 text-[11px] mb-1 font-bold text-black"
+            style={{ background: "linear-gradient(135deg,#A855F7,#7c3aed)", color: "#fff" }}>
+            <Wand2 size={12} /> Stencil Optimizer
+          </button>
           <button onClick={() => applyThreshold(128)}
             className="w-full flex items-center gap-1 justify-center rounded bg-black/30 hover:bg-white/10 px-2 py-2 text-[11px] mb-1 border border-white/5">
             <Contrast size={12} /> Run Stencil Threshold Map
