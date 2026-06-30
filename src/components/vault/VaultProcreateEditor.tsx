@@ -136,6 +136,31 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [textValue, setTextValue] = useState("");
   const [textSize, setTextSize] = useState(72);
 
+  // Curves/Levels modal + selection
+  const [showAdjust, setShowAdjust] = useState(false);
+  const [adjustTab, setAdjustTab] = useState<"curves" | "levels">("curves");
+  const [curvePreset, setCurvePreset] = useState<keyof typeof CURVES_PRESETS>("Stencil Clean");
+  const [levels, setLevels] = useState<LevelsParams>(LEVELS_PRESETS["Stencil Clean"]);
+  const [adjustPreview, setAdjustPreview] = useState(true);
+  const previewLUT = useRef<Uint8ClampedArray | null>(null);
+  const preAdjustSnapshot = useRef<ImageData | null>(null);
+
+  // Magic wand selection
+  const [selection, setSelection] = useState<WandResult | null>(null);
+  const selectionRef = useRef<WandResult | null>(null);
+  selectionRef.current = selection;
+  const selOverlayRef = useRef<HTMLCanvasElement | null>(null);
+  const [wandTolerance, setWandTolerance] = useState(32);
+  const [wandContiguous, setWandContiguous] = useState(true);
+  const [wandExpand, setWandExpand] = useState(0);
+  const [wandFeather, setWandFeather] = useState(0);
+  const wandBaseRef = useRef<WandResult | null>(null); // pre-refine seed
+
+  // History timeline
+  const [showHistory, setShowHistory] = useState(false);
+  const historyThumbs = useRef<string[]>([]);
+  const [historyTick, setHistoryTick] = useState(0);
+
   // Drawer + HUD state machines (Procreate-style collapsible workspace)
   // Panels start collapsed — they only appear when the user taps an edge tab.
   const [leftOpen, setLeftOpen] = useState(false);
