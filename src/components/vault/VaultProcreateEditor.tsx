@@ -2388,6 +2388,35 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       {/* Picsart-style horizontal dock — bottom of viewport */}
       <PicsartDock handlers={dockHandlers} hidden={fadeChrome} />
 
+      {/* Filter Gallery — one-tap presets */}
+      {filterGallerySrc && (
+        <FilterGalleryModal
+          source={filterGallerySrc}
+          onClose={() => {
+            // Restore original in case previews were painted onto the canvas
+            const ctx = ctxRef.current;
+            if (ctx && filterGallerySrc) ctx.putImageData(filterGallerySrc, 0, 0);
+            setFilterGallerySrc(null);
+          }}
+          onApply={(preset: FilterPreset) => {
+            const ctx = ctxRef.current;
+            if (ctx && filterGallerySrc) {
+              const out = new ImageData(
+                new Uint8ClampedArray(filterGallerySrc.data),
+                filterGallerySrc.width,
+                filterGallerySrc.height,
+              );
+              applyAdjustments(out, preset.values);
+              ctx.putImageData(out, 0, 0);
+              pushUndo();
+              scheduleAutosave();
+              toast.success(`Filter: ${preset.name}`);
+            }
+            setFilterGallerySrc(null);
+          }}
+        />
+      )}
+
       {/* Interactive crop overlay */}
       {cropRect && (
         <CropOverlay
