@@ -33,6 +33,8 @@ import { BLEND_MODES } from "@/lib/canvas/blend-modes";
 import { floodFill } from "@/lib/canvas/flood-fill";
 import { drawText } from "@/lib/canvas/text-tool";
 import { applyAdjustments, type AdjustmentValues } from "@/lib/canvas/adjustments";
+import { FilterGalleryModal } from "./FilterGalleryModal";
+import type { FilterPreset } from "@/lib/canvas/filter-presets";
 
 type Props = {
   doc: DocumentData;
