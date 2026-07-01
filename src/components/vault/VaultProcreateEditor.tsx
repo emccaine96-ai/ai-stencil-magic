@@ -27,6 +27,7 @@ import { AutosaveSettings } from "./AutosaveSettings";
 import { PicsartDock, type PicsartDockHandlers } from "./PicsartDock";
 import * as PF from "@/lib/picsart-filters";
 import { useNavigate } from "@tanstack/react-router";
+import { StencilGeneratorPanel } from "@/components/stencil-generator/StencilGeneratorPanel";
 
 type Props = {
   doc: DocumentData;
@@ -207,6 +208,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   /** Picsart-first shell. The Procreate engine columns are gated behind
    *  Draw mode and only mount when the user taps "Draw" in the dock. */
   const [drawMode, setDrawMode] = useState(false);
+  const [stencilPanelOpen, setStencilPanelOpen] = useState(false);
 
   /** Interactive crop overlay (in canvas-pixel coordinates). */
   const [cropRect, setCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -1582,6 +1584,13 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           }} />
           Autosave {autosave.enabled ? "On" : "Off"}
         </button>
+        <button
+          onClick={() => setStencilPanelOpen(s => !s)}
+          className={`px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border ${stencilPanelOpen ? "bg-[#A855F7]/20 text-[#A855F7] border-[#A855F7]/50" : "bg-white/5 text-neutral-300 border-white/10 hover:bg-white/10"}`}
+          title="Open Stencil Generator"
+        >
+          <Wand2 size={12} /> Stencil
+        </button>
         <button onClick={doUndo} disabled={!canUndo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Undo"><Undo2 size={18} /></button>
         <button onClick={doRedo} disabled={!canRedo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Redo"><Redo2 size={18} /></button>
         <button onClick={fitToScreen} className="p-1.5 rounded hover:bg-white/10" aria-label="Fit"><Maximize2 size={16} /></button>
@@ -2223,6 +2232,48 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           onApply={applyCrop}
           onCancel={() => setCropRect(null)}
         />
+      )}
+      {stencilPanelOpen && (
+        <div
+          className="absolute top-14 right-3 z-40 rounded-2xl border border-white/10 bg-[#0d0d0f]/95 shadow-2xl overflow-hidden flex flex-col"
+          style={{
+            width: 380,
+            maxHeight: "calc(100vh - 80px)",
+            backdropFilter: "blur(20px)",
+            boxShadow: "0 20px 60px -10px rgba(168,85,247,0.35)",
+          }}
+        >
+          <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+            <div className="flex items-center gap-2 text-[12px] font-semibold text-[#A855F7]">
+              <Wand2 size={14} /> Stencil Generator
+            </div>
+            <button
+              onClick={() => setStencilPanelOpen(false)}
+              className="p-1 rounded hover:bg-white/10"
+              aria-label="Close stencil panel"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="overflow-y-auto p-3">
+            <StencilGeneratorPanel
+              sourceCanvas={canvasRef.current}
+              onStencilReady={(out) => {
+                const ctx = ctxRef.current;
+                const canvas = canvasRef.current;
+                if (!ctx || !canvas) return;
+                pushUndo();
+                ctx.save();
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(out, 0, 0, canvas.width, canvas.height);
+                ctx.restore();
+                scheduleAutosave();
+                toast.success("Stencil applied to canvas");
+              }}
+            />
+          </div>
+        </div>
       )}
     </div>
   );
