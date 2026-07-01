@@ -5,6 +5,7 @@ import {
   ChevronRight, ChevronLeft, Settings2, Brush as BrushIcon, Minimize2, Wand2,
   Crop, Rocket, Type as TypeIcon, Stamp, Wand, Sliders, History, Activity,
   Pen, Check,
+  PaintBucket,
 } from "lucide-react";
 import { saveDocument, saveEditorState, type DocumentData, type EditorState, type LayerState } from "@/lib/localDB";
 import { runOp } from "@/lib/worker-bridge";
@@ -29,6 +30,7 @@ import * as PF from "@/lib/picsart-filters";
 import { useNavigate } from "@tanstack/react-router";
 import { StencilGeneratorPanel } from "@/components/stencil-generator/StencilGeneratorPanel";
 import { BLEND_MODES } from "@/lib/canvas/blend-modes";
+import { floodFill } from "@/lib/canvas/flood-fill";
 
 type Props = {
   doc: DocumentData;
@@ -60,7 +62,8 @@ const PALETTE = [
   "#0284c7", "#2563eb", "#7c3aed", "#c026d3", "#db2777", "#9f1239", "#78350f",
 ];
 
-type Tool = "brush" | "eraser" | "pan" | "eyedrop";
+type Tool = "brush" | "eraser" | "pan" | "eyedrop" | "bucket";
+const BUCKET_DEFAULT_TOLERANCE = 32;
 type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple" | "clone" | "wand" | "heal";
 type Symmetry = "none" | "mirror-x" | "mirror-y" | "radial-8";
 
@@ -781,6 +784,27 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     setTool("brush");
   }
 
+  /** Bucket fill at screen point, using current stroke color + tolerance. */
+  function bucketAt(cx: number, cy: number, tolerance = BUCKET_DEFAULT_TOLERANCE) {
+    const ctx = ctxRef.current!;
+    const c = ctx.canvas;
+    const { x, y } = screenToCanvas(cx, cy);
+    const ix = Math.floor(x), iy = Math.floor(y);
+    if (ix < 0 || iy < 0 || ix >= c.width || iy >= c.height) return;
+    pushUndo();
+    const hex = color.replace("#", "");
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    const a = Math.round(Math.max(0, Math.min(1, opacity)) * 255);
+    const img = ctx.getImageData(0, 0, c.width, c.height);
+    const n = floodFill(img, ix, iy, { tolerance, color: [r, g, b, a] });
+    if (n === 0) { toast.info("Nothing to fill here"); return; }
+    ctx.putImageData(img, 0, 0);
+    scheduleAutosave();
+    toast.success(`Filled ${n.toLocaleString()} px`);
+  }
+
   // ===== Pro tools: resize, upscale, filters, clone stamp, text =============
 
   /** Resize the document canvas (both Stencil + Reference). Optionally rescales
@@ -1179,6 +1203,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
     // Single pointer
     if (tool === "eyedrop") { eyedropAt(e.clientX, e.clientY); return; }
+    if (tool === "bucket") { bucketAt(e.clientX, e.clientY); return; }
     if (tool === "pan") { setIsInteracting(true); return; }
     if (eliteTool) {
       if (eliteTool === "wand") { pickWandAt(e.clientX, e.clientY); return; }
@@ -1786,6 +1811,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         <button onClick={() => setTool("pan")} className={`p-2 rounded ${tool === "pan" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Pan"><Hand size={16} className="mx-auto" /></button>
         <button onClick={() => { setTool("eraser"); setBrushId("eraser"); }} className={`p-2 rounded ${tool === "eraser" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Eraser"><Eraser size={16} className="mx-auto" /></button>
         <button onClick={() => setTool("eyedrop")} className={`p-2 rounded ${tool === "eyedrop" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Eyedropper"><Pipette size={16} className="mx-auto" /></button>
+        <button onClick={() => setTool("bucket")} className={`p-2 rounded ${tool === "bucket" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Bucket fill"><PaintBucket size={16} className="mx-auto" /></button>
         <div className="mt-1">
           <div className="text-[8px] text-neutral-500 uppercase text-center">Size</div>
           <input type="range" min={1} max={200} value={size} onChange={e => setSize(+e.target.value)}
