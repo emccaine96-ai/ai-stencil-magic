@@ -1124,7 +1124,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     preAdjustSnapshot.current = null;
     setShowAdjust(false);
     pushUndo();
-    toast.success(`${adjustTab === "curves" ? "Curves" : "Levels"} applied${selectionRef.current ? " (selection)" : ""}`);
+    const label = adjustTab === "curves" ? "Curves" : adjustTab === "levels" ? "Levels" : "Photo";
+    toast.success(`${label} applied${selectionRef.current ? " (selection)" : ""}`);
   }
 
   function cancelAdjust() {
