@@ -1491,6 +1491,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
   const dockHandlers: PicsartDockHandlers = {
     openCrop:      () => openCropOverlay(),
+    openFilters:   () => {
+      const ctx = ctxRef.current; if (!ctx) return;
+      setFilterGallerySrc(ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height));
+    },
     setSelectionMode: () => { setEliteTool("wand"); toast.info("Magic Wand: tap an area to select"); },
     openAdjust:    openAdjust,
     enhance:       applyStencilOptimizer,
