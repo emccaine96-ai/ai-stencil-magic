@@ -2168,6 +2168,28 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
               <input type="range" min={12} max={400} value={textSize} onChange={e => setTextSize(+e.target.value)} className="flex-1" />
               <span className="text-[10px] text-neutral-300 tabular-nums w-8 text-right">{textSize}</span>
             </div>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[10px] text-neutral-400">Track</span>
+              <input type="range" min={-10} max={40} value={textLetterSpacing}
+                onChange={e => setTextLetterSpacing(+e.target.value)} className="flex-1" />
+              <span className="text-[10px] text-neutral-300 tabular-nums w-8 text-right">{textLetterSpacing}</span>
+            </div>
+            <div className="flex items-center gap-2 mb-3 text-[10px] text-neutral-300">
+              <label className="flex items-center gap-1">
+                <input type="checkbox" checked={textStrokeOn}
+                  onChange={e => setTextStrokeOn(e.target.checked)} /> Stroke
+              </label>
+              {textStrokeOn && (
+                <>
+                  <input type="color" value={textStrokeColor}
+                    onChange={e => setTextStrokeColor(e.target.value)}
+                    className="h-6 w-6 rounded border border-white/10 bg-transparent" />
+                  <input type="range" min={1} max={20} value={textStrokeWidth}
+                    onChange={e => setTextStrokeWidth(+e.target.value)} className="flex-1" />
+                  <span className="tabular-nums w-6 text-right">{textStrokeWidth}</span>
+                </>
+              )}
+            </div>
             <label className="flex items-center gap-2 mb-2 text-[11px] text-neutral-300">
               <input type="checkbox" checked={curvedText} onChange={e => setCurvedText(e.target.checked)} />
               Curved text (arc)
