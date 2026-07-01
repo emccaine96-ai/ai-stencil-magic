@@ -31,6 +31,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { StencilGeneratorPanel } from "@/components/stencil-generator/StencilGeneratorPanel";
 import { BLEND_MODES } from "@/lib/canvas/blend-modes";
 import { floodFill } from "@/lib/canvas/flood-fill";
+import { drawText } from "@/lib/canvas/text-tool";
+import { applyAdjustments, type AdjustmentValues } from "@/lib/canvas/adjustments";
 
 type Props = {
   doc: DocumentData;
@@ -177,15 +179,23 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [textPrompt, setTextPrompt] = useState<{ x: number; y: number } | null>(null);
   const [textValue, setTextValue] = useState("");
   const [textSize, setTextSize] = useState(72);
+  const [textLetterSpacing, setTextLetterSpacing] = useState(0);
+  const [textStrokeOn, setTextStrokeOn] = useState(false);
+  const [textStrokeWidth, setTextStrokeWidth] = useState(4);
+  const [textStrokeColor, setTextStrokeColor] = useState("#ffffff");
 
   // Curves/Levels modal + selection
   const [showAdjust, setShowAdjust] = useState(false);
-  const [adjustTab, setAdjustTab] = useState<"curves" | "levels">("curves");
+  const [adjustTab, setAdjustTab] = useState<"curves" | "levels" | "photo">("curves");
   const [curvePreset, setCurvePreset] = useState<keyof typeof CURVES_PRESETS>("Stencil Clean");
   const [levels, setLevels] = useState<LevelsParams>(LEVELS_PRESETS["Stencil Clean"]);
   const [adjustPreview, setAdjustPreview] = useState(true);
   const previewLUT = useRef<Uint8ClampedArray | null>(null);
   const preAdjustSnapshot = useRef<ImageData | null>(null);
+  const [photoAdj, setPhotoAdj] = useState<AdjustmentValues>({
+    brightness: 0, contrast: 0, saturation: 0, exposure: 0,
+    temperature: 0, tint: 0, hue: 0, vibrance: 0, gamma: 1,
+  });
 
   // Magic wand selection
   const [selection, setSelection] = useState<WandResult | null>(null);
@@ -1004,15 +1014,30 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   function commitTextAdvanced(curved: boolean, radius: number) {
     if (!textPrompt || !textValue.trim()) { setTextPrompt(null); setTextValue(""); return; }
     const ctx = ctxRef.current!;
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.font = `bold ${textSize}px system-ui, -apple-system, sans-serif`;
-    ctx.textBaseline = "middle";
-    ctx.textAlign = "center";
     if (!curved) {
-      ctx.textBaseline = "top"; ctx.textAlign = "left";
-      ctx.fillText(textValue, textPrompt.x, textPrompt.y);
+      drawText(ctx, {
+        text: textValue,
+        x: textPrompt.x,
+        y: textPrompt.y,
+        size: textSize,
+        weight: 700,
+        color,
+        align: "left",
+        baseline: "top",
+        letterSpacing: textLetterSpacing,
+        stroke: textStrokeOn ? { color: textStrokeColor, width: textStrokeWidth } : null,
+      });
     } else {
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.font = `bold ${textSize}px system-ui, -apple-system, sans-serif`;
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "center";
+      if (textStrokeOn) {
+        ctx.strokeStyle = textStrokeColor;
+        ctx.lineWidth = textStrokeWidth;
+        ctx.lineJoin = "round";
+      }
       // Render each char around an arc centered at textPrompt.
       const cxA = textPrompt.x, cyA = textPrompt.y;
       const chars = [...textValue];
@@ -1023,12 +1048,13 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         ctx.save();
         ctx.translate(cxA + Math.cos(a) * radius, cyA + Math.sin(a) * radius);
         ctx.rotate(a + Math.PI / 2);
+        if (textStrokeOn) ctx.strokeText(ch, 0, 0);
         ctx.fillText(ch, 0, 0);
         ctx.restore();
         a += angleStep;
       }
+      ctx.restore();
     }
-    ctx.restore();
     pushUndo();
     setTextPrompt(null); setTextValue("");
     toast.success(curved ? "Curved text added" : "Text added");
@@ -1069,6 +1095,17 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     const ctx = ctxRef.current; const snap = preAdjustSnapshot.current;
     if (!ctx || !snap) return;
     if (!adjustPreview) { ctx.putImageData(snap, 0, 0); return; }
+    if (adjustTab === "photo") {
+      // Clone snapshot so the source stays clean across renders.
+      const copy = new ImageData(
+        new Uint8ClampedArray(snap.data),
+        snap.width,
+        snap.height,
+      );
+      applyAdjustments(copy, photoAdj);
+      ctx.putImageData(copy, 0, 0);
+      return;
+    }
     const lut = currentLUT();
     previewLUT.current = lut;
     const mask = selectionRef.current?.mask;
@@ -1080,14 +1117,15 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   useEffect(() => {
     if (showAdjust) renderAdjustPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showAdjust, adjustTab, curvePreset, levels, adjustPreview]);
+  }, [showAdjust, adjustTab, curvePreset, levels, adjustPreview, photoAdj]);
 
   function applyAdjust() {
     renderAdjustPreview();
     preAdjustSnapshot.current = null;
     setShowAdjust(false);
     pushUndo();
-    toast.success(`${adjustTab === "curves" ? "Curves" : "Levels"} applied${selectionRef.current ? " (selection)" : ""}`);
+    const label = adjustTab === "curves" ? "Curves" : adjustTab === "levels" ? "Levels" : "Photo";
+    toast.success(`${label} applied${selectionRef.current ? " (selection)" : ""}`);
   }
 
   function cancelAdjust() {
@@ -2130,6 +2168,28 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
               <input type="range" min={12} max={400} value={textSize} onChange={e => setTextSize(+e.target.value)} className="flex-1" />
               <span className="text-[10px] text-neutral-300 tabular-nums w-8 text-right">{textSize}</span>
             </div>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[10px] text-neutral-400">Track</span>
+              <input type="range" min={-10} max={40} value={textLetterSpacing}
+                onChange={e => setTextLetterSpacing(+e.target.value)} className="flex-1" />
+              <span className="text-[10px] text-neutral-300 tabular-nums w-8 text-right">{textLetterSpacing}</span>
+            </div>
+            <div className="flex items-center gap-2 mb-3 text-[10px] text-neutral-300">
+              <label className="flex items-center gap-1">
+                <input type="checkbox" checked={textStrokeOn}
+                  onChange={e => setTextStrokeOn(e.target.checked)} /> Stroke
+              </label>
+              {textStrokeOn && (
+                <>
+                  <input type="color" value={textStrokeColor}
+                    onChange={e => setTextStrokeColor(e.target.value)}
+                    className="h-6 w-6 rounded border border-white/10 bg-transparent" />
+                  <input type="range" min={1} max={20} value={textStrokeWidth}
+                    onChange={e => setTextStrokeWidth(+e.target.value)} className="flex-1" />
+                  <span className="tabular-nums w-6 text-right">{textStrokeWidth}</span>
+                </>
+              )}
+            </div>
             <label className="flex items-center gap-2 mb-2 text-[11px] text-neutral-300">
               <input type="checkbox" checked={curvedText} onChange={e => setCurvedText(e.target.checked)} />
               Curved text (arc)
@@ -2218,10 +2278,13 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
               <div className="ml-auto flex gap-1 text-[10px]">
                 <button onClick={() => setAdjustTab("curves")} className={`px-2 py-1 rounded ${adjustTab === "curves" ? "bg-white/10 text-white" : "text-neutral-400"}`}>Curves</button>
                 <button onClick={() => setAdjustTab("levels")} className={`px-2 py-1 rounded ${adjustTab === "levels" ? "bg-white/10 text-white" : "text-neutral-400"}`}>Levels</button>
+                <button onClick={() => setAdjustTab("photo")} className={`px-2 py-1 rounded ${adjustTab === "photo" ? "bg-white/10 text-white" : "text-neutral-400"}`}>Photo</button>
               </div>
             </div>
 
-            <AdjustHistogram src={preAdjustSnapshot.current} lut={currentLUT()} />
+            {adjustTab !== "photo" && (
+              <AdjustHistogram src={preAdjustSnapshot.current} lut={currentLUT()} />
+            )}
 
             {adjustTab === "curves" ? (
               <div className="space-y-2">
@@ -2235,7 +2298,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
                   ))}
                 </div>
               </div>
-            ) : (
+            ) : adjustTab === "levels" ? (
               <div className="space-y-2">
                 <div className="text-[10px] uppercase tracking-wider text-neutral-500">Preset</div>
                 <div className="flex flex-wrap gap-1">
@@ -2254,6 +2317,52 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
                   onChange={v => setLevels(l => ({ ...l, outBlack: v }))} />
                 <LevelRow label="Out White" min={1} max={255} value={levels.outWhite}
                   onChange={v => setLevels(l => ({ ...l, outWhite: v }))} />
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-[46vh] overflow-y-auto pr-1">
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] uppercase tracking-wider text-neutral-500">Photo adjust</div>
+                  <button
+                    onClick={() => setPhotoAdj({ brightness: 0, contrast: 0, saturation: 0, exposure: 0, temperature: 0, tint: 0, hue: 0, vibrance: 0, gamma: 1 })}
+                    className="text-[10px] px-2 py-0.5 rounded bg-black/30 hover:bg-white/10 border border-white/5">Reset</button>
+                </div>
+                {([
+                  ["brightness", "Brightness", -100, 100, 0],
+                  ["contrast", "Contrast", -100, 100, 0],
+                  ["exposure", "Exposure", -100, 100, 0],
+                  ["saturation", "Saturation", -100, 100, 0],
+                  ["vibrance", "Vibrance", -100, 100, 0],
+                  ["hue", "Hue", -180, 180, 0],
+                  ["temperature", "Warmth", -100, 100, 0],
+                  ["tint", "Tint", -100, 100, 0],
+                ] as const).map(([key, label, min, max, def]) => (
+                  <div key={key} className="flex items-center gap-2 text-[10px] text-neutral-300">
+                    <span className="w-16 text-neutral-400">{label}</span>
+                    <input type="range" min={min} max={max} value={(photoAdj[key] ?? def) as number}
+                      onChange={e => setPhotoAdj(p => ({ ...p, [key]: +e.target.value }))}
+                      onDoubleClick={() => setPhotoAdj(p => ({ ...p, [key]: def }))}
+                      className="flex-1 accent-[#A855F7]" />
+                    <span className="w-10 text-right tabular-nums">{Math.round((photoAdj[key] ?? def) as number)}</span>
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 text-[10px] text-neutral-300">
+                  <span className="w-16 text-neutral-400">Gamma</span>
+                  <input type="range" min={10} max={300} value={Math.round((photoAdj.gamma ?? 1) * 100)}
+                    onChange={e => setPhotoAdj(p => ({ ...p, gamma: +e.target.value / 100 }))}
+                    onDoubleClick={() => setPhotoAdj(p => ({ ...p, gamma: 1 }))}
+                    className="flex-1 accent-[#A855F7]" />
+                  <span className="w-10 text-right tabular-nums">{(photoAdj.gamma ?? 1).toFixed(2)}</span>
+                </div>
+                <div className="flex gap-3 pt-1 text-[10px] text-neutral-300">
+                  <label className="flex items-center gap-1">
+                    <input type="checkbox" checked={!!photoAdj.grayscale}
+                      onChange={e => setPhotoAdj(p => ({ ...p, grayscale: e.target.checked }))} /> B&W
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <input type="checkbox" checked={!!photoAdj.invert}
+                      onChange={e => setPhotoAdj(p => ({ ...p, invert: e.target.checked }))} /> Invert
+                  </label>
+                </div>
               </div>
             )}
 
