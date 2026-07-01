@@ -1411,6 +1411,15 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     }
   }
 
+  /** Snapshot current canvas and open the Effects preview modal for a named effect. */
+  function openFxPreview(key: keyof typeof EFFECT_PRESETS) {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const preset = EFFECT_PRESETS[key];
+    if (!preset) return;
+    const src = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+    setFxPreview({ src, preset });
+  }
+
   /** Open the interactive crop overlay sized to the current canvas. */
   function openCropOverlay() {
     const ctx = ctxRef.current; if (!ctx) return;
