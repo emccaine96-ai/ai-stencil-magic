@@ -62,6 +62,9 @@ export type PicsartDockHandlers = {
   grain: () => void;
   sepia: () => void;
   lensFlare: () => void;
+  glow: () => void;
+  chromatic: () => void;
+  gradientMap: () => void;
   // retouch
   smudge: () => void;
   heal: () => void;
@@ -131,6 +134,9 @@ export function buildCategories(h: PicsartDockHandlers): DockCategory[] {
         { id: "grain", label: "Grain", icon: Gauge, run: h.grain },
         { id: "sepia", label: "Sepia", icon: PaintBucket, run: h.sepia },
         { id: "lens", label: "Lens Flare", icon: Lightbulb, run: h.lensFlare },
+        { id: "glow", label: "Glow", icon: Sparkles, run: h.glow },
+        { id: "chromatic", label: "Chromatic", icon: Aperture, run: h.chromatic },
+        { id: "gradient-map", label: "Gradient Map", icon: Droplet, run: h.gradientMap },
       ],
     },
     {

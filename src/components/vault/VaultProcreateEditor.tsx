@@ -36,6 +36,8 @@ import { applyAdjustments, type AdjustmentValues } from "@/lib/canvas/adjustment
 import { FilterGalleryModal } from "./FilterGalleryModal";
 import type { FilterPreset } from "@/lib/canvas/filter-presets";
 import { EffectsPreviewModal, EFFECT_PRESETS, type EffectPreviewConfig } from "./EffectsPreviewModal";
+import { GradientMapModal } from "./GradientMapModal";
+import { gradientMap as applyGradientMap, type Gradient } from "@/lib/canvas/gradient";
 
 type Props = {
   doc: DocumentData;
@@ -201,6 +203,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   });
   const [filterGallerySrc, setFilterGallerySrc] = useState<ImageData | null>(null);
   const [fxPreview, setFxPreview] = useState<{ src: ImageData; preset: EffectPreviewConfig } | null>(null);
+  const [gradSrc, setGradSrc] = useState<ImageData | null>(null);
 
   // Magic wand selection
   const [selection, setSelection] = useState<WandResult | null>(null);
@@ -1537,6 +1540,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     posterize:     () => runFilter((c) => PF.posterize(c, 4), "Posterize"),
     edge:          () => openFxPreview("edge"),
     grain:         () => openFxPreview("noise"),
+    glow:          () => openFxPreview("glow"),
+    chromatic:     () => openFxPreview("chromatic"),
+    gradientMap:   () => {
+      const ctx = ctxRef.current; if (!ctx) return;
+      setGradSrc(ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height));
+    },
     sepia:         () => runFilter(PF.sepia, "Sepia"),
     lensFlare:     () => runFilter((c) => PF.lensFlare(c), "Lens Flare"),
     smudge:        () => { setEliteTool("smudge"); toast.info("Smudge: drag to blend"); },
@@ -2449,6 +2458,26 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
               toast.success(`Filter: ${preset.name}`);
             }
             setFilterGallerySrc(null);
+          }}
+        />
+      )}
+
+      {/* Gradient Map — Photoshop-style color grading */}
+      {gradSrc && (
+        <GradientMapModal
+          source={gradSrc}
+          onClose={() => setGradSrc(null)}
+          onApply={(g: Gradient, mix: number) => {
+            const ctx = ctxRef.current;
+            if (ctx && gradSrc) {
+              const out = new ImageData(new Uint8ClampedArray(gradSrc.data), gradSrc.width, gradSrc.height);
+              try { applyGradientMap(out, g, mix); } catch (e) { console.error(e); }
+              ctx.putImageData(out, 0, 0);
+              pushUndo();
+              scheduleAutosave();
+              toast.success("Gradient Map");
+            }
+            setGradSrc(null);
           }}
         />
       )}
