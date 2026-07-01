@@ -36,6 +36,8 @@ import { applyAdjustments, type AdjustmentValues } from "@/lib/canvas/adjustment
 import { FilterGalleryModal } from "./FilterGalleryModal";
 import type { FilterPreset } from "@/lib/canvas/filter-presets";
 import { EffectsPreviewModal, EFFECT_PRESETS, type EffectPreviewConfig } from "./EffectsPreviewModal";
+import { GradientMapModal } from "./GradientMapModal";
+import { gradientMap as applyGradientMap, type Gradient } from "@/lib/canvas/gradient";
 
 type Props = {
   doc: DocumentData;
