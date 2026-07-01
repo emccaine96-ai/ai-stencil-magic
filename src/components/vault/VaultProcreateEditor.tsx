@@ -2233,6 +2233,49 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           onCancel={() => setCropRect(null)}
         />
       )}
+      {stencilPanelOpen && (
+        <div
+          className="absolute top-14 right-3 z-40 rounded-2xl border border-white/10 bg-[#0d0d0f]/95 shadow-2xl overflow-hidden flex flex-col"
+          style={{
+            width: 380,
+            maxHeight: "calc(100vh - 80px)",
+            backdropFilter: "blur(20px)",
+            boxShadow: "0 20px 60px -10px rgba(168,85,247,0.35)",
+          }}
+        >
+          <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+            <div className="flex items-center gap-2 text-[12px] font-semibold text-[#A855F7]">
+              <Wand2 size={14} /> Stencil Generator
+            </div>
+            <button
+              onClick={() => setStencilPanelOpen(false)}
+              className="p-1 rounded hover:bg-white/10"
+              aria-label="Close stencil panel"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="overflow-y-auto p-3">
+            <StencilGeneratorPanel
+              sourceCanvas={canvasRef.current}
+              onStencilReady={(out) => {
+                const ctx = ctxRef.current;
+                const canvas = canvasRef.current;
+                if (!ctx || !canvas) return;
+                pushHistory();
+                ctx.save();
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(out, 0, 0, canvas.width, canvas.height);
+                ctx.restore();
+                composite();
+                scheduleAutosave();
+                toast.success("Stencil applied to canvas");
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
