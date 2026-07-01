@@ -208,6 +208,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   /** Picsart-first shell. The Procreate engine columns are gated behind
    *  Draw mode and only mount when the user taps "Draw" in the dock. */
   const [drawMode, setDrawMode] = useState(false);
+  const [stencilPanelOpen, setStencilPanelOpen] = useState(false);
 
   /** Interactive crop overlay (in canvas-pixel coordinates). */
   const [cropRect, setCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
