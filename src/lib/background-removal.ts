@@ -16,7 +16,8 @@ export async function removeBackground(
 
   // Attempt to use @imgly/background-removal if installed at runtime.
   try {
-    const mod = await import(/* @vite-ignore */ "@imgly/background-removal");
+    const modName = "@imgly/background-removal";
+    const mod = await import(/* @vite-ignore */ modName);
     const removeBg = (mod as { removeBackground: (b: Blob) => Promise<Blob> }).removeBackground;
     const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Canvas to blob failed"))), "image/png");
