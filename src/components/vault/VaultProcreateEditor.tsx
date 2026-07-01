@@ -1014,15 +1014,30 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   function commitTextAdvanced(curved: boolean, radius: number) {
     if (!textPrompt || !textValue.trim()) { setTextPrompt(null); setTextValue(""); return; }
     const ctx = ctxRef.current!;
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.font = `bold ${textSize}px system-ui, -apple-system, sans-serif`;
-    ctx.textBaseline = "middle";
-    ctx.textAlign = "center";
     if (!curved) {
-      ctx.textBaseline = "top"; ctx.textAlign = "left";
-      ctx.fillText(textValue, textPrompt.x, textPrompt.y);
+      drawText(ctx, {
+        text: textValue,
+        x: textPrompt.x,
+        y: textPrompt.y,
+        size: textSize,
+        weight: 700,
+        color,
+        align: "left",
+        baseline: "top",
+        letterSpacing: textLetterSpacing,
+        stroke: textStrokeOn ? { color: textStrokeColor, width: textStrokeWidth } : null,
+      });
     } else {
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.font = `bold ${textSize}px system-ui, -apple-system, sans-serif`;
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "center";
+      if (textStrokeOn) {
+        ctx.strokeStyle = textStrokeColor;
+        ctx.lineWidth = textStrokeWidth;
+        ctx.lineJoin = "round";
+      }
       // Render each char around an arc centered at textPrompt.
       const cxA = textPrompt.x, cyA = textPrompt.y;
       const chars = [...textValue];
@@ -1033,12 +1048,13 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         ctx.save();
         ctx.translate(cxA + Math.cos(a) * radius, cyA + Math.sin(a) * radius);
         ctx.rotate(a + Math.PI / 2);
+        if (textStrokeOn) ctx.strokeText(ch, 0, 0);
         ctx.fillText(ch, 0, 0);
         ctx.restore();
         a += angleStep;
       }
+      ctx.restore();
     }
-    ctx.restore();
     pushUndo();
     setTextPrompt(null); setTextValue("");
     toast.success(curved ? "Curved text added" : "Text added");
@@ -1079,6 +1095,17 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     const ctx = ctxRef.current; const snap = preAdjustSnapshot.current;
     if (!ctx || !snap) return;
     if (!adjustPreview) { ctx.putImageData(snap, 0, 0); return; }
+    if (adjustTab === "photo") {
+      // Clone snapshot so the source stays clean across renders.
+      const copy = new ImageData(
+        new Uint8ClampedArray(snap.data),
+        snap.width,
+        snap.height,
+      );
+      applyAdjustments(copy, photoAdj);
+      ctx.putImageData(copy, 0, 0);
+      return;
+    }
     const lut = currentLUT();
     previewLUT.current = lut;
     const mask = selectionRef.current?.mask;
@@ -1090,7 +1117,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   useEffect(() => {
     if (showAdjust) renderAdjustPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showAdjust, adjustTab, curvePreset, levels, adjustPreview]);
+  }, [showAdjust, adjustTab, curvePreset, levels, adjustPreview, photoAdj]);
 
   function applyAdjust() {
     renderAdjustPreview();
