@@ -62,6 +62,9 @@ export type PicsartDockHandlers = {
   grain: () => void;
   sepia: () => void;
   lensFlare: () => void;
+  glow: () => void;
+  chromatic: () => void;
+  gradientMap: () => void;
   // retouch
   smudge: () => void;
   heal: () => void;
