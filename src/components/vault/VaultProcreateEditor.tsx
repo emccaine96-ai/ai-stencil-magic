@@ -150,6 +150,9 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [refLoaded, setRefLoaded] = useState(false);
   const [refOpacity, setRefOpacity] = useState(0.4);
   const [refVisible, setRefVisible] = useState(true);
+  // Step 2 — real layer opacity + blend mode for the stencil layer
+  const [stencilOpacity, setStencilOpacity] = useState(1);
+  const [stencilBlend, setStencilBlend] = useState<import("@/lib/canvas/blend-modes").BlendMode>("normal");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [savedAgo, setSavedAgo] = useState<number | null>(null);
   const autosaveDirty = useRef<boolean>(false);
