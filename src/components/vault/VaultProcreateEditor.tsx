@@ -29,6 +29,7 @@ import * as PF from "@/lib/picsart-filters";
 import { useNavigate } from "@tanstack/react-router";
 import { StencilGeneratorPanel } from "@/components/stencil-generator/StencilGeneratorPanel";
 import { BLEND_MODES } from "@/lib/canvas/blend-modes";
+import { floodFill } from "@/lib/canvas/flood-fill";
 
 type Props = {
   doc: DocumentData;
