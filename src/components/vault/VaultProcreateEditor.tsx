@@ -33,6 +33,8 @@ import { BLEND_MODES } from "@/lib/canvas/blend-modes";
 import { floodFill } from "@/lib/canvas/flood-fill";
 import { drawText } from "@/lib/canvas/text-tool";
 import { applyAdjustments, type AdjustmentValues } from "@/lib/canvas/adjustments";
+import { FilterGalleryModal } from "./FilterGalleryModal";
+import type { FilterPreset } from "@/lib/canvas/filter-presets";
 
 type Props = {
   doc: DocumentData;
@@ -196,6 +198,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     brightness: 0, contrast: 0, saturation: 0, exposure: 0,
     temperature: 0, tint: 0, hue: 0, vibrance: 0, gamma: 1,
   });
+  const [filterGallerySrc, setFilterGallerySrc] = useState<ImageData | null>(null);
 
   // Magic wand selection
   const [selection, setSelection] = useState<WandResult | null>(null);
@@ -1488,6 +1491,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
   const dockHandlers: PicsartDockHandlers = {
     openCrop:      () => openCropOverlay(),
+    openFilters:   () => {
+      const ctx = ctxRef.current; if (!ctx) return;
+      setFilterGallerySrc(ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height));
+    },
     setSelectionMode: () => { setEliteTool("wand"); toast.info("Magic Wand: tap an area to select"); },
     openAdjust:    openAdjust,
     enhance:       applyStencilOptimizer,
@@ -2380,6 +2387,35 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
       {/* Picsart-style horizontal dock — bottom of viewport */}
       <PicsartDock handlers={dockHandlers} hidden={fadeChrome} />
+
+      {/* Filter Gallery — one-tap presets */}
+      {filterGallerySrc && (
+        <FilterGalleryModal
+          source={filterGallerySrc}
+          onClose={() => {
+            // Restore original in case previews were painted onto the canvas
+            const ctx = ctxRef.current;
+            if (ctx && filterGallerySrc) ctx.putImageData(filterGallerySrc, 0, 0);
+            setFilterGallerySrc(null);
+          }}
+          onApply={(preset: FilterPreset) => {
+            const ctx = ctxRef.current;
+            if (ctx && filterGallerySrc) {
+              const out = new ImageData(
+                new Uint8ClampedArray(filterGallerySrc.data),
+                filterGallerySrc.width,
+                filterGallerySrc.height,
+              );
+              applyAdjustments(out, preset.values);
+              ctx.putImageData(out, 0, 0);
+              pushUndo();
+              scheduleAutosave();
+              toast.success(`Filter: ${preset.name}`);
+            }
+            setFilterGallerySrc(null);
+          }}
+        />
+      )}
 
       {/* Interactive crop overlay */}
       {cropRect && (

@@ -85,6 +85,7 @@ export type PicsartDockHandlers = {
   border: () => void;
   shape: () => void;
   mask: () => void;
+  openFilters?: () => void;
 };
 
 export function buildCategories(h: PicsartDockHandlers): DockCategory[] {
@@ -115,6 +116,7 @@ export function buildCategories(h: PicsartDockHandlers): DockCategory[] {
     {
       id: "effects", label: "Effects", icon: Sparkles,
       actions: [
+        ...(h.openFilters ? [{ id: "filters", label: "Filters", icon: Sparkle, run: h.openFilters }] : []),
         { id: "stencil-clean", label: "Stencil Clean", icon: Wand2, run: h.stencilClean },
         { id: "threshold", label: "Threshold", icon: Contrast, run: h.threshold },
         { id: "thermal-blue", label: "Thermal Blue", icon: Thermometer, run: h.thermalBlue },
