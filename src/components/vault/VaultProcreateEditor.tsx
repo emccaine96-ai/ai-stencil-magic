@@ -1584,6 +1584,13 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           }} />
           Autosave {autosave.enabled ? "On" : "Off"}
         </button>
+        <button
+          onClick={() => setStencilPanelOpen(s => !s)}
+          className={`px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border ${stencilPanelOpen ? "bg-[#A855F7]/20 text-[#A855F7] border-[#A855F7]/50" : "bg-white/5 text-neutral-300 border-white/10 hover:bg-white/10"}`}
+          title="Open Stencil Generator"
+        >
+          <Wand2 size={12} /> Stencil
+        </button>
         <button onClick={doUndo} disabled={!canUndo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Undo"><Undo2 size={18} /></button>
         <button onClick={doRedo} disabled={!canRedo} className="p-1.5 rounded hover:bg-white/10 disabled:opacity-30" aria-label="Redo"><Redo2 size={18} /></button>
         <button onClick={fitToScreen} className="p-1.5 rounded hover:bg-white/10" aria-label="Fit"><Maximize2 size={16} /></button>
