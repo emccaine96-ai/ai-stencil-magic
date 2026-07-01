@@ -35,6 +35,7 @@ import { drawText } from "@/lib/canvas/text-tool";
 import { applyAdjustments, type AdjustmentValues } from "@/lib/canvas/adjustments";
 import { FilterGalleryModal } from "./FilterGalleryModal";
 import type { FilterPreset } from "@/lib/canvas/filter-presets";
+import { EffectsPreviewModal, EFFECT_PRESETS, type EffectPreviewConfig } from "./EffectsPreviewModal";
 
 type Props = {
   doc: DocumentData;
