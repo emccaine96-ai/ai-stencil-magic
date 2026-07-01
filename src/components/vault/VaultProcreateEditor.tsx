@@ -200,6 +200,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     temperature: 0, tint: 0, hue: 0, vibrance: 0, gamma: 1,
   });
   const [filterGallerySrc, setFilterGallerySrc] = useState<ImageData | null>(null);
+  const [fxPreview, setFxPreview] = useState<{ src: ImageData; preset: EffectPreviewConfig } | null>(null);
 
   // Magic wand selection
   const [selection, setSelection] = useState<WandResult | null>(null);
