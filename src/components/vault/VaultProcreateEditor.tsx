@@ -35,6 +35,7 @@ import { drawText } from "@/lib/canvas/text-tool";
 import { applyAdjustments, type AdjustmentValues } from "@/lib/canvas/adjustments";
 import { FilterGalleryModal } from "./FilterGalleryModal";
 import type { FilterPreset } from "@/lib/canvas/filter-presets";
+import { EffectsPreviewModal, EFFECT_PRESETS, type EffectPreviewConfig } from "./EffectsPreviewModal";
 
 type Props = {
   doc: DocumentData;
@@ -199,6 +200,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     temperature: 0, tint: 0, hue: 0, vibrance: 0, gamma: 1,
   });
   const [filterGallerySrc, setFilterGallerySrc] = useState<ImageData | null>(null);
+  const [fxPreview, setFxPreview] = useState<{ src: ImageData; preset: EffectPreviewConfig } | null>(null);
 
   // Magic wand selection
   const [selection, setSelection] = useState<WandResult | null>(null);
@@ -1409,6 +1411,15 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     }
   }
 
+  /** Snapshot current canvas and open the Effects preview modal for a named effect. */
+  function openFxPreview(key: keyof typeof EFFECT_PRESETS) {
+    const ctx = ctxRef.current; if (!ctx) return;
+    const preset = EFFECT_PRESETS[key];
+    if (!preset) return;
+    const src = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+    setFxPreview({ src, preset });
+  }
+
   /** Open the interactive crop overlay sized to the current canvas. */
   function openCropOverlay() {
     const ctx = ctxRef.current; if (!ctx) return;
@@ -1518,14 +1529,14 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     threshold:     () => applyThreshold(128),
     thermalBlue:   applyThermalBlueCarbon,
     thermalPurple: applyThermal,
-    sharpen:       () => runFilter((c) => PF.sharpen(c, 1.4), "Sharpen"),
-    blur:          () => runFilter((c) => PF.gaussianBlur(c, 6), "Blur"),
-    vignette:      () => runFilter((c) => PF.vignette(c, 0.75), "Vignette"),
+    sharpen:       () => openFxPreview("sharpen"),
+    blur:          () => openFxPreview("blur"),
+    vignette:      () => openFxPreview("vignette"),
     halftone:      () => runFilter((c) => PF.halftone(c, 8), "Halftone"),
-    pixelate:      () => runFilter((c) => PF.pixelate(c, 14), "Pixelate"),
+    pixelate:      () => openFxPreview("pixelate"),
     posterize:     () => runFilter((c) => PF.posterize(c, 4), "Posterize"),
-    edge:          () => runFilter(PF.edgeDetect, "Edge Detect"),
-    grain:         () => runFilter((c) => PF.grain(c, 20), "Grain"),
+    edge:          () => openFxPreview("edge"),
+    grain:         () => openFxPreview("noise"),
     sepia:         () => runFilter(PF.sepia, "Sepia"),
     lensFlare:     () => runFilter((c) => PF.lensFlare(c), "Lens Flare"),
     smudge:        () => { setEliteTool("smudge"); toast.info("Smudge: drag to blend"); },
@@ -2387,6 +2398,31 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
       {/* Picsart-style horizontal dock — bottom of viewport */}
       <PicsartDock handlers={dockHandlers} hidden={fadeChrome} />
+
+      {/* Effects preview — single-slider live preview modal */}
+      {fxPreview && (
+        <EffectsPreviewModal
+          source={fxPreview.src}
+          preset={fxPreview.preset}
+          onClose={() => setFxPreview(null)}
+          onApply={(amount) => {
+            const ctx = ctxRef.current;
+            if (ctx && fxPreview) {
+              const out = new ImageData(
+                new Uint8ClampedArray(fxPreview.src.data),
+                fxPreview.src.width,
+                fxPreview.src.height,
+              );
+              try { fxPreview.preset.apply(out, amount); } catch (e) { console.error(e); }
+              ctx.putImageData(out, 0, 0);
+              pushUndo();
+              scheduleAutosave();
+              toast.success(fxPreview.preset.name);
+            }
+            setFxPreview(null);
+          }}
+        />
+      )}
 
       {/* Filter Gallery — one-tap presets */}
       {filterGallerySrc && (
