@@ -783,6 +783,27 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     setTool("brush");
   }
 
+  /** Bucket fill at screen point, using current stroke color + tolerance. */
+  function bucketAt(cx: number, cy: number, tolerance = BUCKET_DEFAULT_TOLERANCE) {
+    const ctx = ctxRef.current!;
+    const c = ctx.canvas;
+    const { x, y } = screenToCanvas(cx, cy);
+    const ix = Math.floor(x), iy = Math.floor(y);
+    if (ix < 0 || iy < 0 || ix >= c.width || iy >= c.height) return;
+    pushUndo();
+    const hex = color.replace("#", "");
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    const a = Math.round(Math.max(0, Math.min(1, opacity)) * 255);
+    const img = ctx.getImageData(0, 0, c.width, c.height);
+    const n = floodFill(img, ix, iy, { tolerance, color: [r, g, b, a] });
+    if (n === 0) { toast.info("Nothing to fill here"); return; }
+    ctx.putImageData(img, 0, 0);
+    scheduleAutosave();
+    toast.success(`Filled ${n.toLocaleString()} px`);
+  }
+
   // ===== Pro tools: resize, upscale, filters, clone stamp, text =============
 
   /** Resize the document canvas (both Stencil + Reference). Optionally rescales
