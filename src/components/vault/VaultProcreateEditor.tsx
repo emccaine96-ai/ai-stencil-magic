@@ -2262,13 +2262,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
                 const ctx = ctxRef.current;
                 const canvas = canvasRef.current;
                 if (!ctx || !canvas) return;
-                pushHistory();
+                pushUndo();
                 ctx.save();
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 ctx.drawImage(out, 0, 0, canvas.width, canvas.height);
                 ctx.restore();
-                composite();
                 scheduleAutosave();
                 toast.success("Stencil applied to canvas");
               }}
