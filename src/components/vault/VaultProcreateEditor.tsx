@@ -31,6 +31,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { StencilGeneratorPanel } from "@/components/stencil-generator/StencilGeneratorPanel";
 import { BLEND_MODES } from "@/lib/canvas/blend-modes";
 import { floodFill } from "@/lib/canvas/flood-fill";
+import { drawText } from "@/lib/canvas/text-tool";
+import { applyAdjustments, type AdjustmentValues } from "@/lib/canvas/adjustments";
 
 type Props = {
   doc: DocumentData;
