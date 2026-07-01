@@ -1811,6 +1811,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         <button onClick={() => setTool("pan")} className={`p-2 rounded ${tool === "pan" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Pan"><Hand size={16} className="mx-auto" /></button>
         <button onClick={() => { setTool("eraser"); setBrushId("eraser"); }} className={`p-2 rounded ${tool === "eraser" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Eraser"><Eraser size={16} className="mx-auto" /></button>
         <button onClick={() => setTool("eyedrop")} className={`p-2 rounded ${tool === "eyedrop" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Eyedropper"><Pipette size={16} className="mx-auto" /></button>
+        <button onClick={() => setTool("bucket")} className={`p-2 rounded ${tool === "bucket" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`} aria-label="Bucket fill"><PaintBucket size={16} className="mx-auto" /></button>
         <div className="mt-1">
           <div className="text-[8px] text-neutral-500 uppercase text-center">Size</div>
           <input type="range" min={1} max={200} value={size} onChange={e => setSize(+e.target.value)}
