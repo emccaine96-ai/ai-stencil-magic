@@ -2256,10 +2256,13 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
               <div className="ml-auto flex gap-1 text-[10px]">
                 <button onClick={() => setAdjustTab("curves")} className={`px-2 py-1 rounded ${adjustTab === "curves" ? "bg-white/10 text-white" : "text-neutral-400"}`}>Curves</button>
                 <button onClick={() => setAdjustTab("levels")} className={`px-2 py-1 rounded ${adjustTab === "levels" ? "bg-white/10 text-white" : "text-neutral-400"}`}>Levels</button>
+                <button onClick={() => setAdjustTab("photo")} className={`px-2 py-1 rounded ${adjustTab === "photo" ? "bg-white/10 text-white" : "text-neutral-400"}`}>Photo</button>
               </div>
             </div>
 
-            <AdjustHistogram src={preAdjustSnapshot.current} lut={currentLUT()} />
+            {adjustTab !== "photo" && (
+              <AdjustHistogram src={preAdjustSnapshot.current} lut={currentLUT()} />
+            )}
 
             {adjustTab === "curves" ? (
               <div className="space-y-2">
@@ -2273,7 +2276,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
                   ))}
                 </div>
               </div>
-            ) : (
+            ) : adjustTab === "levels" ? (
               <div className="space-y-2">
                 <div className="text-[10px] uppercase tracking-wider text-neutral-500">Preset</div>
                 <div className="flex flex-wrap gap-1">
@@ -2292,6 +2295,52 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
                   onChange={v => setLevels(l => ({ ...l, outBlack: v }))} />
                 <LevelRow label="Out White" min={1} max={255} value={levels.outWhite}
                   onChange={v => setLevels(l => ({ ...l, outWhite: v }))} />
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-[46vh] overflow-y-auto pr-1">
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] uppercase tracking-wider text-neutral-500">Photo adjust</div>
+                  <button
+                    onClick={() => setPhotoAdj({ brightness: 0, contrast: 0, saturation: 0, exposure: 0, temperature: 0, tint: 0, hue: 0, vibrance: 0, gamma: 1 })}
+                    className="text-[10px] px-2 py-0.5 rounded bg-black/30 hover:bg-white/10 border border-white/5">Reset</button>
+                </div>
+                {([
+                  ["brightness", "Brightness", -100, 100, 0],
+                  ["contrast", "Contrast", -100, 100, 0],
+                  ["exposure", "Exposure", -100, 100, 0],
+                  ["saturation", "Saturation", -100, 100, 0],
+                  ["vibrance", "Vibrance", -100, 100, 0],
+                  ["hue", "Hue", -180, 180, 0],
+                  ["temperature", "Warmth", -100, 100, 0],
+                  ["tint", "Tint", -100, 100, 0],
+                ] as const).map(([key, label, min, max, def]) => (
+                  <div key={key} className="flex items-center gap-2 text-[10px] text-neutral-300">
+                    <span className="w-16 text-neutral-400">{label}</span>
+                    <input type="range" min={min} max={max} value={(photoAdj[key] ?? def) as number}
+                      onChange={e => setPhotoAdj(p => ({ ...p, [key]: +e.target.value }))}
+                      onDoubleClick={() => setPhotoAdj(p => ({ ...p, [key]: def }))}
+                      className="flex-1 accent-[#A855F7]" />
+                    <span className="w-10 text-right tabular-nums">{Math.round((photoAdj[key] ?? def) as number)}</span>
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 text-[10px] text-neutral-300">
+                  <span className="w-16 text-neutral-400">Gamma</span>
+                  <input type="range" min={10} max={300} value={Math.round((photoAdj.gamma ?? 1) * 100)}
+                    onChange={e => setPhotoAdj(p => ({ ...p, gamma: +e.target.value / 100 }))}
+                    onDoubleClick={() => setPhotoAdj(p => ({ ...p, gamma: 1 }))}
+                    className="flex-1 accent-[#A855F7]" />
+                  <span className="w-10 text-right tabular-nums">{(photoAdj.gamma ?? 1).toFixed(2)}</span>
+                </div>
+                <div className="flex gap-3 pt-1 text-[10px] text-neutral-300">
+                  <label className="flex items-center gap-1">
+                    <input type="checkbox" checked={!!photoAdj.grayscale}
+                      onChange={e => setPhotoAdj(p => ({ ...p, grayscale: e.target.checked }))} /> B&W
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <input type="checkbox" checked={!!photoAdj.invert}
+                      onChange={e => setPhotoAdj(p => ({ ...p, invert: e.target.checked }))} /> Invert
+                  </label>
+                </div>
               </div>
             )}
 
