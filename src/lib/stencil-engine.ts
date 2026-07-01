@@ -2,9 +2,12 @@
 // AI stencil generation pipeline; these are pure client-side post-process
 // helpers callable from the vault editor / export flows.
 
+export type EdgeMode = "threshold" | "sobel" | "combined" | "canny";
+
 export interface StencilOptions {
   threshold: number;        // 0-255, default 128
   edgeSensitivity: number;  // 0-100, default 50
+  edgeMode: EdgeMode;
   lineThickness: number;    // 1-10, default 2
   noiseReduction: number;   // 0-10, default 3
   smoothing: number;        // 0-10, default 3
@@ -22,18 +25,19 @@ export type StencilPreset =
   | "custom";
 
 export const STENCIL_PRESETS: Record<StencilPreset, Partial<StencilOptions>> = {
-  tattoo:    { threshold: 140, edgeSensitivity: 70, lineThickness: 2, noiseReduction: 4, smoothing: 4 },
-  streetart: { threshold: 110, edgeSensitivity: 40, lineThickness: 5, noiseReduction: 2, smoothing: 2 },
-  fineline:  { threshold: 160, edgeSensitivity: 90, lineThickness: 1, noiseReduction: 5, smoothing: 6 },
-  craft:     { threshold: 120, edgeSensitivity: 50, lineThickness: 4, noiseReduction: 3, smoothing: 3 },
-  bold:      { threshold: 100, edgeSensitivity: 30, lineThickness: 8, noiseReduction: 2, smoothing: 1 },
-  procreate: { threshold: 150, edgeSensitivity: 80, lineThickness: 1, noiseReduction: 6, smoothing: 7 },
-  custom:    { threshold: 128, edgeSensitivity: 50, lineThickness: 2, noiseReduction: 3, smoothing: 3 },
+  tattoo:    { threshold: 140, edgeSensitivity: 72, edgeMode: "combined", lineThickness: 2, noiseReduction: 4, smoothing: 4 },
+  streetart: { threshold: 110, edgeSensitivity: 40, edgeMode: "threshold", lineThickness: 5, noiseReduction: 2, smoothing: 2 },
+  fineline:  { threshold: 160, edgeSensitivity: 90, edgeMode: "sobel", lineThickness: 1, noiseReduction: 5, smoothing: 6 },
+  craft:     { threshold: 120, edgeSensitivity: 40, edgeMode: "threshold", lineThickness: 4, noiseReduction: 3, smoothing: 3 },
+  bold:      { threshold: 100, edgeSensitivity: 30, edgeMode: "threshold", lineThickness: 8, noiseReduction: 2, smoothing: 1 },
+  procreate: { threshold: 150, edgeSensitivity: 88, edgeMode: "sobel", lineThickness: 1, noiseReduction: 6, smoothing: 7 },
+  custom:    { threshold: 128, edgeSensitivity: 50, edgeMode: "combined", lineThickness: 2, noiseReduction: 3, smoothing: 3 },
 };
 
 export const DEFAULT_STENCIL_OPTIONS: StencilOptions = {
   threshold: 128,
   edgeSensitivity: 50,
+  edgeMode: "combined",
   lineThickness: 2,
   noiseReduction: 3,
   smoothing: 3,
@@ -55,34 +59,69 @@ export function applyThreshold(imageData: ImageData, threshold: number): ImageDa
   return new ImageData(data, imageData.width, imageData.height);
 }
 
-/** Sobel edge detector — outline extraction. */
-export function applySobelEdge(imageData: ImageData, sensitivity: number): ImageData {
-  const width = imageData.width;
-  const height = imageData.height;
+/*
+Add the exact applySobelEdge implementation requested by the prompt.
+*/
+export function applySobelEdge(
+  imageData: ImageData,
+  sensitivity: number
+): ImageData {
+  const { width, height } = imageData;
   const src = imageData.data;
-  const output = new Uint8ClampedArray(src.length);
-  const scale = sensitivity / 100;
+  const output = new Uint8ClampedArray(src.length).fill(255);
+  const scale = 0.3 + (sensitivity / 100) * 2.2;
 
   for (let y = 1; y < height - 1; y++) {
     for (let x = 1; x < width - 1; x++) {
       const idx = (y * width + x) * 4;
-      const getGray = (dx: number, dy: number) => {
+
+      const luma = (dx: number, dy: number): number => {
         const i = ((y + dy) * width + (x + dx)) * 4;
         return src[i] * 0.299 + src[i + 1] * 0.587 + src[i + 2] * 0.114;
       };
+
       const gx =
-        -getGray(-1, -1) - 2 * getGray(-1, 0) - getGray(-1, 1) +
-         getGray(1, -1) + 2 * getGray(1, 0) + getGray(1, 1);
+        -1 * luma(-1, -1) + -2 * luma(-1, 0) + -1 * luma(-1, 1) +
+         1 * luma( 1, -1) +  2 * luma( 1, 0) +  1 * luma( 1, 1);
+
       const gy =
-        -getGray(-1, -1) - 2 * getGray(0, -1) - getGray(1, -1) +
-         getGray(-1, 1) + 2 * getGray(0, 1) + getGray(1, 1);
+        -1 * luma(-1, -1) + -2 * luma(0, -1) + -1 * luma(1, -1) +
+         1 * luma(-1,  1) +  2 * luma(0,  1) +  1 * luma(1,  1);
+
       const magnitude = Math.min(255, Math.sqrt(gx * gx + gy * gy) * scale);
-      const val = magnitude > 30 ? 0 : 255;
-      output[idx] = output[idx + 1] = output[idx + 2] = val;
+      const val = magnitude > 20 ? 0 : 255;
+
+      output[idx]     = val;
+      output[idx + 1] = val;
+      output[idx + 2] = val;
       output[idx + 3] = val === 0 ? 255 : 0;
     }
   }
+
   return new ImageData(output, width, height);
+}
+
+export function applyCombinedEdge(
+  imageData: ImageData,
+  threshold: number,
+  sensitivity: number
+): ImageData {
+  const threshResult = applyThreshold(imageData, threshold);
+  const sobelResult  = applySobelEdge(imageData, sensitivity);
+  const output = new Uint8ClampedArray(imageData.data.length).fill(255);
+
+  for (let i = 0; i < output.length; i += 4) {
+    const blackFromThreshold = threshResult.data[i] === 0;
+    const blackFromSobel     = sobelResult.data[i]  === 0;
+    const isBlack = blackFromThreshold || blackFromSobel;
+
+    output[i]     = isBlack ? 0   : 255;
+    output[i + 1] = isBlack ? 0   : 255;
+    output[i + 2] = isBlack ? 0   : 255;
+    output[i + 3] = isBlack ? 255 : 0;
+  }
+
+  return new ImageData(output, imageData.width, imageData.height);
 }
 
 /** Gaussian blur via native canvas filter — cheap & GPU-accelerated. */
@@ -177,10 +216,39 @@ export async function processStencil(
     imageData = applyGaussianBlur(imageData, options.smoothing);
   }
 
-  if (options.edgeSensitivity > 60) {
-    imageData = applySobelEdge(imageData, options.edgeSensitivity);
-  } else {
-    imageData = applyThreshold(imageData, options.threshold);
+  // Edge mode switch — use edgeMode + edgeSensitivity when available
+  switch (options.edgeMode) {
+    case "sobel":
+      imageData = applySobelEdge(
+        imageData,
+        options.edgeSensitivity ?? 65
+      );
+      break;
+
+    case "canny":
+      // Canny = blur first then sobel for thinner cleaner lines
+      imageData = applyGaussianBlur(imageData, 1.5);
+      imageData = applySobelEdge(
+        imageData,
+        (options.edgeSensitivity ?? 65) * 1.1
+      );
+      break;
+
+    case "combined":
+      imageData = applyCombinedEdge(
+        imageData,
+        options.threshold ?? 128,
+        options.edgeSensitivity ?? 65
+      );
+      break;
+
+    case "threshold":
+    default:
+      imageData = applyThreshold(
+        imageData,
+        options.threshold ?? 128
+      );
+      break;
   }
 
   if (options.lineThickness > 1) {
@@ -237,10 +305,7 @@ export function canvasToSVG(canvas: HTMLCanvasElement): string {
     }
   }
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <g fill="black">${paths}</g>
-</svg>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">\n   <g fill="black">${paths}</g>\n </svg>`;
 }
 
 // --- Color layer separation -------------------------------------------------
