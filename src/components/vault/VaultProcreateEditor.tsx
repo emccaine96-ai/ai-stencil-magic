@@ -2399,6 +2399,31 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       {/* Picsart-style horizontal dock — bottom of viewport */}
       <PicsartDock handlers={dockHandlers} hidden={fadeChrome} />
 
+      {/* Effects preview — single-slider live preview modal */}
+      {fxPreview && (
+        <EffectsPreviewModal
+          source={fxPreview.src}
+          preset={fxPreview.preset}
+          onClose={() => setFxPreview(null)}
+          onApply={(amount) => {
+            const ctx = ctxRef.current;
+            if (ctx && fxPreview) {
+              const out = new ImageData(
+                new Uint8ClampedArray(fxPreview.src.data),
+                fxPreview.src.width,
+                fxPreview.src.height,
+              );
+              try { fxPreview.preset.apply(out, amount); } catch (e) { console.error(e); }
+              ctx.putImageData(out, 0, 0);
+              pushUndo();
+              scheduleAutosave();
+              toast.success(fxPreview.preset.name);
+            }
+            setFxPreview(null);
+          }}
+        />
+      )}
+
       {/* Filter Gallery — one-tap presets */}
       {filterGallerySrc && (
         <FilterGalleryModal
