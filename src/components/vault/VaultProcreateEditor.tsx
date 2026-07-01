@@ -1523,7 +1523,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
             className="relative bg-white shadow-2xl"
             style={{
               imageRendering: view.scale > 2 ? "pixelated" : "auto",
-              mixBlendMode: refLoaded && refVisible ? "multiply" : "normal",
+              opacity: stencilOpacity,
+              mixBlendMode:
+                stencilBlend !== "source-over"
+                  ? (stencilBlend as React.CSSProperties["mixBlendMode"])
+                  : (refLoaded && refVisible ? "multiply" : "normal"),
             }}
           />
           {/* Selection overlay (cyan tint of mask) */}
