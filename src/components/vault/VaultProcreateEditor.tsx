@@ -28,6 +28,7 @@ import { PicsartDock, type PicsartDockHandlers } from "./PicsartDock";
 import * as PF from "@/lib/picsart-filters";
 import { useNavigate } from "@tanstack/react-router";
 import { StencilGeneratorPanel } from "@/components/stencil-generator/StencilGeneratorPanel";
+import { BLEND_MODES } from "@/lib/canvas/blend-modes";
 
 type Props = {
   doc: DocumentData;
@@ -150,6 +151,9 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [refLoaded, setRefLoaded] = useState(false);
   const [refOpacity, setRefOpacity] = useState(0.4);
   const [refVisible, setRefVisible] = useState(true);
+  // Step 2 — real layer opacity + blend mode for the stencil layer
+  const [stencilOpacity, setStencilOpacity] = useState(1);
+  const [stencilBlend, setStencilBlend] = useState<import("@/lib/canvas/blend-modes").BlendMode>("source-over");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [savedAgo, setSavedAgo] = useState<number | null>(null);
   const autosaveDirty = useRef<boolean>(false);
@@ -1520,7 +1524,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
             className="relative bg-white shadow-2xl"
             style={{
               imageRendering: view.scale > 2 ? "pixelated" : "auto",
-              mixBlendMode: refLoaded && refVisible ? "multiply" : "normal",
+              opacity: stencilOpacity,
+              mixBlendMode:
+                stencilBlend !== "source-over"
+                  ? (stencilBlend as React.CSSProperties["mixBlendMode"])
+                  : (refLoaded && refVisible ? "multiply" : "normal"),
             }}
           />
           {/* Selection overlay (cyan tint of mask) */}
@@ -1853,7 +1861,26 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
             <div className="rounded bg-black/30 border border-white/5 px-2 py-1.5">
               <div className="flex items-center gap-2 text-[11px] font-semibold">
                 <span className="w-2 h-2 rounded-full bg-[#00F5D4]" /> Layer 1 · Stencil
-                <span className="ml-auto text-[9px] text-neutral-500">trace</span>
+                <span className="ml-auto text-[9px] text-neutral-500">active</span>
+              </div>
+              <div className="mt-1.5 flex items-center gap-1">
+                <select
+                  value={stencilBlend}
+                  onChange={e => setStencilBlend(e.target.value as import("@/lib/canvas/blend-modes").BlendMode)}
+                  className="flex-1 bg-black/40 border border-white/10 rounded px-1.5 py-1 text-[10px] text-neutral-200"
+                  aria-label="Stencil blend mode"
+                >
+                  {BLEND_MODES.map(m => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="mt-1">
+                <input type="range" min={5} max={100} value={Math.round(stencilOpacity * 100)}
+                  onChange={e => setStencilOpacity(+e.target.value / 100)} className="w-full" />
+                <div className="text-[9px] text-neutral-500 text-center">
+                  Opacity {Math.round(stencilOpacity * 100)}%
+                </div>
               </div>
             </div>
             <div className="rounded bg-black/30 border border-white/5 px-2 py-1.5">
