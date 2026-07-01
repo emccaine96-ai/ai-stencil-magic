@@ -1202,6 +1202,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
     // Single pointer
     if (tool === "eyedrop") { eyedropAt(e.clientX, e.clientY); return; }
+    if (tool === "bucket") { bucketAt(e.clientX, e.clientY); return; }
     if (tool === "pan") { setIsInteracting(true); return; }
     if (eliteTool) {
       if (eliteTool === "wand") { pickWandAt(e.clientX, e.clientY); return; }
