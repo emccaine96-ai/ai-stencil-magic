@@ -5,6 +5,7 @@ import {
   ChevronRight, ChevronLeft, Settings2, Brush as BrushIcon, Minimize2, Wand2,
   Crop, Rocket, Type as TypeIcon, Stamp, Wand, Sliders, History, Activity,
   Pen, Check,
+  PaintBucket,
 } from "lucide-react";
 import { saveDocument, saveEditorState, type DocumentData, type EditorState, type LayerState } from "@/lib/localDB";
 import { runOp } from "@/lib/worker-bridge";
