@@ -179,15 +179,23 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [textPrompt, setTextPrompt] = useState<{ x: number; y: number } | null>(null);
   const [textValue, setTextValue] = useState("");
   const [textSize, setTextSize] = useState(72);
+  const [textLetterSpacing, setTextLetterSpacing] = useState(0);
+  const [textStrokeOn, setTextStrokeOn] = useState(false);
+  const [textStrokeWidth, setTextStrokeWidth] = useState(4);
+  const [textStrokeColor, setTextStrokeColor] = useState("#ffffff");
 
   // Curves/Levels modal + selection
   const [showAdjust, setShowAdjust] = useState(false);
-  const [adjustTab, setAdjustTab] = useState<"curves" | "levels">("curves");
+  const [adjustTab, setAdjustTab] = useState<"curves" | "levels" | "photo">("curves");
   const [curvePreset, setCurvePreset] = useState<keyof typeof CURVES_PRESETS>("Stencil Clean");
   const [levels, setLevels] = useState<LevelsParams>(LEVELS_PRESETS["Stencil Clean"]);
   const [adjustPreview, setAdjustPreview] = useState(true);
   const previewLUT = useRef<Uint8ClampedArray | null>(null);
   const preAdjustSnapshot = useRef<ImageData | null>(null);
+  const [photoAdj, setPhotoAdj] = useState<AdjustmentValues>({
+    brightness: 0, contrast: 0, saturation: 0, exposure: 0,
+    temperature: 0, tint: 0, hue: 0, vibrance: 0, gamma: 1,
+  });
 
   // Magic wand selection
   const [selection, setSelection] = useState<WandResult | null>(null);
