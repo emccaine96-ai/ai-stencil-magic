@@ -1860,7 +1860,26 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
             <div className="rounded bg-black/30 border border-white/5 px-2 py-1.5">
               <div className="flex items-center gap-2 text-[11px] font-semibold">
                 <span className="w-2 h-2 rounded-full bg-[#00F5D4]" /> Layer 1 · Stencil
-                <span className="ml-auto text-[9px] text-neutral-500">trace</span>
+                <span className="ml-auto text-[9px] text-neutral-500">active</span>
+              </div>
+              <div className="mt-1.5 flex items-center gap-1">
+                <select
+                  value={stencilBlend}
+                  onChange={e => setStencilBlend(e.target.value as import("@/lib/canvas/blend-modes").BlendMode)}
+                  className="flex-1 bg-black/40 border border-white/10 rounded px-1.5 py-1 text-[10px] text-neutral-200"
+                  aria-label="Stencil blend mode"
+                >
+                  {BLEND_MODES.map(m => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="mt-1">
+                <input type="range" min={5} max={100} value={Math.round(stencilOpacity * 100)}
+                  onChange={e => setStencilOpacity(+e.target.value / 100)} className="w-full" />
+                <div className="text-[9px] text-neutral-500 text-center">
+                  Opacity {Math.round(stencilOpacity * 100)}%
+                </div>
               </div>
             </div>
             <div className="rounded bg-black/30 border border-white/5 px-2 py-1.5">
