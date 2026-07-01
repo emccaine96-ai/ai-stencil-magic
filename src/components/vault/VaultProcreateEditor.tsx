@@ -2462,6 +2462,26 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         />
       )}
 
+      {/* Gradient Map — Photoshop-style color grading */}
+      {gradSrc && (
+        <GradientMapModal
+          source={gradSrc}
+          onClose={() => setGradSrc(null)}
+          onApply={(g: Gradient, mix: number) => {
+            const ctx = ctxRef.current;
+            if (ctx && gradSrc) {
+              const out = new ImageData(new Uint8ClampedArray(gradSrc.data), gradSrc.width, gradSrc.height);
+              try { applyGradientMap(out, g, mix); } catch (e) { console.error(e); }
+              ctx.putImageData(out, 0, 0);
+              pushUndo();
+              scheduleAutosave();
+              toast.success("Gradient Map");
+            }
+            setGradSrc(null);
+          }}
+        />
+      )}
+
       {/* Interactive crop overlay */}
       {cropRect && (
         <CropOverlay
