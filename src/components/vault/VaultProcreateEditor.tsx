@@ -27,6 +27,7 @@ import { AutosaveSettings } from "./AutosaveSettings";
 import { PicsartDock, type PicsartDockHandlers } from "./PicsartDock";
 import * as PF from "@/lib/picsart-filters";
 import { useNavigate } from "@tanstack/react-router";
+import { StencilGeneratorPanel } from "@/components/stencil-generator/StencilGeneratorPanel";
 
 type Props = {
   doc: DocumentData;
