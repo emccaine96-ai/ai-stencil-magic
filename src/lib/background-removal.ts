@@ -1,52 +1,57 @@
-// Lightweight client-side background remover — samples the 4 corners for a
-// dominant background color and knocks out similar pixels with a feathered
-// alpha falloff. Zero dependencies, runs instantly on any image. Not a
-// semantic segmenter — swap for @imgly/background-removal later if needed.
-
-export interface BgRemovalOptions {
-  tolerance?: number; // 0-255 color distance, default 32
-  feather?: number;   // 0-64 soft edge width, default 16
-}
-
-function sampleCornerColor(data: Uint8ClampedArray, w: number, h: number) {
-  const pts = [
-    [0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1],
-    [Math.floor(w / 2), 0], [Math.floor(w / 2), h - 1],
-    [0, Math.floor(h / 2)], [w - 1, Math.floor(h / 2)],
-  ];
-  let r = 0, g = 0, b = 0;
-  for (const [x, y] of pts) {
-    const i = (y * w + x) * 4;
-    r += data[i]; g += data[i + 1]; b += data[i + 2];
-  }
-  return [r / pts.length, g / pts.length, b / pts.length];
-}
+// Background removal — tries the @imgly/background-removal AI segmenter
+// first (if installed), falls back to a corner-sampled chroma-key. Accepts
+// either an <img> or a <canvas> so the studio and stencil panel can share
+// the same helper.
 
 export async function removeBackground(
-  image: HTMLImageElement | HTMLCanvasElement,
-  opts: BgRemovalOptions = {},
+  imageElement: HTMLImageElement | HTMLCanvasElement,
 ): Promise<HTMLCanvasElement> {
-  const tolerance = opts.tolerance ?? 32;
-  const feather = opts.feather ?? 16;
-  const w = "naturalWidth" in image ? image.naturalWidth : image.width;
-  const h = "naturalHeight" in image ? image.naturalHeight : image.height;
+  const w = "naturalWidth" in imageElement ? imageElement.naturalWidth : imageElement.width;
+  const h = "naturalHeight" in imageElement ? imageElement.naturalHeight : imageElement.height;
   const canvas = document.createElement("canvas");
-  canvas.width = w; canvas.height = h;
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(image as CanvasImageSource, 0, 0, w, h);
-  const img = ctx.getImageData(0, 0, w, h);
-  const d = img.data;
-  const [br, bg, bb] = sampleCornerColor(d, w, h);
-  for (let i = 0; i < d.length; i += 4) {
-    const dr = d[i] - br, dg = d[i + 1] - bg, db = d[i + 2] - bb;
-    const dist = Math.sqrt(dr * dr + dg * dg + db * db);
-    if (dist < tolerance) {
-      d[i + 3] = 0;
-    } else if (dist < tolerance + feather) {
-      const t = (dist - tolerance) / feather;
-      d[i + 3] = Math.round(d[i + 3] * t);
+  ctx.drawImage(imageElement as CanvasImageSource, 0, 0);
+
+  // Attempt to use @imgly/background-removal if installed at runtime.
+  try {
+    const modName = "@imgly/background-removal";
+    const mod = await import(/* @vite-ignore */ modName);
+    const removeBg = (mod as { removeBackground: (b: Blob) => Promise<Blob> }).removeBackground;
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Canvas to blob failed"))), "image/png");
+    });
+    const resultBlob = await removeBg(blob);
+    const url = URL.createObjectURL(resultBlob);
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Load failed"));
+      img.src = url;
+    });
+    const resultCanvas = document.createElement("canvas");
+    resultCanvas.width = img.naturalWidth;
+    resultCanvas.height = img.naturalHeight;
+    resultCanvas.getContext("2d")!.drawImage(img, 0, 0);
+    URL.revokeObjectURL(url);
+    return resultCanvas;
+  } catch {
+    // Fallback: chroma-key on the top-left corner pixel.
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    const bgR = data[0], bgG = data[1], bgB = data[2];
+    const tolerance = 30;
+    for (let i = 0; i < data.length; i += 4) {
+      if (
+        Math.abs(data[i] - bgR) < tolerance &&
+        Math.abs(data[i + 1] - bgG) < tolerance &&
+        Math.abs(data[i + 2] - bgB) < tolerance
+      ) {
+        data[i + 3] = 0;
+      }
     }
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
   }
-  ctx.putImageData(img, 0, 0);
-  return canvas;
 }
