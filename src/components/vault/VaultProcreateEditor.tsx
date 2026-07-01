@@ -1540,6 +1540,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     posterize:     () => runFilter((c) => PF.posterize(c, 4), "Posterize"),
     edge:          () => openFxPreview("edge"),
     grain:         () => openFxPreview("noise"),
+    glow:          () => openFxPreview("glow"),
+    chromatic:     () => openFxPreview("chromatic"),
+    gradientMap:   () => {
+      const ctx = ctxRef.current; if (!ctx) return;
+      setGradSrc(ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height));
+    },
     sepia:         () => runFilter(PF.sepia, "Sepia"),
     lensFlare:     () => runFilter((c) => PF.lensFlare(c), "Lens Flare"),
     smudge:        () => { setEliteTool("smudge"); toast.info("Smudge: drag to blend"); },
