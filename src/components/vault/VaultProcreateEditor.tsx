@@ -61,7 +61,8 @@ const PALETTE = [
   "#0284c7", "#2563eb", "#7c3aed", "#c026d3", "#db2777", "#9f1239", "#78350f",
 ];
 
-type Tool = "brush" | "eraser" | "pan" | "eyedrop";
+type Tool = "brush" | "eraser" | "pan" | "eyedrop" | "bucket";
+const BUCKET_DEFAULT_TOLERANCE = 32;
 type EliteTool = "smudge" | "liquify-push" | "liquify-inflate" | "liquify-deflate" | "stipple" | "clone" | "wand" | "heal";
 type Symmetry = "none" | "mirror-x" | "mirror-y" | "radial-8";
 
