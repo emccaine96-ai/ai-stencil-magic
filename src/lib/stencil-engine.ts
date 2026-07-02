@@ -7,12 +7,16 @@ export type EdgeMode = "threshold" | "sobel" | "combined" | "canny";
 export interface StencilOptions {
   threshold: number;        // 0-255, default 128
   edgeSensitivity: number;  // 0-100, default 50
-  edgeMode: EdgeMode;
+  edgeMode?: EdgeMode;
   lineThickness: number;    // 1-10, default 2
   noiseReduction: number;   // 0-10, default 3
   smoothing: number;        // 0-10, default 3
   invertColors: boolean;    // default false
   preset: StencilPreset;
+  /** -5 to +5 (negative = erode / thinner, positive = dilate / thicker). */
+  dilateErode?: number;
+  /** Close 1-2px gaps between edge segments (morphological close). */
+  bridgeGaps?: boolean;
 }
 
 export type StencilPreset =
@@ -22,16 +26,20 @@ export type StencilPreset =
   | "craft"
   | "bold"
   | "procreate"
+  | "watercolor"
+  | "sketch"
   | "custom";
 
 export const STENCIL_PRESETS: Record<StencilPreset, Partial<StencilOptions>> = {
-  tattoo:    { threshold: 140, edgeSensitivity: 72, edgeMode: "combined", lineThickness: 2, noiseReduction: 4, smoothing: 4 },
-  streetart: { threshold: 110, edgeSensitivity: 40, edgeMode: "threshold", lineThickness: 5, noiseReduction: 2, smoothing: 2 },
-  fineline:  { threshold: 160, edgeSensitivity: 90, edgeMode: "sobel", lineThickness: 1, noiseReduction: 5, smoothing: 6 },
-  craft:     { threshold: 120, edgeSensitivity: 40, edgeMode: "threshold", lineThickness: 4, noiseReduction: 3, smoothing: 3 },
-  bold:      { threshold: 100, edgeSensitivity: 30, edgeMode: "threshold", lineThickness: 8, noiseReduction: 2, smoothing: 1 },
-  procreate: { threshold: 150, edgeSensitivity: 88, edgeMode: "sobel", lineThickness: 1, noiseReduction: 6, smoothing: 7 },
-  custom:    { threshold: 128, edgeSensitivity: 50, edgeMode: "combined", lineThickness: 2, noiseReduction: 3, smoothing: 3 },
+  tattoo:     { threshold: 140, edgeSensitivity: 72, edgeMode: "combined", lineThickness: 2, noiseReduction: 4, smoothing: 4, bridgeGaps: true,  dilateErode: 0  },
+  streetart:  { threshold: 108, edgeSensitivity: 38, edgeMode: "threshold", lineThickness: 5, noiseReduction: 2, smoothing: 2, bridgeGaps: false, dilateErode: 1  },
+  fineline:   { threshold: 162, edgeSensitivity: 92, edgeMode: "sobel",    lineThickness: 1, noiseReduction: 5, smoothing: 6, bridgeGaps: true,  dilateErode: 0  },
+  craft:      { threshold: 120, edgeSensitivity: 50, edgeMode: "threshold", lineThickness: 4, noiseReduction: 3, smoothing: 3, bridgeGaps: false, dilateErode: 1  },
+  bold:       { threshold: 98,  edgeSensitivity: 28, edgeMode: "threshold", lineThickness: 8, noiseReduction: 2, smoothing: 1, bridgeGaps: false, dilateErode: 2  },
+  procreate:  { threshold: 152, edgeSensitivity: 88, edgeMode: "sobel",    lineThickness: 1, noiseReduction: 6, smoothing: 7, bridgeGaps: true,  dilateErode: 0  },
+  watercolor: { threshold: 172, edgeSensitivity: 58, edgeMode: "combined", lineThickness: 2, noiseReduction: 7, smoothing: 8, bridgeGaps: true,  dilateErode: -1 },
+  sketch:     { threshold: 128, edgeSensitivity: 98, edgeMode: "canny",    lineThickness: 1, noiseReduction: 2, smoothing: 2, bridgeGaps: false, dilateErode: 0  },
+  custom:     { threshold: 128, edgeSensitivity: 50, edgeMode: "combined", lineThickness: 2, noiseReduction: 3, smoothing: 3, bridgeGaps: false, dilateErode: 0  },
 };
 
 export const DEFAULT_STENCIL_OPTIONS: StencilOptions = {
@@ -43,7 +51,22 @@ export const DEFAULT_STENCIL_OPTIONS: StencilOptions = {
   smoothing: 3,
   invertColors: false,
   preset: "custom",
+  dilateErode: 0,
+  bridgeGaps: false,
 };
+
+/** Alias to match the newer public API (`DEFAULT_OPTIONS`). */
+export const DEFAULT_OPTIONS = DEFAULT_STENCIL_OPTIONS;
+
+/** Convert an RGB(A) image into pure grayscale (R=G=B=luma). */
+export function applyGrayscale(imageData: ImageData): ImageData {
+  const d = new Uint8ClampedArray(imageData.data);
+  for (let i = 0; i < d.length; i += 4) {
+    const g = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+    d[i] = d[i + 1] = d[i + 2] = g;
+  }
+  return new ImageData(d, imageData.width, imageData.height);
+}
 
 // --- Core pixel ops ---------------------------------------------------------
 
@@ -198,6 +221,53 @@ export function applyLineThickness(imageData: ImageData, radius: number): ImageD
   return new ImageData(out, width, height);
 }
 
+// --- Canny-style edge detection --------------------------------------------
+
+/** Blur → Sobel → despeckle: thinner, cleaner lines than raw Sobel. */
+export function applyCannyEdge(imageData: ImageData, sensitivity: number): ImageData {
+  const blurred = applyGaussianBlur(imageData, 1.5);
+  const edges = applySobelEdge(blurred, sensitivity * 1.05);
+  return applyNoiseReduction(edges, 2);
+}
+
+// --- Dilate / Erode (morphological) ----------------------------------------
+
+/** Positive amount = dilate (thicker lines); negative = erode (thinner). */
+export function applyDilateErode(imageData: ImageData, amount: number): ImageData {
+  if (!amount) return imageData;
+  const width = imageData.width;
+  const height = imageData.height;
+  const src = imageData.data;
+  const out = new Uint8ClampedArray(src.length);
+  const r = Math.min(5, Math.abs(Math.round(amount)));
+  const dilate = amount > 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let hit = dilate ? false : true;
+      for (let dy = -r; dy <= r; dy++) {
+        const yy = y + dy; if (yy < 0 || yy >= height) continue;
+        for (let dx = -r; dx <= r; dx++) {
+          if (dx * dx + dy * dy > r * r) continue;
+          const xx = x + dx; if (xx < 0 || xx >= width) continue;
+          const isBlack = src[(yy * width + xx) * 4] === 0;
+          if (dilate && isBlack) { hit = true; }
+          if (!dilate && !isBlack) { hit = false; }
+        }
+      }
+      const o = (y * width + x) * 4;
+      const v = hit ? 0 : 255;
+      out[o] = out[o + 1] = out[o + 2] = v;
+      out[o + 3] = v === 0 ? 255 : 0;
+    }
+  }
+  return new ImageData(out, width, height);
+}
+
+/** Morphological CLOSE (dilate → erode) to bridge 1-2px broken edges. */
+export function bridgeGaps(imageData: ImageData): ImageData {
+  return applyDilateErode(applyDilateErode(imageData, 1), -1);
+}
+
 // --- Pipeline ---------------------------------------------------------------
 
 export async function processStencil(
@@ -226,12 +296,7 @@ export async function processStencil(
       break;
 
     case "canny":
-      // Canny = blur first then sobel for thinner cleaner lines
-      imageData = applyGaussianBlur(imageData, 1.5);
-      imageData = applySobelEdge(
-        imageData,
-        (options.edgeSensitivity ?? 65) * 1.1
-      );
+      imageData = applyCannyEdge(imageData, options.edgeSensitivity ?? 65);
       break;
 
     case "combined":
@@ -249,6 +314,14 @@ export async function processStencil(
         options.threshold ?? 128
       );
       break;
+  }
+
+  if (options.bridgeGaps) {
+    imageData = bridgeGaps(imageData);
+  }
+
+  if (options.dilateErode && options.dilateErode !== 0) {
+    imageData = applyDilateErode(imageData, options.dilateErode);
   }
 
   if (options.lineThickness > 1) {
