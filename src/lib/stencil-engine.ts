@@ -221,6 +221,53 @@ export function applyLineThickness(imageData: ImageData, radius: number): ImageD
   return new ImageData(out, width, height);
 }
 
+// --- Canny-style edge detection --------------------------------------------
+
+/** Blur → Sobel → despeckle: thinner, cleaner lines than raw Sobel. */
+export function applyCannyEdge(imageData: ImageData, sensitivity: number): ImageData {
+  const blurred = applyGaussianBlur(imageData, 1.5);
+  const edges = applySobelEdge(blurred, sensitivity * 1.05);
+  return applyNoiseReduction(edges, 2);
+}
+
+// --- Dilate / Erode (morphological) ----------------------------------------
+
+/** Positive amount = dilate (thicker lines); negative = erode (thinner). */
+export function applyDilateErode(imageData: ImageData, amount: number): ImageData {
+  if (!amount) return imageData;
+  const width = imageData.width;
+  const height = imageData.height;
+  const src = imageData.data;
+  const out = new Uint8ClampedArray(src.length);
+  const r = Math.min(5, Math.abs(Math.round(amount)));
+  const dilate = amount > 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let hit = dilate ? false : true;
+      for (let dy = -r; dy <= r; dy++) {
+        const yy = y + dy; if (yy < 0 || yy >= height) continue;
+        for (let dx = -r; dx <= r; dx++) {
+          if (dx * dx + dy * dy > r * r) continue;
+          const xx = x + dx; if (xx < 0 || xx >= width) continue;
+          const isBlack = src[(yy * width + xx) * 4] === 0;
+          if (dilate && isBlack) { hit = true; }
+          if (!dilate && !isBlack) { hit = false; }
+        }
+      }
+      const o = (y * width + x) * 4;
+      const v = hit ? 0 : 255;
+      out[o] = out[o + 1] = out[o + 2] = v;
+      out[o + 3] = v === 0 ? 255 : 0;
+    }
+  }
+  return new ImageData(out, width, height);
+}
+
+/** Morphological CLOSE (dilate → erode) to bridge 1-2px broken edges. */
+export function bridgeGaps(imageData: ImageData): ImageData {
+  return applyDilateErode(applyDilateErode(imageData, 1), -1);
+}
+
 // --- Pipeline ---------------------------------------------------------------
 
 export async function processStencil(
@@ -249,12 +296,7 @@ export async function processStencil(
       break;
 
     case "canny":
-      // Canny = blur first then sobel for thinner cleaner lines
-      imageData = applyGaussianBlur(imageData, 1.5);
-      imageData = applySobelEdge(
-        imageData,
-        (options.edgeSensitivity ?? 65) * 1.1
-      );
+      imageData = applyCannyEdge(imageData, options.edgeSensitivity ?? 65);
       break;
 
     case "combined":
@@ -272,6 +314,14 @@ export async function processStencil(
         options.threshold ?? 128
       );
       break;
+  }
+
+  if (options.bridgeGaps) {
+    imageData = bridgeGaps(imageData);
+  }
+
+  if (options.dilateErode && options.dilateErode !== 0) {
+    imageData = applyDilateErode(imageData, options.dilateErode);
   }
 
   if (options.lineThickness > 1) {
