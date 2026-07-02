@@ -29,6 +29,8 @@ const PRESETS: { value: StencilPreset; label: string; description: string; emoji
   { value: "craft",     label: "Craft",      description: "Cricut & Silhouette ready",   emoji: "✂️" },
   { value: "bold",      label: "Bold",       description: "Thick lines, simple shapes",  emoji: "💪" },
   { value: "procreate", label: "Procreate",  description: "Digital art ready",           emoji: "📱" },
+  { value: "watercolor",label: "Watercolor", description: "Soft edges, painterly feel",  emoji: "🎭" },
+  { value: "sketch",    label: "Sketch",     description: "Pencil-thin Canny edges",     emoji: "🖊️" },
 ];
 
 const DPI_OPTIONS = [72, 150, 300, 600];
