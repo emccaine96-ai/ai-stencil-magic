@@ -7,12 +7,16 @@ export type EdgeMode = "threshold" | "sobel" | "combined" | "canny";
 export interface StencilOptions {
   threshold: number;        // 0-255, default 128
   edgeSensitivity: number;  // 0-100, default 50
-  edgeMode: EdgeMode;
+  edgeMode?: EdgeMode;
   lineThickness: number;    // 1-10, default 2
   noiseReduction: number;   // 0-10, default 3
   smoothing: number;        // 0-10, default 3
   invertColors: boolean;    // default false
   preset: StencilPreset;
+  /** -5 to +5 (negative = erode / thinner, positive = dilate / thicker). */
+  dilateErode?: number;
+  /** Close 1-2px gaps between edge segments (morphological close). */
+  bridgeGaps?: boolean;
 }
 
 export type StencilPreset =
@@ -22,16 +26,20 @@ export type StencilPreset =
   | "craft"
   | "bold"
   | "procreate"
+  | "watercolor"
+  | "sketch"
   | "custom";
 
 export const STENCIL_PRESETS: Record<StencilPreset, Partial<StencilOptions>> = {
-  tattoo:    { threshold: 140, edgeSensitivity: 72, edgeMode: "combined", lineThickness: 2, noiseReduction: 4, smoothing: 4 },
-  streetart: { threshold: 110, edgeSensitivity: 40, edgeMode: "threshold", lineThickness: 5, noiseReduction: 2, smoothing: 2 },
-  fineline:  { threshold: 160, edgeSensitivity: 90, edgeMode: "sobel", lineThickness: 1, noiseReduction: 5, smoothing: 6 },
-  craft:     { threshold: 120, edgeSensitivity: 40, edgeMode: "threshold", lineThickness: 4, noiseReduction: 3, smoothing: 3 },
-  bold:      { threshold: 100, edgeSensitivity: 30, edgeMode: "threshold", lineThickness: 8, noiseReduction: 2, smoothing: 1 },
-  procreate: { threshold: 150, edgeSensitivity: 88, edgeMode: "sobel", lineThickness: 1, noiseReduction: 6, smoothing: 7 },
-  custom:    { threshold: 128, edgeSensitivity: 50, edgeMode: "combined", lineThickness: 2, noiseReduction: 3, smoothing: 3 },
+  tattoo:     { threshold: 140, edgeSensitivity: 72, edgeMode: "combined", lineThickness: 2, noiseReduction: 4, smoothing: 4, bridgeGaps: true,  dilateErode: 0  },
+  streetart:  { threshold: 108, edgeSensitivity: 38, edgeMode: "threshold", lineThickness: 5, noiseReduction: 2, smoothing: 2, bridgeGaps: false, dilateErode: 1  },
+  fineline:   { threshold: 162, edgeSensitivity: 92, edgeMode: "sobel",    lineThickness: 1, noiseReduction: 5, smoothing: 6, bridgeGaps: true,  dilateErode: 0  },
+  craft:      { threshold: 120, edgeSensitivity: 50, edgeMode: "threshold", lineThickness: 4, noiseReduction: 3, smoothing: 3, bridgeGaps: false, dilateErode: 1  },
+  bold:       { threshold: 98,  edgeSensitivity: 28, edgeMode: "threshold", lineThickness: 8, noiseReduction: 2, smoothing: 1, bridgeGaps: false, dilateErode: 2  },
+  procreate:  { threshold: 152, edgeSensitivity: 88, edgeMode: "sobel",    lineThickness: 1, noiseReduction: 6, smoothing: 7, bridgeGaps: true,  dilateErode: 0  },
+  watercolor: { threshold: 172, edgeSensitivity: 58, edgeMode: "combined", lineThickness: 2, noiseReduction: 7, smoothing: 8, bridgeGaps: true,  dilateErode: -1 },
+  sketch:     { threshold: 128, edgeSensitivity: 98, edgeMode: "canny",    lineThickness: 1, noiseReduction: 2, smoothing: 2, bridgeGaps: false, dilateErode: 0  },
+  custom:     { threshold: 128, edgeSensitivity: 50, edgeMode: "combined", lineThickness: 2, noiseReduction: 3, smoothing: 3, bridgeGaps: false, dilateErode: 0  },
 };
 
 export const DEFAULT_STENCIL_OPTIONS: StencilOptions = {
@@ -43,7 +51,22 @@ export const DEFAULT_STENCIL_OPTIONS: StencilOptions = {
   smoothing: 3,
   invertColors: false,
   preset: "custom",
+  dilateErode: 0,
+  bridgeGaps: false,
 };
+
+/** Alias to match the newer public API (`DEFAULT_OPTIONS`). */
+export const DEFAULT_OPTIONS = DEFAULT_STENCIL_OPTIONS;
+
+/** Convert an RGB(A) image into pure grayscale (R=G=B=luma). */
+export function applyGrayscale(imageData: ImageData): ImageData {
+  const d = new Uint8ClampedArray(imageData.data);
+  for (let i = 0; i < d.length; i += 4) {
+    const g = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+    d[i] = d[i + 1] = d[i + 2] = g;
+  }
+  return new ImageData(d, imageData.width, imageData.height);
+}
 
 // --- Core pixel ops ---------------------------------------------------------
 
