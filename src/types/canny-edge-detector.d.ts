@@ -1,0 +1,1 @@
+declare module "canny-edge-detector";
