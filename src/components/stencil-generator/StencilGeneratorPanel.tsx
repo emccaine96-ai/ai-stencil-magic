@@ -16,6 +16,7 @@ import {
   type StencilOptions, type StencilPreset,
 } from "@/lib/stencil-engine";
 import { removeBackground } from "@/lib/background-removal";
+import { runProOp, type StencilColorKey, type StencilStyle } from "@/lib/stencil-pro-bridge";
 
 interface StencilGeneratorPanelProps {
   sourceCanvas?: HTMLCanvasElement | null;
@@ -53,6 +54,12 @@ export function StencilGeneratorPanel({ sourceCanvas, onStencilReady }: StencilG
   const [selectedDPI, setSelectedDPI] = useState(300);
   const [activeTab, setActiveTab] = useState("generate");
 
+  // Pro pipeline (Sobel + Canny + ML + adaptive threshold + stipple)
+  const [proEnabled, setProEnabled] = useState(false);
+  const [proUseML, setProUseML] = useState(true);
+  const [proStyle, setProStyle] = useState<StencilStyle>("edge");
+  const [proColorKey, setProColorKey] = useState<StencilColorKey>("purple");
+
   const previewRef = useRef<HTMLCanvasElement>(null);
   const originalPreviewRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -78,7 +85,36 @@ export function StencilGeneratorPanel({ sourceCanvas, onStencilReady }: StencilG
     if (!workingCanvas) { toast.error("Please upload an image first"); return; }
     setIsProcessing(true);
     try {
-      const result = await processStencil(workingCanvas, options);
+      let result: HTMLCanvasElement;
+      if (proEnabled) {
+        const src = workingCanvas.getContext("2d")!.getImageData(0, 0, workingCanvas.width, workingCanvas.height);
+        const res = await runProOp({
+          op: "combined",
+          data: src,
+          useML: proUseML,
+          style: proStyle,
+          colorKey: proColorKey,
+          sigma: 1.0,
+          blurIterations: 1,
+          blockSize: 11,
+          C: 8,
+          smooth: true,
+          toneStrength: 1.2,
+          lowThreshold: 40,
+          highThreshold: 120,
+          stippleDensity: 0.55,
+          hatchAngle: 45,
+          useErrorDiff: true,
+          tolerance: 30,
+        });
+        if (!res.ok || !res.data) throw new Error(res.error ?? "pro pipeline failed");
+        result = document.createElement("canvas");
+        result.width = res.data.width;
+        result.height = res.data.height;
+        result.getContext("2d")!.putImageData(res.data, 0, 0);
+      } else {
+        result = await processStencil(workingCanvas, options);
+      }
       setResultCanvas(result);
       if (previewRef.current) {
         previewRef.current.width = result.width;
@@ -87,12 +123,13 @@ export function StencilGeneratorPanel({ sourceCanvas, onStencilReady }: StencilG
       }
       onStencilReady?.(result);
       toast.success("Stencil generated!");
-    } catch {
+    } catch (err) {
+      console.error("[stencil]", err);
       toast.error("Generation failed. Please try again.");
     } finally {
       setIsProcessing(false);
     }
-  }, [workingCanvas, options, onStencilReady]);
+  }, [workingCanvas, options, onStencilReady, proEnabled, proUseML, proStyle, proColorKey]);
 
   const handleRemoveBackground = useCallback(async () => {
     if (!workingCanvas) { toast.error("Upload an image first"); return; }
@@ -196,6 +233,41 @@ export function StencilGeneratorPanel({ sourceCanvas, onStencilReady }: StencilG
         </TabsList>
 
         <TabsContent value="generate" className="flex flex-col gap-4 mt-4">
+          <div className="rounded-lg border border-primary/40 bg-primary/5 p-3 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm font-medium">Pro Pipeline</Label>
+                <p className="text-xs text-muted-foreground">Sobel + Canny + ML + adaptive threshold</p>
+              </div>
+              <Switch checked={proEnabled} onCheckedChange={setProEnabled} />
+            </div>
+            {proEnabled && (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Use ML (MediaPipe subject isolation)</Label>
+                  <Switch checked={proUseML} onCheckedChange={setProUseML} />
+                </div>
+                <div className="flex gap-2">
+                  {(["edge", "tonal"] as StencilStyle[]).map((s) => (
+                    <button key={s} onClick={() => setProStyle(s)}
+                      className={`flex-1 py-1.5 rounded-md text-xs border ${proStyle === s ? "border-primary bg-primary/10 text-primary" : "border-border"}`}>
+                      {s === "edge" ? "Edge (Sobel+Canny)" : "Tonal (Stipple)"}
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {(["purple","deepPurple","violet","black","blue"] as StencilColorKey[]).map((k) => (
+                    <button key={k} onClick={() => setProColorKey(k)}
+                      title={k}
+                      className={`h-7 rounded border-2 ${proColorKey === k ? "border-primary" : "border-transparent"}`}
+                      style={{ background: k === "purple" ? "rgb(112,0,200)" : k === "deepPurple" ? "rgb(75,0,150)" : k === "violet" ? "rgb(148,0,211)" : k === "black" ? "rgb(20,0,20)" : "rgb(0,40,180)" }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div>
             <Label className="text-sm font-medium mb-2 block">Style Preset</Label>
             <div className="grid grid-cols-3 gap-2">
