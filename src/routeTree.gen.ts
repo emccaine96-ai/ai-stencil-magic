@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as PluginsRouteImport } from './routes/plugins'
+import { Route as McpRouteImport } from './routes/mcp'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as CreateRouteImport } from './routes/create'
@@ -21,6 +22,9 @@ import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as GalleryPostIdRouteImport } from './routes/gallery.$postId'
 import { Route as ApiGenerateStencilRouteImport } from './routes/api/generate-stencil'
 import { Route as ApiAiCopilotRouteImport } from './routes/api/ai-copilot'
+import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
+import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
+import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 
 const VaultRoute = VaultRouteImport.update({
   id: '/vault',
@@ -30,6 +34,11 @@ const VaultRoute = VaultRouteImport.update({
 const PluginsRoute = PluginsRouteImport.update({
   id: '/plugins',
   path: '/plugins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HelpRoute = HelpRouteImport.update({
@@ -82,6 +91,24 @@ const ApiAiCopilotRoute = ApiAiCopilotRouteImport.update({
   path: '/api/ai-copilot',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Char91DotwellKnownChar93OauthProtectedResourceRoute =
+  Char91DotwellKnownChar93OauthProtectedResourceRouteImport.update({
+    id: '/.well-known/oauth-protected-resource',
+    path: '/.well-known/oauth-protected-resource',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const Char91DotmcpChar93ListToolsRoute =
+  Char91DotmcpChar93ListToolsRouteImport.update({
+    id: '/.mcp/list-tools',
+    path: '/.mcp/list-tools',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const Char91DotmcpChar93InvokeToolToolRoute =
+  Char91DotmcpChar93InvokeToolToolRouteImport.update({
+    id: '/.mcp/invoke-tool/$tool',
+    path: '/.mcp/invoke-tool/$tool',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -89,13 +116,17 @@ export interface FileRoutesByFullPath {
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
   '/help': typeof HelpRoute
+  '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
+  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/api/ai-copilot': typeof ApiAiCopilotRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
   '/gallery/$postId': typeof GalleryPostIdRoute
   '/share/$token': typeof ShareTokenRoute
   '/studio/$docId': typeof StudioDocIdRoute
+  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -103,13 +134,17 @@ export interface FileRoutesByTo {
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
   '/help': typeof HelpRoute
+  '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
+  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/api/ai-copilot': typeof ApiAiCopilotRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
   '/gallery/$postId': typeof GalleryPostIdRoute
   '/share/$token': typeof ShareTokenRoute
   '/studio/$docId': typeof StudioDocIdRoute
+  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -118,13 +153,17 @@ export interface FileRoutesById {
   '/create': typeof CreateRoute
   '/gallery': typeof GalleryRouteWithChildren
   '/help': typeof HelpRoute
+  '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
   '/vault': typeof VaultRoute
+  '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/api/ai-copilot': typeof ApiAiCopilotRoute
   '/api/generate-stencil': typeof ApiGenerateStencilRoute
   '/gallery/$postId': typeof GalleryPostIdRoute
   '/share/$token': typeof ShareTokenRoute
   '/studio/$docId': typeof StudioDocIdRoute
+  '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -134,13 +173,17 @@ export interface FileRouteTypes {
     | '/create'
     | '/gallery'
     | '/help'
+    | '/mcp'
     | '/plugins'
     | '/vault'
+    | '/.mcp/list-tools'
+    | '/.well-known/oauth-protected-resource'
     | '/api/ai-copilot'
     | '/api/generate-stencil'
     | '/gallery/$postId'
     | '/share/$token'
     | '/studio/$docId'
+    | '/.mcp/invoke-tool/$tool'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -148,13 +191,17 @@ export interface FileRouteTypes {
     | '/create'
     | '/gallery'
     | '/help'
+    | '/mcp'
     | '/plugins'
     | '/vault'
+    | '/.mcp/list-tools'
+    | '/.well-known/oauth-protected-resource'
     | '/api/ai-copilot'
     | '/api/generate-stencil'
     | '/gallery/$postId'
     | '/share/$token'
     | '/studio/$docId'
+    | '/.mcp/invoke-tool/$tool'
   id:
     | '__root__'
     | '/'
@@ -162,13 +209,17 @@ export interface FileRouteTypes {
     | '/create'
     | '/gallery'
     | '/help'
+    | '/mcp'
     | '/plugins'
     | '/vault'
+    | '/.mcp/list-tools'
+    | '/.well-known/oauth-protected-resource'
     | '/api/ai-copilot'
     | '/api/generate-stencil'
     | '/gallery/$postId'
     | '/share/$token'
     | '/studio/$docId'
+    | '/.mcp/invoke-tool/$tool'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -177,12 +228,16 @@ export interface RootRouteChildren {
   CreateRoute: typeof CreateRoute
   GalleryRoute: typeof GalleryRouteWithChildren
   HelpRoute: typeof HelpRoute
+  McpRoute: typeof McpRoute
   PluginsRoute: typeof PluginsRoute
   VaultRoute: typeof VaultRoute
+  Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
+  Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   ApiAiCopilotRoute: typeof ApiAiCopilotRoute
   ApiGenerateStencilRoute: typeof ApiGenerateStencilRoute
   ShareTokenRoute: typeof ShareTokenRoute
   StudioDocIdRoute: typeof StudioDocIdRoute
+  Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -199,6 +254,13 @@ declare module '@tanstack/react-router' {
       path: '/plugins'
       fullPath: '/plugins'
       preLoaderRoute: typeof PluginsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/help': {
@@ -271,6 +333,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAiCopilotRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/.well-known/oauth-protected-resource': {
+      id: '/.well-known/oauth-protected-resource'
+      path: '/.well-known/oauth-protected-resource'
+      fullPath: '/.well-known/oauth-protected-resource'
+      preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.mcp/list-tools': {
+      id: '/.mcp/list-tools'
+      path: '/.mcp/list-tools'
+      fullPath: '/.mcp/list-tools'
+      preLoaderRoute: typeof Char91DotmcpChar93ListToolsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.mcp/invoke-tool/$tool': {
+      id: '/.mcp/invoke-tool/$tool'
+      path: '/.mcp/invoke-tool/$tool'
+      fullPath: '/.mcp/invoke-tool/$tool'
+      preLoaderRoute: typeof Char91DotmcpChar93InvokeToolToolRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -291,13 +374,28 @@ const rootRouteChildren: RootRouteChildren = {
   CreateRoute: CreateRoute,
   GalleryRoute: GalleryRouteWithChildren,
   HelpRoute: HelpRoute,
+  McpRoute: McpRoute,
   PluginsRoute: PluginsRoute,
   VaultRoute: VaultRoute,
+  Char91DotmcpChar93ListToolsRoute: Char91DotmcpChar93ListToolsRoute,
+  Char91DotwellKnownChar93OauthProtectedResourceRoute:
+    Char91DotwellKnownChar93OauthProtectedResourceRoute,
   ApiAiCopilotRoute: ApiAiCopilotRoute,
   ApiGenerateStencilRoute: ApiGenerateStencilRoute,
   ShareTokenRoute: ShareTokenRoute,
   StudioDocIdRoute: StudioDocIdRoute,
+  Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
