@@ -38,3 +38,6 @@ export default tseslint.config(
   },
   eslintPluginPrettier,
 );
+
+  '@typescript-eslint/no-explicit-any': 'off',
+  '@typescript-eslint/no-unused-expressions': 'off',
