@@ -280,7 +280,7 @@ export function mixRecipe(targetHex: string): { name: string; hex: string; pct: 
   // Simple coordinate-descent NNLS on 9 pigments, minimizing weighted Lab distance.
   const N = MIX_PRIMARIES.length;
   const pigRgb = MIX_PRIMARIES.map((p) => hexToRgb(p.hex));
-  let w = new Array(N).fill(1 / N);
+  const w = new Array(N).fill(1 / N);
   const blend = () => {
     let r = 0,
       g = 0,

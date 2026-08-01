@@ -1659,7 +1659,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       const midY = (a.cy + b.cy) / 2;
       const start = pinchStart.current;
       const scaleFactor = dist / start.dist;
-      let newScale = Math.max(0.1, Math.min(20, start.view.scale * scaleFactor));
+      const newScale = Math.max(0.1, Math.min(20, start.view.scale * scaleFactor));
       // Anchor zoom: keep canvas point under start midpoint locked to current midpoint
       const wrap = wrapRef.current!;
       const rect = wrap.getBoundingClientRect();
