@@ -9,42 +9,22 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as CreateRouteImport } from './routes/create'
-import { Route as GalleryRouteImport } from './routes/gallery'
-import { Route as HelpRouteImport } from './routes/help'
-import { Route as PluginsRouteImport } from './routes/plugins'
 import { Route as VaultRouteImport } from './routes/vault'
-import { Route as ApiAiCopilotRouteImport } from './routes/api/ai-copilot'
-import { Route as ApiGenerateStencilRouteImport } from './routes/api/generate-stencil'
-import { Route as GalleryPostIdRouteImport } from './routes/gallery.$postId'
-import { Route as ShareTokenRouteImport } from './routes/share.$token'
+import { Route as PluginsRouteImport } from './routes/plugins'
+import { Route as HelpRouteImport } from './routes/help'
+import { Route as GalleryRouteImport } from './routes/gallery'
+import { Route as CreateRouteImport } from './routes/create'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as StudioDocIdRouteImport } from './routes/studio.$docId'
+import { Route as ShareTokenRouteImport } from './routes/share.$token'
+import { Route as GalleryPostIdRouteImport } from './routes/gallery.$postId'
+import { Route as ApiGenerateStencilRouteImport } from './routes/api/generate-stencil'
+import { Route as ApiAiCopilotRouteImport } from './routes/api/ai-copilot'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CreateRoute = CreateRouteImport.update({
-  id: '/create',
-  path: '/create',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GalleryRoute = GalleryRouteImport.update({
-  id: '/gallery',
-  path: '/gallery',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HelpRoute = HelpRouteImport.update({
-  id: '/help',
-  path: '/help',
+const VaultRoute = VaultRouteImport.update({
+  id: '/vault',
+  path: '/vault',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PluginsRoute = PluginsRouteImport.update({
@@ -52,19 +32,39 @@ const PluginsRoute = PluginsRouteImport.update({
   path: '/plugins',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VaultRoute = VaultRouteImport.update({
-  id: '/vault',
-  path: '/vault',
+const HelpRoute = HelpRouteImport.update({
+  id: '/help',
+  path: '/help',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAiCopilotRoute = ApiAiCopilotRouteImport.update({
-  id: '/api/ai-copilot',
-  path: '/api/ai-copilot',
+const GalleryRoute = GalleryRouteImport.update({
+  id: '/gallery',
+  path: '/gallery',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiGenerateStencilRoute = ApiGenerateStencilRouteImport.update({
-  id: '/api/generate-stencil',
-  path: '/api/generate-stencil',
+const CreateRoute = CreateRouteImport.update({
+  id: '/create',
+  path: '/create',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StudioDocIdRoute = StudioDocIdRouteImport.update({
+  id: '/studio/$docId',
+  path: '/studio/$docId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShareTokenRoute = ShareTokenRouteImport.update({
+  id: '/share/$token',
+  path: '/share/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GalleryPostIdRoute = GalleryPostIdRouteImport.update({
@@ -72,14 +72,14 @@ const GalleryPostIdRoute = GalleryPostIdRouteImport.update({
   path: '/$postId',
   getParentRoute: () => GalleryRoute,
 } as any)
-const ShareTokenRoute = ShareTokenRouteImport.update({
-  id: '/share/$token',
-  path: '/share/$token',
+const ApiGenerateStencilRoute = ApiGenerateStencilRouteImport.update({
+  id: '/api/generate-stencil',
+  path: '/api/generate-stencil',
   getParentRoute: () => rootRouteImport,
 } as any)
-const StudioDocIdRoute = StudioDocIdRouteImport.update({
-  id: '/studio/$docId',
-  path: '/studio/$docId',
+const ApiAiCopilotRoute = ApiAiCopilotRouteImport.update({
+  id: '/api/ai-copilot',
+  path: '/api/ai-copilot',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -187,39 +187,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/create': {
-      id: '/create'
-      path: '/create'
-      fullPath: '/create'
-      preLoaderRoute: typeof CreateRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/gallery': {
-      id: '/gallery'
-      path: '/gallery'
-      fullPath: '/gallery'
-      preLoaderRoute: typeof GalleryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/help': {
-      id: '/help'
-      path: '/help'
-      fullPath: '/help'
-      preLoaderRoute: typeof HelpRouteImport
+    '/vault': {
+      id: '/vault'
+      path: '/vault'
+      fullPath: '/vault'
+      preLoaderRoute: typeof VaultRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/plugins': {
@@ -229,25 +201,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PluginsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/vault': {
-      id: '/vault'
-      path: '/vault'
-      fullPath: '/vault'
-      preLoaderRoute: typeof VaultRouteImport
+    '/help': {
+      id: '/help'
+      path: '/help'
+      fullPath: '/help'
+      preLoaderRoute: typeof HelpRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/ai-copilot': {
-      id: '/api/ai-copilot'
-      path: '/api/ai-copilot'
-      fullPath: '/api/ai-copilot'
-      preLoaderRoute: typeof ApiAiCopilotRouteImport
+    '/gallery': {
+      id: '/gallery'
+      path: '/gallery'
+      fullPath: '/gallery'
+      preLoaderRoute: typeof GalleryRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/generate-stencil': {
-      id: '/api/generate-stencil'
-      path: '/api/generate-stencil'
-      fullPath: '/api/generate-stencil'
-      preLoaderRoute: typeof ApiGenerateStencilRouteImport
+    '/create': {
+      id: '/create'
+      path: '/create'
+      fullPath: '/create'
+      preLoaderRoute: typeof CreateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/studio/$docId': {
+      id: '/studio/$docId'
+      path: '/studio/$docId'
+      fullPath: '/studio/$docId'
+      preLoaderRoute: typeof StudioDocIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/share/$token': {
+      id: '/share/$token'
+      path: '/share/$token'
+      fullPath: '/share/$token'
+      preLoaderRoute: typeof ShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gallery/$postId': {
@@ -257,18 +257,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GalleryPostIdRouteImport
       parentRoute: typeof GalleryRoute
     }
-    '/share/$token': {
-      id: '/share/$token'
-      path: '/share/$token'
-      fullPath: '/share/$token'
-      preLoaderRoute: typeof ShareTokenRouteImport
+    '/api/generate-stencil': {
+      id: '/api/generate-stencil'
+      path: '/api/generate-stencil'
+      fullPath: '/api/generate-stencil'
+      preLoaderRoute: typeof ApiGenerateStencilRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/studio/$docId': {
-      id: '/studio/$docId'
-      path: '/studio/$docId'
-      fullPath: '/studio/$docId'
-      preLoaderRoute: typeof StudioDocIdRouteImport
+    '/api/ai-copilot': {
+      id: '/api/ai-copilot'
+      path: '/api/ai-copilot'
+      fullPath: '/api/ai-copilot'
+      preLoaderRoute: typeof ApiAiCopilotRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
