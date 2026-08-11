@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "sdk_version": "0.26.2",
+  "path": "/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://gaxgrffbgizrsnqkmgne.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "ai-stencil-magic",
+      "version": "0.1.0",
+      "title": "AI Stencil Magic"
+    },
+    "tools": [
+      {
+        "name": "list_documents",
+        "title": "List cloud stencil documents",
+        "description": "List the signed-in artist's synced stencil documents (name, id, last updated, share link status).",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "limit": {
+              "default": 25,
+              "description": "Max documents to return.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "search": {
+              "description": "Filter by name substring.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_document",
+        "title": "Get stencil document details",
+        "description": "Fetch one of the signed-in artist's stencil documents: name, layer count, canvas size and timestamps. Image data is summarized, not returned.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Document id from list_documents."
+            }
+          },
+          "required": [
+            "id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "rename_document",
+        "title": "Rename a stencil document",
+        "description": "Rename one of the signed-in artist's synced stencil documents.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Document id from list_documents."
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "New document name."
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_gallery_posts",
+        "title": "Browse the community gallery",
+        "description": "Browse published community stencil posts, newest or most liked first, optionally filtered by tag.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "sort": {
+              "default": "new",
+              "description": "Order results by recency or likes.",
+              "type": "string",
+              "enum": [
+                "new",
+                "top"
+              ]
+            },
+            "tag": {
+              "description": "Only posts carrying this tag.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            "limit": {
+              "default": 20,
+              "description": "Max posts to return.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "mine": {
+              "default": false,
+              "description": "Limit to the signed-in artist's own posts.",
+              "type": "boolean"
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_stencil_presets",
+        "title": "Get stencil engine presets",
+        "description": "Return the stencil engine's preset settings (threshold, edge mode, line thickness, smoothing) so you can recommend settings for a given tattoo style.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "preset": {
+              "description": "Optional preset name, e.g. tattoo, fineline, bold. Omit for all presets.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
