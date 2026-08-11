@@ -4,6 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Cloud, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
+  validateSearch: (s: Record<string, unknown>) => ({
+    next: typeof s.next === "string" ? s.next : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Sign in — PrimalPrint AI" },
@@ -15,6 +18,13 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
+  const { next } = Route.useSearch();
+  const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
+  const returnUrl = safeNext
+    ? typeof window !== "undefined"
+      ? window.location.origin + safeNext
+      : safeNext
+    : undefined;
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,13 +35,19 @@ function AuthPage() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (session) navigate({ to: "/vault" });
+      if (session) {
+        if (safeNext) window.location.href = safeNext;
+        else navigate({ to: "/vault" });
+      }
     });
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user) navigate({ to: "/vault" });
+      if (data.user) {
+        if (safeNext) window.location.href = safeNext;
+        else navigate({ to: "/vault" });
+      }
     });
     return () => subscription.unsubscribe();
-  }, [navigate]);
+  }, [navigate, safeNext]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,7 +58,7 @@ function AuthPage() {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin + "/vault" },
+          options: { emailRedirectTo: returnUrl ?? window.location.origin + "/vault" },
         });
         if (error) throw error;
       } else {
@@ -62,7 +78,7 @@ function AuthPage() {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: window.location.origin + "/vault" },
+        options: { redirectTo: returnUrl ?? window.location.origin + "/vault" },
       });
       if (error) throw error;
     } catch (e: any) {
