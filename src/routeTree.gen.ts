@@ -21,6 +21,7 @@ import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as GalleryPostIdRouteImport } from './routes/gallery.$postId'
 import { Route as ApiGenerateStencilRouteImport } from './routes/api/generate-stencil'
 import { Route as ApiAiCopilotRouteImport } from './routes/api/ai-copilot'
+import { Route as DotlovableOauthConsentRouteImport } from './routes/[.]lovable.oauth.consent'
 
 const VaultRoute = VaultRouteImport.update({
   id: '/vault',
@@ -82,6 +83,11 @@ const ApiAiCopilotRoute = ApiAiCopilotRouteImport.update({
   path: '/api/ai-copilot',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DotlovableOauthConsentRoute = DotlovableOauthConsentRouteImport.update({
+  id: '/.lovable/oauth/consent',
+  path: '/.lovable/oauth/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/gallery/$postId': typeof GalleryPostIdRoute
   '/share/$token': typeof ShareTokenRoute
   '/studio/$docId': typeof StudioDocIdRoute
+  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -110,6 +117,7 @@ export interface FileRoutesByTo {
   '/gallery/$postId': typeof GalleryPostIdRoute
   '/share/$token': typeof ShareTokenRoute
   '/studio/$docId': typeof StudioDocIdRoute
+  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   '/gallery/$postId': typeof GalleryPostIdRoute
   '/share/$token': typeof ShareTokenRoute
   '/studio/$docId': typeof StudioDocIdRoute
+  '/.lovable/oauth/consent': typeof DotlovableOauthConsentRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/gallery/$postId'
     | '/share/$token'
     | '/studio/$docId'
+    | '/.lovable/oauth/consent'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/gallery/$postId'
     | '/share/$token'
     | '/studio/$docId'
+    | '/.lovable/oauth/consent'
   id:
     | '__root__'
     | '/'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
     | '/gallery/$postId'
     | '/share/$token'
     | '/studio/$docId'
+    | '/.lovable/oauth/consent'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -183,6 +195,7 @@ export interface RootRouteChildren {
   ApiGenerateStencilRoute: typeof ApiGenerateStencilRoute
   ShareTokenRoute: typeof ShareTokenRoute
   StudioDocIdRoute: typeof StudioDocIdRoute
+  DotlovableOauthConsentRoute: typeof DotlovableOauthConsentRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -271,6 +284,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAiCopilotRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/.lovable/oauth/consent': {
+      id: '/.lovable/oauth/consent'
+      path: '/.lovable/oauth/consent'
+      fullPath: '/.lovable/oauth/consent'
+      preLoaderRoute: typeof DotlovableOauthConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -297,6 +317,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiGenerateStencilRoute: ApiGenerateStencilRoute,
   ShareTokenRoute: ShareTokenRoute,
   StudioDocIdRoute: StudioDocIdRoute,
+  DotlovableOauthConsentRoute: DotlovableOauthConsentRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
