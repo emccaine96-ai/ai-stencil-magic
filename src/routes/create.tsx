@@ -571,10 +571,10 @@ function CreatePage() {
   );
 }
 
-function buildPrompt(o: { style: Style; intensity: number }) {
+function buildPrompt(o: { style: Style; intensity: number; customPrompt?: string }) {
   // Bake the proven "May 27" defaults into the prompt so first-shot output is
   // gallery-grade without the user needing to touch sliders.
-  return `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.
+  const base = `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.
 
 HARD RULES:
 - Output a single image on PURE WHITE background.
@@ -598,4 +598,7 @@ ${STYLE_PROMPTS[o.style]}
 
 Overall shading density: ${Math.round(o.intensity * 100)}%.
 No text, no watermarks, no signatures, no frame, no background scenery.`;
+  const extra = o.customPrompt?.trim();
+  if (!extra) return base;
+  return `${base}\n\nADDITIONAL ARTIST INSTRUCTIONS (apply on top of everything above; do not violate the hard rules, ink color, white background, or tonal-layering rules above):\n${extra}`;
 }
