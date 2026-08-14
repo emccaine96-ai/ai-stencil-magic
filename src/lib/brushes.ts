@@ -1574,6 +1574,42 @@ export function strokeTo(sc: StrokeContext, x: number, y: number, pressure: numb
   sc.lastStamp = { x, y };
 }
 
+// Stamp cache: a small pool of pre-built variants per (brush, color, radius,
+// angle) bucket, reused across stamp placements instead of rebuilding a new
+// canvas (and, for grain brushes, a full pixel loop) on every single dab.
+// A pool rather than a single cached canvas preserves the organic per-stamp
+// randomness that brushes like charcoal/chalk/dotwork rely on for texture.
+const STAMP_POOL_SIZE = 4;
+const STAMP_CACHE_MAX_KEYS = 200;
+const stampCache = new Map<string, HTMLCanvasElement[]>();
+const stampCacheOrder: string[] = [];
+
+function stampCacheKey(b: BrushSettings, radius: number, angle: number): string {
+  const rBucket = Math.round(radius);
+  const aBucket = Math.round(angle / (Math.PI / 12)) * (Math.PI / 12); // 15° steps
+  return `${b.id}|${b.color}|${rBucket}|${aBucket.toFixed(3)}`;
+}
+
+function getStamp(b: BrushSettings, radius: number, angle: number): HTMLCanvasElement {
+  const key = stampCacheKey(b, radius, angle);
+  let pool = stampCache.get(key);
+  if (!pool) {
+    pool = [];
+    stampCache.set(key, pool);
+    stampCacheOrder.push(key);
+    if (stampCacheOrder.length > STAMP_CACHE_MAX_KEYS) {
+      const evictKey = stampCacheOrder.shift();
+      if (evictKey) stampCache.delete(evictKey);
+    }
+  }
+  if (pool.length < STAMP_POOL_SIZE) {
+    const fresh = buildStamp(b, radius, angle);
+    pool.push(fresh);
+    return fresh;
+  }
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 function paintStamp(sc: StrokeContext, x: number, y: number, radius: number, alpha: number) {
   const b = sc.brush;
   const jx = b.scatter ? (Math.random() - 0.5) * b.scatter : 0;
@@ -1586,12 +1622,12 @@ function paintStamp(sc: StrokeContext, x: number, y: number, radius: number, alp
         : b.rotationJitter
           ? Math.random() * Math.PI * 2
           : sc.angle;
-  const stamp = buildStamp(b, radius, angle);
+  const stamp = getStamp(b, radius, angle);
   sc.ctx.globalAlpha = alpha;
   sc.ctx.drawImage(stamp, x + jx - stamp.width / 2, y + jy - stamp.height / 2);
   if (b.id === "crosshatch") {
     // second cross direction at ~90° for true crosshatch
-    const stamp2 = buildStamp(b, radius, angle + Math.PI / 2);
+    const stamp2 = getStamp(b, radius, angle + Math.PI / 2);
     sc.ctx.drawImage(stamp2, x + jx - stamp2.width / 2, y + jy - stamp2.height / 2);
   }
 }
