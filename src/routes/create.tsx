@@ -410,6 +410,27 @@ function CreatePage() {
           </div>
         </section>
 
+        <section className="rounded-2xl border border-border bg-card p-4">
+          <button
+            type="button"
+            onClick={() => setCustomPromptOpen((v) => !v)}
+            className="text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center gap-1"
+            aria-expanded={customPromptOpen}
+          >
+            <span>Advanced: custom instructions</span>
+            <span className="text-[10px]">{customPromptOpen ? "▲" : "▼"}</span>
+          </button>
+          {customPromptOpen ? (
+            <textarea
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
+              placeholder="Optional — add extra instructions for this generation (e.g. add background elements, adjust a specific detail). Your style and shading rules above are always kept."
+              rows={4}
+              className="mt-3 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary resize-none"
+            />
+          ) : null}
+        </section>
+
         <button
           onClick={generate}
           disabled={!photo || loading}
