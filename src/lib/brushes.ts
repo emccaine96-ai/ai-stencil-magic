@@ -1622,12 +1622,12 @@ function paintStamp(sc: StrokeContext, x: number, y: number, radius: number, alp
         : b.rotationJitter
           ? Math.random() * Math.PI * 2
           : sc.angle;
-  const stamp = buildStamp(b, radius, angle);
+  const stamp = getStamp(b, radius, angle);
   sc.ctx.globalAlpha = alpha;
   sc.ctx.drawImage(stamp, x + jx - stamp.width / 2, y + jy - stamp.height / 2);
   if (b.id === "crosshatch") {
     // second cross direction at ~90° for true crosshatch
-    const stamp2 = buildStamp(b, radius, angle + Math.PI / 2);
+    const stamp2 = getStamp(b, radius, angle + Math.PI / 2);
     sc.ctx.drawImage(stamp2, x + jx - stamp2.width / 2, y + jy - stamp2.height / 2);
   }
 }
