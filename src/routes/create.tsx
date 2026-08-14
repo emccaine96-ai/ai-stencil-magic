@@ -174,7 +174,7 @@ function CreatePage() {
     setStencil(null);
     try {
       const { mimeType, data: imgB64 } = dataUrlToInline(photo);
-      const prompt = buildPrompt({ style, intensity });
+      const prompt = buildPrompt({ style, intensity, customPrompt });
       if (provider === "lovable") {
         const r = await fetch("/api/generate-stencil", {
           method: "POST",
