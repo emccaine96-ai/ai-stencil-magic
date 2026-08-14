@@ -85,6 +85,8 @@ function CreatePage() {
   const [provider, setProvider] = useState<Provider>("lovable");
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [customPromptOpen, setCustomPromptOpen] = useState(false);
 
   useEffect(() => {
     const k = typeof window !== "undefined" ? localStorage.getItem(KEY_STORAGE) : null;
@@ -172,7 +174,7 @@ function CreatePage() {
     setStencil(null);
     try {
       const { mimeType, data: imgB64 } = dataUrlToInline(photo);
-      const prompt = buildPrompt({ style, intensity });
+      const prompt = buildPrompt({ style, intensity, customPrompt });
       if (provider === "lovable") {
         const r = await fetch("/api/generate-stencil", {
           method: "POST",
@@ -408,6 +410,27 @@ function CreatePage() {
           </div>
         </section>
 
+        <section className="rounded-2xl border border-border bg-card p-4">
+          <button
+            type="button"
+            onClick={() => setCustomPromptOpen((v) => !v)}
+            className="text-xs font-semibold text-muted-foreground hover:text-foreground flex items-center gap-1"
+            aria-expanded={customPromptOpen}
+          >
+            <span>Advanced: custom instructions</span>
+            <span className="text-[10px]">{customPromptOpen ? "▲" : "▼"}</span>
+          </button>
+          {customPromptOpen ? (
+            <textarea
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
+              placeholder="Optional — add extra instructions for this generation (e.g. add background elements, adjust a specific detail). Your style and shading rules above are always kept."
+              rows={4}
+              className="mt-3 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary resize-none"
+            />
+          ) : null}
+        </section>
+
         <button
           onClick={generate}
           disabled={!photo || loading}
@@ -569,10 +592,10 @@ function CreatePage() {
   );
 }
 
-function buildPrompt(o: { style: Style; intensity: number }) {
+function buildPrompt(o: { style: Style; intensity: number; customPrompt?: string }) {
   // Bake the proven "May 27" defaults into the prompt so first-shot output is
   // gallery-grade without the user needing to touch sliders.
-  return `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.
+  const base = `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.
 
 HARD RULES:
 - Output a single image on PURE WHITE background.
@@ -596,4 +619,7 @@ ${STYLE_PROMPTS[o.style]}
 
 Overall shading density: ${Math.round(o.intensity * 100)}%.
 No text, no watermarks, no signatures, no frame, no background scenery.`;
+  const extra = o.customPrompt?.trim();
+  if (!extra) return base;
+  return `${base}\n\nADDITIONAL ARTIST INSTRUCTIONS (apply on top of everything above; do not violate the hard rules, ink color, white background, or tonal-layering rules above):\n${extra}`;
 }
