@@ -85,6 +85,8 @@ function CreatePage() {
   const [provider, setProvider] = useState<Provider>("lovable");
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [customPromptOpen, setCustomPromptOpen] = useState(false);
 
   useEffect(() => {
     const k = typeof window !== "undefined" ? localStorage.getItem(KEY_STORAGE) : null;
