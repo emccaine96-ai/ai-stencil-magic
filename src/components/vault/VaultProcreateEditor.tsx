@@ -3581,7 +3581,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           </div>
           <div className="overflow-y-auto p-3">
             <StencilGeneratorPanel
-              sourceCanvas={canvasRef.current}
+              sourceCanvas={refLoaded ? refCanvasRef.current : canvasRef.current}
               onStencilReady={(out) => {
                 const ctx = ctxRef.current;
                 const canvas = canvasRef.current;
