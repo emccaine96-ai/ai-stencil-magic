@@ -77,6 +77,37 @@ export function StencilGeneratorPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [localCanvas, setLocalCanvas] = useState<HTMLCanvasElement | null>(null);
 
+  const [compareSplit, setCompareSplit] = useState(50); // 0-100, % of "Original" visible from the left
+  const compareWrapRef = useRef<HTMLDivElement>(null);
+  const compareDragging = useRef(false);
+
+  const updateCompareFromClientX = useCallback((clientX: number) => {
+    const el = compareWrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const pct = ((clientX - rect.left) / rect.width) * 100;
+    setCompareSplit(Math.max(0, Math.min(100, pct)));
+  }, []);
+  const handleCompareDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      compareDragging.current = true;
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+      updateCompareFromClientX(e.clientX);
+    },
+    [updateCompareFromClientX],
+  );
+  const handleCompareMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!compareDragging.current) return;
+      updateCompareFromClientX(e.clientX);
+    },
+    [updateCompareFromClientX],
+  );
+  const handleCompareUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    compareDragging.current = false;
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+  }, []);
+
   const workingCanvas = sourceCanvas || localCanvas;
 
   useEffect(() => {
@@ -194,7 +225,7 @@ export function StencilGeneratorPanel({
         <Zap className="w-5 h-5 text-primary" />
         <h2 className="text-lg font-bold">Stencil Generator</h2>
         <Badge variant="secondary" className="ml-auto">
-          AI Powered
+          100% Local · No AI
         </Badge>
       </div>
 
@@ -217,21 +248,50 @@ export function StencilGeneratorPanel({
       )}
 
       {workingCanvas && (
-        <div className="grid grid-cols-2 gap-2">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground text-center">Original</span>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between px-0.5">
+            <span className="text-xs text-muted-foreground">
+              {resultCanvas ? "Drag to compare" : "Original"}
+            </span>
+            {resultCanvas && (
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {Math.round(compareSplit)}%
+              </span>
+            )}
+          </div>
+          <div
+            ref={compareWrapRef}
+            className="relative w-full h-56 rounded border border-border overflow-hidden bg-white select-none"
+            style={{ touchAction: "none" }}
+            onPointerDown={resultCanvas ? handleCompareDown : undefined}
+            onPointerMove={resultCanvas ? handleCompareMove : undefined}
+            onPointerUp={resultCanvas ? handleCompareUp : undefined}
+            onPointerCancel={resultCanvas ? handleCompareUp : undefined}
+          >
+            <canvas ref={previewRef} className="absolute inset-0 w-full h-full object-contain" />
             <canvas
               ref={originalPreviewRef}
-              className="w-full rounded border border-border object-contain max-h-40"
+              className="absolute inset-0 w-full h-full object-contain"
+              style={resultCanvas ? { clipPath: `inset(0 ${100 - compareSplit}% 0 0)` } : undefined}
             />
+            {resultCanvas && (
+              <div
+                className="absolute inset-y-0 flex items-center justify-center"
+                style={{ left: `${compareSplit}%`, transform: "translateX(-50%)", pointerEvents: "none" }}
+              >
+                <div className="absolute inset-y-0 w-0.5 bg-primary" />
+                <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center shadow-lg">
+                  <SplitSquareHorizontal className="w-3.5 h-3.5 text-primary-foreground" />
+                </div>
+              </div>
+            )}
           </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground text-center">Stencil Preview</span>
-            <canvas
-              ref={previewRef}
-              className="w-full rounded border border-border object-contain max-h-40 bg-white"
-            />
-          </div>
+          {resultCanvas && (
+            <div className="flex justify-between text-[10px] text-muted-foreground px-0.5">
+              <span>Original</span>
+              <span>Stencil</span>
+            </div>
+          )}
         </div>
       )}
 
