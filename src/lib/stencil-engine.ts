@@ -724,9 +724,9 @@ function computeStructureTensor(gray: Float32Array, width: number, height: numbe
       gy[i] = -l(-1, -1) - 2 * l(0, -1) - l(1, -1) + l(-1, 1) + 2 * l(0, 1) + l(1, 1);
     }
   }
-  let sxx = new Float32Array(width * height);
-  let sxy = new Float32Array(width * height);
-  let syy = new Float32Array(width * height);
+  let sxx: Float32Array = new Float32Array(width * height);
+  let sxy: Float32Array = new Float32Array(width * height);
+  let syy: Float32Array = new Float32Array(width * height);
   for (let i = 0; i < gx.length; i++) {
     sxx[i] = gx[i] * gx[i];
     sxy[i] = gx[i] * gy[i];
