@@ -4,7 +4,7 @@
 
 import { applyOtsuThreshold } from "@/lib/otsu";
 
-export type EdgeMode = "threshold" | "sobel" | "combined" | "canny" | "otsu" | "hatch";
+export type EdgeMode = "threshold" | "sobel" | "combined" | "canny" | "otsu" | "hatch" | "flow-portrait";
 
 export interface StencilOptions {
   threshold: number; // 0-255, default 128
@@ -31,6 +31,7 @@ export type StencilPreset =
   | "watercolor"
   | "sketch"
   | "engraving"
+  | "portrait-pro"
   | "custom";
 
 export const STENCIL_PRESETS: Record<StencilPreset, Partial<StencilOptions>> = {
@@ -121,6 +122,16 @@ export const STENCIL_PRESETS: Record<StencilPreset, Partial<StencilOptions>> = {
     lineThickness: 2,
     noiseReduction: 2,
     smoothing: 2,
+    bridgeGaps: true,
+    dilateErode: 0,
+  },
+  "portrait-pro": {
+    threshold: 128,
+    edgeSensitivity: 65,
+    edgeMode: "flow-portrait",
+    lineThickness: 2,
+    noiseReduction: 1,
+    smoothing: 1,
     bridgeGaps: true,
     dilateErode: 0,
   },
@@ -591,6 +602,367 @@ export async function applyHatchRender(
   return new ImageData(out, width, height);
 }
 
+export interface FlowPortraitOptions {
+  structureSigma: number;
+  edgeSigma: number;
+  tau: number;
+  phi: number;
+  etfIterations: number;
+  flowStrength: number;
+  hatchIntensity: number;
+  lineWeight: number;
+}
+
+export const DEFAULT_FLOW_PORTRAIT_OPTIONS: FlowPortraitOptions = {
+  structureSigma: 3,
+  edgeSigma: 1,
+  tau: 0.95,
+  phi: 8,
+  etfIterations: 3,
+  flowStrength: 0.85,
+  hatchIntensity: 65,
+  lineWeight: 1.5,
+};
+
+function flowYield(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function grayFloat(imageData: ImageData): Float32Array {
+  const { width, height, data } = imageData;
+  const out = new Float32Array(width * height);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    out[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  }
+  return out;
+}
+
+function boxBlurField(src: Float32Array, width: number, height: number, sigma: number): Float32Array {
+  const radius = Math.max(1, Math.round(sigma * 1.5));
+  const passes = 3;
+  let cur = src;
+  for (let p = 0; p < passes; p++) {
+    const tmp = new Float32Array(width * height);
+    for (let y = 0; y < height; y++) {
+      let acc = 0;
+      const rowStart = y * width;
+      for (let x = -radius; x <= radius; x++) {
+        acc += cur[rowStart + Math.min(width - 1, Math.max(0, x))];
+      }
+      for (let x = 0; x < width; x++) {
+        tmp[rowStart + x] = acc / (radius * 2 + 1);
+        const addX = Math.min(width - 1, x + radius + 1);
+        const subX = Math.max(0, x - radius);
+        acc += cur[rowStart + addX] - cur[rowStart + subX];
+      }
+    }
+    const tmp2 = new Float32Array(width * height);
+    for (let x = 0; x < width; x++) {
+      let acc = 0;
+      for (let y = -radius; y <= radius; y++) {
+        acc += tmp[Math.min(height - 1, Math.max(0, y)) * width + x];
+      }
+      for (let y = 0; y < height; y++) {
+        tmp2[y * width + x] = acc / (radius * 2 + 1);
+        const addY = Math.min(height - 1, y + radius + 1);
+        const subY = Math.max(0, y - radius);
+        acc += tmp[addY * width + x] - tmp[subY * width + x];
+      }
+    }
+    cur = tmp2;
+  }
+  return cur;
+}
+
+function bilateralSmooth(gray: Float32Array, width: number, height: number, iterations: number): Float32Array {
+  const spatialWeights = [1, 0.6, 0.25];
+  const rangeSigma = 24;
+  let cur = gray;
+  for (let it = 0; it < iterations; it++) {
+    const out = new Float32Array(width * height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        const center = cur[i];
+        let wsum = 0;
+        let vsum = 0;
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            const xx = Math.min(width - 1, Math.max(0, x + dx));
+            const yy = Math.min(height - 1, Math.max(0, y + dy));
+            const v = cur[yy * width + xx];
+            const sw = spatialWeights[Math.min(2, Math.abs(dx))] * spatialWeights[Math.min(2, Math.abs(dy))];
+            const rangeDiff = v - center;
+            const rw = Math.exp(-(rangeDiff * rangeDiff) / (2 * rangeSigma * rangeSigma));
+            const w = sw * rw;
+            wsum += w;
+            vsum += w * v;
+          }
+        }
+        out[i] = wsum > 0 ? vsum / wsum : center;
+      }
+    }
+    cur = out;
+  }
+  return cur;
+}
+
+interface FlowField {
+  cos: Float32Array;
+  sin: Float32Array;
+  coherence: Float32Array;
+}
+
+function computeStructureTensor(gray: Float32Array, width: number, height: number, sigma: number): FlowField {
+  const gx = new Float32Array(width * height);
+  const gy = new Float32Array(width * height);
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const i = y * width + x;
+      const l = (dx: number, dy: number) => gray[(y + dy) * width + (x + dx)];
+      gx[i] = -l(-1, -1) - 2 * l(-1, 0) - l(-1, 1) + l(1, -1) + 2 * l(1, 0) + l(1, 1);
+      gy[i] = -l(-1, -1) - 2 * l(0, -1) - l(1, -1) + l(-1, 1) + 2 * l(0, 1) + l(1, 1);
+    }
+  }
+  let sxx: Float32Array = new Float32Array(width * height);
+  let sxy: Float32Array = new Float32Array(width * height);
+  let syy: Float32Array = new Float32Array(width * height);
+  for (let i = 0; i < gx.length; i++) {
+    sxx[i] = gx[i] * gx[i];
+    sxy[i] = gx[i] * gy[i];
+    syy[i] = gy[i] * gy[i];
+  }
+  sxx = boxBlurField(sxx, width, height, sigma);
+  sxy = boxBlurField(sxy, width, height, sigma);
+  syy = boxBlurField(syy, width, height, sigma);
+
+  const cos = new Float32Array(width * height);
+  const sin = new Float32Array(width * height);
+  const coherence = new Float32Array(width * height);
+  for (let i = 0; i < sxx.length; i++) {
+    const a = sxx[i];
+    const b = sxy[i];
+    const c = syy[i];
+    const trace = a + c;
+    const diff = Math.sqrt(Math.max(0, (a - c) * (a - c) + 4 * b * b));
+    const l1 = (trace + diff) / 2;
+    const l2 = (trace - diff) / 2;
+    const gradAngle = 0.5 * Math.atan2(2 * b, a - c);
+    const tangentAngle = gradAngle + Math.PI / 2;
+    cos[i] = Math.cos(tangentAngle);
+    sin[i] = Math.sin(tangentAngle);
+    coherence[i] = l1 + l2 > 1e-6 ? (l1 - l2) / (l1 + l2) : 0;
+  }
+  return { cos, sin, coherence };
+}
+
+function smoothFlowField(field: FlowField, width: number, height: number, iterations: number): FlowField {
+  let { cos, sin } = field;
+  const coherence = field.coherence;
+  const radius = 2;
+  for (let it = 0; it < iterations; it++) {
+    const nCos = new Float32Array(width * height);
+    const nSin = new Float32Array(width * height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        let sumX = 0;
+        let sumY = 0;
+        const tx = cos[i];
+        const ty = sin[i];
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (let dx = -radius; dx <= radius; dx++) {
+            const xx = Math.min(width - 1, Math.max(0, x + dx));
+            const yy = Math.min(height - 1, Math.max(0, y + dy));
+            const j = yy * width + xx;
+            const nx = cos[j];
+            const ny = sin[j];
+            const dot = tx * nx + ty * ny;
+            const sign = dot >= 0 ? 1 : -1;
+            const w = coherence[j] * sign;
+            sumX += w * nx;
+            sumY += w * ny;
+          }
+        }
+        const len = Math.hypot(sumX, sumY) || 1;
+        nCos[i] = sumX / len;
+        nSin[i] = sumY / len;
+      }
+    }
+    cos = nCos;
+    sin = nSin;
+  }
+  return { cos, sin, coherence };
+}
+
+function applyXDoGField(
+  gray: Float32Array,
+  width: number,
+  height: number,
+  sigma: number,
+  tau: number,
+  phi: number,
+): Float32Array {
+  const g1 = boxBlurField(gray, width, height, sigma);
+  const g2 = boxBlurField(gray, width, height, sigma * 1.6);
+  const out = new Float32Array(width * height);
+  for (let i = 0; i < g1.length; i++) {
+    const d = g1[i] - tau * g2[i];
+    const u = g1[i] > 1e-3 ? d / g1[i] : 0;
+    out[i] = u >= 0 ? 1 : 1 + Math.tanh(phi * u);
+  }
+  return out;
+}
+
+function drawFlowHatch(
+  out: Uint8ClampedArray,
+  width: number,
+  height: number,
+  baseLum: Float32Array,
+  flow: FlowField,
+  opts: FlowPortraitOptions,
+) {
+  const sensitivity = 1 + (opts.hatchIntensity - 50) / 100;
+  const tiers = [
+    { max: 230, density: 0 },
+    { max: 185, density: 0.15 },
+    { max: 140, density: 0.35 },
+    { max: 95, density: 0.6 },
+    { max: 45, density: 1 },
+  ];
+  const cellSize = 6;
+  const strokeLen = 10;
+  const stampR = Math.max(1, opts.lineWeight / 2);
+  const fixedAngles = [Math.PI / 4, (Math.PI * 3) / 4];
+
+  function stampInk(x: number, y: number) {
+    const xi = Math.round(x);
+    const yi = Math.round(y);
+    for (let dy = -stampR; dy <= stampR; dy++) {
+      for (let dx = -stampR; dx <= stampR; dx++) {
+        const xx = xi + Math.round(dx);
+        const yy = yi + Math.round(dy);
+        if (xx < 0 || yy < 0 || xx >= width || yy >= height) continue;
+        if (dx * dx + dy * dy > stampR * stampR + 0.5) continue;
+        const idx = (yy * width + xx) * 4;
+        out[idx] = out[idx + 1] = out[idx + 2] = 0;
+        out[idx + 3] = 255;
+      }
+    }
+  }
+
+  for (let cy = 0; cy < height; cy += cellSize) {
+    for (let cx = 0; cx < width; cx += cellSize) {
+      const px = Math.min(width - 1, cx + Math.floor(Math.random() * cellSize));
+      const py = Math.min(height - 1, cy + Math.floor(Math.random() * cellSize));
+      const i = py * width + px;
+      const lum = baseLum[i];
+      let tier = -1;
+      for (let t = tiers.length - 1; t >= 0; t--) {
+        if (lum <= tiers[t].max) {
+          tier = t;
+          break;
+        }
+      }
+      if (tier <= 0) continue;
+      const prob = tiers[tier].density * sensitivity;
+      const strandCount = prob >= 1 ? 2 : Math.random() < prob ? 1 : 0;
+      for (let s = 0; s < strandCount; s++) {
+        const coh = flow.coherence[i];
+        const flowAngle = Math.atan2(flow.sin[i], flow.cos[i]);
+        const useFixed = fixedAngles[s % fixedAngles.length];
+        const blend = Math.min(1, coh * 2) * opts.flowStrength;
+        const angle =
+          blend > 0.5
+            ? flowAngle + (Math.random() - 0.5) * 0.25 * (1 - blend)
+            : useFixed + (Math.random() - 0.5) * 0.3;
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        const half = strokeLen / 2;
+        for (let t2 = -half; t2 <= half; t2 += 1) {
+          stampInk(px + cosA * t2, py + sinA * t2);
+        }
+      }
+    }
+  }
+}
+
+/** Flow-guided classical portrait engine: bilateral pre-smoothing -> structure
+ *  tensor -> Edge Tangent Flow -> XDoG outline layer + flow-guided tonal hatch
+ *  layer, composited together. Resolution-capped and yields between stages so
+ *  it never blocks the main thread. Parameter surface is deliberately small
+ *  (8 values) so it stays practical to calibrate against a small reference set. */
+export async function applyFlowPortraitEngine(
+  imageData: ImageData,
+  opts: FlowPortraitOptions = DEFAULT_FLOW_PORTRAIT_OPTIONS,
+): Promise<ImageData> {
+  const MAX_EDGE = 1200;
+  const scale = Math.min(1, MAX_EDGE / Math.max(imageData.width, imageData.height));
+
+  let work = imageData;
+  if (scale < 1) {
+    const srcCanvas = document.createElement("canvas");
+    srcCanvas.width = imageData.width;
+    srcCanvas.height = imageData.height;
+    srcCanvas.getContext("2d")!.putImageData(imageData, 0, 0);
+    const workCanvas = document.createElement("canvas");
+    workCanvas.width = Math.max(1, Math.round(imageData.width * scale));
+    workCanvas.height = Math.max(1, Math.round(imageData.height * scale));
+    const wctx = workCanvas.getContext("2d")!;
+    wctx.imageSmoothingEnabled = true;
+    wctx.imageSmoothingQuality = "high";
+    wctx.drawImage(srcCanvas, 0, 0, workCanvas.width, workCanvas.height);
+    work = wctx.getImageData(0, 0, workCanvas.width, workCanvas.height);
+  }
+
+  const { width, height } = work;
+  const rawGray = grayFloat(work);
+  await flowYield();
+
+  const smoothed = bilateralSmooth(rawGray, width, height, 2);
+  await flowYield();
+
+  let flow = computeStructureTensor(smoothed, width, height, opts.structureSigma);
+  await flowYield();
+  flow = smoothFlowField(flow, width, height, opts.etfIterations);
+  await flowYield();
+
+  const xdog = applyXDoGField(smoothed, width, height, opts.edgeSigma, opts.tau, opts.phi);
+  await flowYield();
+
+  const out = new Uint8ClampedArray(width * height * 4).fill(255);
+  for (let i = 3; i < out.length; i += 4) out[i] = 0;
+
+  for (let i = 0, p = 0; p < xdog.length; i += 4, p++) {
+    if (xdog[p] < 0.5) {
+      out[i] = out[i + 1] = out[i + 2] = 0;
+      out[i + 3] = 255;
+    }
+  }
+  await flowYield();
+
+  drawFlowHatch(out, width, height, smoothed, flow, opts);
+  await flowYield();
+
+  let result = new ImageData(out, width, height);
+  result = bridgeGaps(result);
+
+  if (scale < 1) {
+    const smallCanvas = document.createElement("canvas");
+    smallCanvas.width = width;
+    smallCanvas.height = height;
+    smallCanvas.getContext("2d")!.putImageData(result, 0, 0);
+    const fullCanvas = document.createElement("canvas");
+    fullCanvas.width = imageData.width;
+    fullCanvas.height = imageData.height;
+    const fctx = fullCanvas.getContext("2d")!;
+    fctx.imageSmoothingEnabled = false;
+    fctx.drawImage(smallCanvas, 0, 0, imageData.width, imageData.height);
+    return fctx.getImageData(0, 0, imageData.width, imageData.height);
+  }
+  return result;
+}
+
 // --- Pipeline ---------------------------------------------------------------
 
 export async function processStencil(
@@ -637,6 +1009,10 @@ export async function processStencil(
         baseSpacing: Math.max(2, 12 - options.lineThickness),
         stipple: true,
       });
+      break;
+
+    case "flow-portrait":
+      imageData = await applyFlowPortraitEngine(imageData);
       break;
 
     case "threshold":
