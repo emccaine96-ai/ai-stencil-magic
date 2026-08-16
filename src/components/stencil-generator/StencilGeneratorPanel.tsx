@@ -48,6 +48,7 @@ const PRESETS: { value: StencilPreset; label: string; description: string; emoji
   },
   { value: "sketch", label: "Sketch", description: "Pencil-thin Canny edges", emoji: "🖊️" },
   { value: "engraving", label: "Engraving", description: "Hand-inked cross-hatch shading", emoji: "✒️" },
+  { value: "portrait-pro", label: "Portrait Pro", description: "Flow-guided ink shading — closest to the AI engine's look", emoji: "🖋️" },
 ];
 
 const DPI_OPTIONS = [72, 150, 300, 600];

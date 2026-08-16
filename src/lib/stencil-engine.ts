@@ -4,7 +4,7 @@
 
 import { applyOtsuThreshold } from "@/lib/otsu";
 
-export type EdgeMode = "threshold" | "sobel" | "combined" | "canny" | "otsu" | "hatch";
+export type EdgeMode = "threshold" | "sobel" | "combined" | "canny" | "otsu" | "hatch" | "flow-portrait";
 
 export interface StencilOptions {
   threshold: number; // 0-255, default 128
@@ -31,6 +31,7 @@ export type StencilPreset =
   | "watercolor"
   | "sketch"
   | "engraving"
+  | "portrait-pro"
   | "custom";
 
 export const STENCIL_PRESETS: Record<StencilPreset, Partial<StencilOptions>> = {
@@ -121,6 +122,16 @@ export const STENCIL_PRESETS: Record<StencilPreset, Partial<StencilOptions>> = {
     lineThickness: 2,
     noiseReduction: 2,
     smoothing: 2,
+    bridgeGaps: true,
+    dilateErode: 0,
+  },
+  "portrait-pro": {
+    threshold: 128,
+    edgeSensitivity: 65,
+    edgeMode: "flow-portrait",
+    lineThickness: 2,
+    noiseReduction: 1,
+    smoothing: 1,
     bridgeGaps: true,
     dilateErode: 0,
   },
