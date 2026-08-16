@@ -650,6 +650,10 @@ export async function processStencil(
       });
       break;
 
+    case "flow-portrait":
+      imageData = await applyFlowPortraitEngine(imageData);
+      break;
+
     case "threshold":
     default:
       imageData = applyThreshold(imageData, options.threshold ?? 128);
