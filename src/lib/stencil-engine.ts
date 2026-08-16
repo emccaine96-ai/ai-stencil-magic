@@ -4,7 +4,7 @@
 
 import { applyOtsuThreshold } from "@/lib/otsu";
 
-export type EdgeMode = "threshold" | "sobel" | "combined" | "canny" | "otsu";
+export type EdgeMode = "threshold" | "sobel" | "combined" | "canny" | "otsu" | "hatch";
 
 export interface StencilOptions {
   threshold: number; // 0-255, default 128
@@ -30,6 +30,7 @@ export type StencilPreset =
   | "procreate"
   | "watercolor"
   | "sketch"
+  | "engraving"
   | "custom";
 
 export const STENCIL_PRESETS: Record<StencilPreset, Partial<StencilOptions>> = {
@@ -111,6 +112,16 @@ export const STENCIL_PRESETS: Record<StencilPreset, Partial<StencilOptions>> = {
     noiseReduction: 2,
     smoothing: 2,
     bridgeGaps: false,
+    dilateErode: 0,
+  },
+  engraving: {
+    threshold: 128,
+    edgeSensitivity: 65,
+    edgeMode: "hatch",
+    lineThickness: 2,
+    noiseReduction: 2,
+    smoothing: 2,
+    bridgeGaps: true,
     dilateErode: 0,
   },
   custom: {
@@ -316,11 +327,93 @@ export function applyLineThickness(imageData: ImageData, radius: number): ImageD
 
 // --- Canny-style edge detection --------------------------------------------
 
-/** Blur → Sobel → despeckle: thinner, cleaner lines than raw Sobel. */
 export function applyCannyEdge(imageData: ImageData, sensitivity: number): ImageData {
-  const blurred = applyGaussianBlur(imageData, 1.5);
-  const edges = applySobelEdge(blurred, sensitivity * 1.05);
-  return applyNoiseReduction(edges, 2);
+  const { width, height } = imageData;
+  const gray = applyGrayscale(imageData);
+  const blurred = applyGaussianBlur(gray, 1.4);
+  const src = blurred.data;
+
+  const gx = new Float32Array(width * height);
+  const gy = new Float32Array(width * height);
+  const mag = new Float32Array(width * height);
+  let maxMag = 0;
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const i = y * width + x;
+      const l = (dx: number, dy: number) => src[((y + dy) * width + (x + dx)) * 4];
+      const sx = -l(-1, -1) - 2 * l(-1, 0) - l(-1, 1) + l(1, -1) + 2 * l(1, 0) + l(1, 1);
+      const sy = -l(-1, -1) - 2 * l(0, -1) - l(1, -1) + l(-1, 1) + 2 * l(0, 1) + l(1, 1);
+      gx[i] = sx;
+      gy[i] = sy;
+      const m = Math.sqrt(sx * sx + sy * sy);
+      mag[i] = m;
+      if (m > maxMag) maxMag = m;
+    }
+  }
+
+  const thin = new Float32Array(width * height);
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const i = y * width + x;
+      const m = mag[i];
+      if (m === 0) continue;
+      let angle = (Math.atan2(gy[i], gx[i]) * 180) / Math.PI;
+      if (angle < 0) angle += 180;
+      let n1: number, n2: number;
+      if (angle < 22.5 || angle >= 157.5) {
+        n1 = mag[i - 1];
+        n2 = mag[i + 1];
+      } else if (angle < 67.5) {
+        n1 = mag[i - width + 1];
+        n2 = mag[i + width - 1];
+      } else if (angle < 112.5) {
+        n1 = mag[i - width];
+        n2 = mag[i + width];
+      } else {
+        n1 = mag[i - width - 1];
+        n2 = mag[i + width + 1];
+      }
+      thin[i] = m >= n1 && m >= n2 ? m : 0;
+    }
+  }
+
+  const highT = maxMag * (0.15 + ((100 - sensitivity) / 100) * 0.35);
+  const lowT = highT * 0.4;
+  const edge = new Uint8Array(width * height);
+  const stack: number[] = [];
+  for (let i = 0; i < thin.length; i++) {
+    if (thin[i] >= highT) {
+      edge[i] = 1;
+      stack.push(i);
+    }
+  }
+  while (stack.length) {
+    const i = stack.pop()!;
+    const x = i % width;
+    const y = (i / width) | 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const xx = x + dx;
+        const yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= width || yy >= height) continue;
+        const ni = yy * width + xx;
+        if (!edge[ni] && thin[ni] >= lowT) {
+          edge[ni] = 1;
+          stack.push(ni);
+        }
+      }
+    }
+  }
+
+  const out = new Uint8ClampedArray(imageData.data.length).fill(255);
+  for (let i = 0; i < edge.length; i++) {
+    const v = edge[i] ? 0 : 255;
+    const o = i * 4;
+    out[o] = out[o + 1] = out[o + 2] = v;
+    out[o + 3] = v === 0 ? 255 : 0;
+  }
+  return new ImageData(out, width, height);
 }
 
 // --- Dilate / Erode (morphological) ----------------------------------------
@@ -367,6 +460,137 @@ export function bridgeGaps(imageData: ImageData): ImageData {
   return applyDilateErode(applyDilateErode(imageData, 1), -1);
 }
 
+export interface HatchOptions {
+  /** 0-100: overall shading density / darkness sensitivity. */
+  intensity: number;
+  /** Pixel spacing between hatch lines at the lightest active tier. */
+  baseSpacing: number;
+  /** Also draw a light stipple-dot layer in the upper-mid tone tier. */
+  stipple: boolean;
+}
+
+const HATCH_ANGLES = [Math.PI / 4, (Math.PI * 3) / 4, 0, Math.PI / 2]; // 45°, 135°, 0°, 90°
+
+/** Luminance-driven procedural cross-hatch shading — the non-AI counterpart
+ *  to the AI engine's 5-tier tonal hatching prompt. Darker regions get more
+ *  overlapping hatch directions at tighter spacing; light regions stay bare
+ *  paper (or light stipple). Runs on a resolution-capped working canvas and
+ *  yields between passes so it never blocks the main thread for long, even
+ *  on large source images. */
+export async function applyHatchRender(
+  imageData: ImageData,
+  opts: HatchOptions,
+): Promise<ImageData> {
+  const MAX_EDGE = 1400; // hatching is a texture fill — full print resolution isn't needed
+  const scale = Math.min(1, MAX_EDGE / Math.max(imageData.width, imageData.height));
+
+  let work = imageData;
+  if (scale < 1) {
+    const srcCanvas = document.createElement("canvas");
+    srcCanvas.width = imageData.width;
+    srcCanvas.height = imageData.height;
+    srcCanvas.getContext("2d")!.putImageData(imageData, 0, 0);
+    const workCanvas = document.createElement("canvas");
+    workCanvas.width = Math.max(1, Math.round(imageData.width * scale));
+    workCanvas.height = Math.max(1, Math.round(imageData.height * scale));
+    const wctx = workCanvas.getContext("2d")!;
+    wctx.imageSmoothingEnabled = true;
+    wctx.imageSmoothingQuality = "high";
+    wctx.drawImage(srcCanvas, 0, 0, workCanvas.width, workCanvas.height);
+    work = wctx.getImageData(0, 0, workCanvas.width, workCanvas.height);
+  }
+
+  const { width, height } = work;
+  const grayBlurred = applyGaussianBlur(applyGrayscale(work), 1);
+  const lum = grayBlurred.data;
+
+  const out = new Uint8ClampedArray(width * height * 4).fill(255);
+  for (let i = 3; i < out.length; i += 4) out[i] = 0; // fully transparent ink layer
+
+  const spacing = Math.max(2, opts.baseSpacing);
+  const sensitivity = 1 + (opts.intensity - 50) / 100; // 0.5..1.5
+
+  const tiers = [
+    { max: 235, dirs: 0, spacingMul: 1 },
+    { max: 190, dirs: 1, spacingMul: 1.6 },
+    { max: 145, dirs: 2, spacingMul: 1.1 },
+    { max: 95, dirs: 3, spacingMul: 0.85 },
+    { max: 45, dirs: 4, spacingMul: 0.65 },
+  ];
+
+  function stampInk(x: number, y: number) {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const idx = (y * width + x) * 4;
+    out[idx] = out[idx + 1] = out[idx + 2] = 0;
+    out[idx + 3] = 255;
+  }
+
+  function drawHatchLine(angle: number, offset: number, tierMax: number) {
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const diag = Math.hypot(width, height);
+    const px = -sin * offset + width / 2 + cos * -diag;
+    const py = cos * offset + height / 2 + sin * -diag;
+    const steps = Math.round(diag * 2);
+    for (let s = 0; s <= steps; s++) {
+      const x = Math.round(px + cos * s);
+      const y = Math.round(py + sin * s);
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
+      const l = lum[(y * width + x) * 4];
+      if (l <= tierMax) stampInk(x, y);
+    }
+  }
+
+  const yieldNow = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  for (let t = 1; t < tiers.length; t++) {
+    const tier = tiers[t];
+    const lineSpacing = Math.max(1.5, spacing * tier.spacingMul * (1 / sensitivity));
+    for (let d = 0; d < tier.dirs; d++) {
+      const angle = HATCH_ANGLES[d];
+      const diag = Math.hypot(width, height);
+      for (let off = -diag; off <= diag; off += lineSpacing) {
+        drawHatchLine(angle, off, tier.max);
+      }
+      await yieldNow();
+    }
+  }
+
+  if (opts.stipple) {
+    const dotTierMax = tiers[1].max;
+    const dotTierMin = tiers[2].max;
+    for (let y = 0; y < height; y += 3) {
+      for (let x = 0; x < width; x += 3) {
+        const l = lum[(y * width + x) * 4];
+        if (l > dotTierMax || l < dotTierMin) continue;
+        const p = 1 - (l - dotTierMin) / (dotTierMax - dotTierMin);
+        if (Math.random() < p * 0.5) {
+          stampInk(
+            x + Math.round((Math.random() - 0.5) * 2),
+            y + Math.round((Math.random() - 0.5) * 2),
+          );
+        }
+      }
+      if (y % 60 === 0) await yieldNow();
+    }
+  }
+
+  if (scale < 1) {
+    const smallCanvas = document.createElement("canvas");
+    smallCanvas.width = width;
+    smallCanvas.height = height;
+    smallCanvas.getContext("2d")!.putImageData(new ImageData(out, width, height), 0, 0);
+    const fullCanvas = document.createElement("canvas");
+    fullCanvas.width = imageData.width;
+    fullCanvas.height = imageData.height;
+    const fctx = fullCanvas.getContext("2d")!;
+    fctx.imageSmoothingEnabled = false;
+    fctx.drawImage(smallCanvas, 0, 0, imageData.width, imageData.height);
+    return fctx.getImageData(0, 0, imageData.width, imageData.height);
+  }
+  return new ImageData(out, width, height);
+}
+
 // --- Pipeline ---------------------------------------------------------------
 
 export async function processStencil(
@@ -405,6 +629,14 @@ export async function processStencil(
 
     case "otsu":
       imageData = applyOtsuThreshold(imageData);
+      break;
+
+    case "hatch":
+      imageData = await applyHatchRender(imageData, {
+        intensity: options.edgeSensitivity ?? 65,
+        baseSpacing: Math.max(2, 12 - options.lineThickness),
+        stipple: true,
+      });
       break;
 
     case "threshold":

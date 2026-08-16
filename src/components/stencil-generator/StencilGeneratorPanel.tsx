@@ -47,6 +47,7 @@ const PRESETS: { value: StencilPreset; label: string; description: string; emoji
     emoji: "🎭",
   },
   { value: "sketch", label: "Sketch", description: "Pencil-thin Canny edges", emoji: "🖊️" },
+  { value: "engraving", label: "Engraving", description: "Hand-inked cross-hatch shading", emoji: "✒️" },
 ];
 
 const DPI_OPTIONS = [72, 150, 300, 600];
@@ -225,7 +226,7 @@ export function StencilGeneratorPanel({
         <Zap className="w-5 h-5 text-primary" />
         <h2 className="text-lg font-bold">Stencil Generator</h2>
         <Badge variant="secondary" className="ml-auto">
-          100% Local · No AI
+          No AI · On-Device
         </Badge>
       </div>
 
