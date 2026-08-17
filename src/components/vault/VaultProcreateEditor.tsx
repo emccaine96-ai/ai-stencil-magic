@@ -304,6 +304,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const pendingDraw = useRef<Pt | null>(null);
   const drawRafRef = useRef<number | null>(null);
   const lastEliteTs = useRef(0);
+  const eliteOpInFlight = useRef(false);
   const [curvedText, setCurvedText] = useState(false);
   const [textRadius, setTextRadius] = useState(180);
   const [showSizeMenu, setShowSizeMenu] = useState(false);
