@@ -932,77 +932,42 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       return;
     }
 
+    if (eliteOpInFlight.current) return;
+    eliteOpInFlight.current = true;
     const src = ctx.getImageData(sx, sy, sw, sh);
-    const out = ctx.createImageData(sw, sh);
-    const data = src.data,
-      od = out.data;
-    const cxL = x - sx,
-      cyL = y - sy;
+    const cxL = x - sx;
+    const cyL = y - sy;
 
-    if (eliteTool === "smudge") {
-      // Engine C: linear-interpolated color drag
-      const blend = Math.min(0.85, opacity);
-      for (let py = 0; py < sh; py++) {
-        for (let px = 0; px < sw; px++) {
-          const ddx = px - cxL,
-            ddy = py - cyL;
-          const dist = Math.hypot(ddx, ddy);
-          const f = dist < r ? (1 - dist / r) * blend : 0;
-          const sxs = Math.round(px - dx * f);
-          const sys = Math.round(py - dy * f);
-          const idx = (py * sw + px) * 4;
-          if (sxs >= 0 && sxs < sw && sys >= 0 && sys < sh) {
-            const sIdx = (sys * sw + sxs) * 4;
-            od[idx] = data[idx] * (1 - f) + data[sIdx] * f;
-            od[idx + 1] = data[idx + 1] * (1 - f) + data[sIdx + 1] * f;
-            od[idx + 2] = data[idx + 2] * (1 - f) + data[sIdx + 2] * f;
-            od[idx + 3] = data[idx + 3] * (1 - f) + data[sIdx + 3] * f;
-          } else {
-            od[idx] = data[idx];
-            od[idx + 1] = data[idx + 1];
-            od[idx + 2] = data[idx + 2];
-            od[idx + 3] = data[idx + 3];
-          }
-        }
-      }
-    } else {
-      // Engine D: liquify mesh lattice (push / inflate / deflate) — quadratic falloff
-      const strength = opacity * 0.9;
-      for (let py = 0; py < sh; py++) {
-        for (let px = 0; px < sw; px++) {
-          const ddx = px - cxL,
-            ddy = py - cyL;
-          const dist = Math.hypot(ddx, ddy);
-          const t = dist < r ? 1 - (dist / r) * (dist / r) : 0;
-          let ox = px,
-            oy = py;
-          if (t > 0) {
-            if (eliteTool === "liquify-push") {
-              ox = px - dx * t * strength;
-              oy = py - dy * t * strength;
-            } else if (eliteTool === "liquify-inflate") {
-              const k = 1 + t * strength * 0.6;
-              ox = cxL + ddx / k;
-              oy = cyL + ddy / k;
-            } else {
-              // deflate
-              const k = 1 - t * strength * 0.6;
-              ox = cxL + ddx / Math.max(0.2, k);
-              oy = cyL + ddy / Math.max(0.2, k);
-            }
-          }
-          const sxs = Math.max(0, Math.min(sw - 1, Math.round(ox)));
-          const sys = Math.max(0, Math.min(sh - 1, Math.round(oy)));
-          const idx = (py * sw + px) * 4;
-          const sIdx = (sys * sw + sxs) * 4;
-          od[idx] = data[sIdx];
-          od[idx + 1] = data[sIdx + 1];
-          od[idx + 2] = data[sIdx + 2];
-          od[idx + 3] = data[sIdx + 3];
-        }
-      }
-    }
-    ctx.putImageData(out, sx, sy);
+    const opPromise =
+      eliteTool === "smudge"
+        ? runOp({ op: "smudge", data: src, cxL, cyL, r, dx, dy, blend: Math.min(0.85, opacity) })
+        : runOp({
+            op: "liquify",
+            data: src,
+            cxL,
+            cyL,
+            r,
+            dx,
+            dy,
+            strength: opacity * 0.9,
+            kind:
+              eliteTool === "liquify-push"
+                ? "push"
+                : eliteTool === "liquify-inflate"
+                  ? "inflate"
+                  : "deflate",
+          });
+
+    opPromise
+      .then((out) => {
+        ctx.putImageData(out, sx, sy);
+      })
+      .catch((err) => {
+        console.error("[editor] elite op failed", err);
+      })
+      .finally(() => {
+        eliteOpInFlight.current = false;
+      });
   }
 
   // ---- Post-process filters -----------------------------------------------
