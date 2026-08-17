@@ -718,9 +718,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   }, [autosaveNow]);
 
   // tick the "Saved 12s ago" label
+  const [, bumpSavedAgoTick] = useState(0);
   useEffect(() => {
     const t = window.setInterval(() => {
-      if (savedAgo) setSavedAgo((s) => s);
+      if (savedAgo) bumpSavedAgoTick((n) => n + 1);
     }, 5000);
     return () => window.clearInterval(t);
   }, [savedAgo]);
