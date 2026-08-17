@@ -159,6 +159,113 @@ function stipple(data: ImageData, density: number, size: number): ImageData {
   return new ImageData(out, w, h);
 }
 
+function smudgeOp(data: ImageData, cxL: number, cyL: number, r: number, dx: number, dy: number, blend: number): ImageData {
+  const sw = data.width, sh = data.height;
+  const src = data.data;
+  const out = new Uint8ClampedArray(src.length);
+  for (let py = 0; py < sh; py++) {
+    for (let px = 0; px < sw; px++) {
+      const ddx = px - cxL, ddy = py - cyL;
+      const dist = Math.hypot(ddx, ddy);
+      const f = dist < r ? (1 - dist / r) * blend : 0;
+      const sxs = Math.round(px - dx * f);
+      const sys = Math.round(py - dy * f);
+      const idx = (py * sw + px) * 4;
+      if (sxs >= 0 && sxs < sw && sys >= 0 && sys < sh) {
+        const sIdx = (sys * sw + sxs) * 4;
+        out[idx] = src[idx] * (1 - f) + src[sIdx] * f;
+        out[idx + 1] = src[idx + 1] * (1 - f) + src[sIdx + 1] * f;
+        out[idx + 2] = src[idx + 2] * (1 - f) + src[sIdx + 2] * f;
+        out[idx + 3] = src[idx + 3] * (1 - f) + src[sIdx + 3] * f;
+      } else {
+        out[idx] = src[idx];
+        out[idx + 1] = src[idx + 1];
+        out[idx + 2] = src[idx + 2];
+        out[idx + 3] = src[idx + 3];
+      }
+    }
+  }
+  return new ImageData(out, sw, sh);
+}
+
+function liquifyOp(
+  data: ImageData,
+  cxL: number,
+  cyL: number,
+  r: number,
+  dx: number,
+  dy: number,
+  strength: number,
+  kind: "push" | "inflate" | "deflate",
+): ImageData {
+  const sw = data.width, sh = data.height;
+  const src = data.data;
+  const out = new Uint8ClampedArray(src.length);
+  for (let py = 0; py < sh; py++) {
+    for (let px = 0; px < sw; px++) {
+      const ddx = px - cxL, ddy = py - cyL;
+      const dist = Math.hypot(ddx, ddy);
+      const t = dist < r ? 1 - (dist / r) * (dist / r) : 0;
+      let ox = px, oy = py;
+      if (t > 0) {
+        if (kind === "push") {
+          ox = px - dx * t * strength;
+          oy = py - dy * t * strength;
+        } else if (kind === "inflate") {
+          const k = 1 + t * strength * 0.6;
+          ox = cxL + ddx / k;
+          oy = cyL + ddy / k;
+        } else {
+          const k = 1 - t * strength * 0.6;
+          ox = cxL + ddx / Math.max(0.2, k);
+          oy = cyL + ddy / Math.max(0.2, k);
+        }
+      }
+      const sxs = Math.max(0, Math.min(sw - 1, Math.round(ox)));
+      const sys = Math.max(0, Math.min(sh - 1, Math.round(oy)));
+      const idx = (py * sw + px) * 4;
+      const sIdx = (sys * sw + sxs) * 4;
+      out[idx] = src[sIdx];
+      out[idx + 1] = src[sIdx + 1];
+      out[idx + 2] = src[sIdx + 2];
+      out[idx + 3] = src[sIdx + 3];
+    }
+  }
+  return new ImageData(out, sw, sh);
+}
+
+function healOp(data: ImageData, cxL: number, cyL: number, r: number, opacity: number): ImageData {
+  const w = data.width, h = data.height;
+  const d = new Uint8ClampedArray(data.data);
+  let sr = 0, sg = 0, sb = 0, sw = 0;
+  for (let py = 0; py < h; py++) {
+    for (let px = 0; px < w; px++) {
+      const dd = Math.hypot(px - cxL, py - cyL);
+      if (dd > r) continue;
+      const wgt = 1 - dd / r;
+      const i = (py * w + px) * 4;
+      sr += d[i] * wgt;
+      sg += d[i + 1] * wgt;
+      sb += d[i + 2] * wgt;
+      sw += wgt;
+    }
+  }
+  if (sw <= 0) return new ImageData(d, w, h);
+  const mr = sr / sw, mg = sg / sw, mb = sb / sw;
+  for (let py = 0; py < h; py++) {
+    for (let px = 0; px < w; px++) {
+      const dd = Math.hypot(px - cxL, py - cyL);
+      if (dd > r) continue;
+      const a = (1 - dd / r) * Math.min(1, opacity);
+      const i = (py * w + px) * 4;
+      d[i] = d[i] * (1 - a) + mr * a;
+      d[i + 1] = d[i + 1] * (1 - a) + mg * a;
+      d[i + 2] = d[i + 2] * (1 - a) + mb * a;
+    }
+  }
+  return new ImageData(d, w, h);
+}
+
 self.onmessage = (e: MessageEvent<Op>) => {
   const msg = e.data;
   try {
