@@ -289,6 +289,15 @@ self.onmessage = (e: MessageEvent<Op>) => {
       case "stipple":
         result = stipple(msg.data, msg.density, msg.size);
         break;
+      case "smudge":
+        result = smudgeOp(msg.data, msg.cxL, msg.cyL, msg.r, msg.dx, msg.dy, msg.blend);
+        break;
+      case "liquify":
+        result = liquifyOp(msg.data, msg.cxL, msg.cyL, msg.r, msg.dx, msg.dy, msg.strength, msg.kind);
+        break;
+      case "heal":
+        result = healOp(msg.data, msg.cxL, msg.cyL, msg.r, msg.opacity);
+        break;
     }
     (self as unknown as Worker).postMessage({ id: msg.id, ok: true, data: result }, [
       result.data.buffer,
