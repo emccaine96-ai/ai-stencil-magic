@@ -17,7 +17,10 @@ type Op =
     }
   | { id: number; op: "thermal-blue"; data: ImageData }
   | { id: number; op: "thermal-purple"; data: ImageData }
-  | { id: number; op: "stipple"; data: ImageData; density: number; size: number };
+  | { id: number; op: "stipple"; data: ImageData; density: number; size: number }
+  | { id: number; op: "smudge"; data: ImageData; cxL: number; cyL: number; r: number; dx: number; dy: number; blend: number }
+  | { id: number; op: "liquify"; data: ImageData; cxL: number; cyL: number; r: number; dx: number; dy: number; strength: number; kind: "push" | "inflate" | "deflate" }
+  | { id: number; op: "heal"; data: ImageData; cxL: number; cyL: number; r: number; opacity: number };
 
 function luma(d: Uint8ClampedArray, i: number) {
   return 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
