@@ -1276,44 +1276,21 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     const w = Math.min(W - ix, Math.ceil(r * 2));
     const h = Math.min(H - iy, Math.ceil(r * 2));
     if (w <= 0 || h <= 0) return;
+    if (eliteOpInFlight.current) return;
+    eliteOpInFlight.current = true;
     const patch = ctx.getImageData(ix, iy, w, h);
-    const d = patch.data;
-    // Compute weighted mean RGB inside the disc.
-    let sr = 0,
-      sg = 0,
-      sb = 0,
-      sw = 0;
-    const cxL = x - ix,
-      cyL = y - iy;
-    for (let py = 0; py < h; py++) {
-      for (let px = 0; px < w; px++) {
-        const dd = Math.hypot(px - cxL, py - cyL);
-        if (dd > r) continue;
-        const wgt = 1 - dd / r;
-        const i = (py * w + px) * 4;
-        sr += d[i] * wgt;
-        sg += d[i + 1] * wgt;
-        sb += d[i + 2] * wgt;
-        sw += wgt;
-      }
-    }
-    if (sw <= 0) return;
-    const mr = sr / sw,
-      mg = sg / sw,
-      mb = sb / sw;
-    // Blend mean back with soft falloff (alpha based on disc distance).
-    for (let py = 0; py < h; py++) {
-      for (let px = 0; px < w; px++) {
-        const dd = Math.hypot(px - cxL, py - cyL);
-        if (dd > r) continue;
-        const a = (1 - dd / r) * Math.min(1, opacity);
-        const i = (py * w + px) * 4;
-        d[i] = d[i] * (1 - a) + mr * a;
-        d[i + 1] = d[i + 1] * (1 - a) + mg * a;
-        d[i + 2] = d[i + 2] * (1 - a) + mb * a;
-      }
-    }
-    ctx.putImageData(patch, ix, iy);
+    const cxL = x - ix;
+    const cyL = y - iy;
+    runOp({ op: "heal", data: patch, cxL, cyL, r, opacity })
+      .then((out) => {
+        ctx.putImageData(out, ix, iy);
+      })
+      .catch((err) => {
+        console.error("[editor] heal failed", err);
+      })
+      .finally(() => {
+        eliteOpInFlight.current = false;
+      });
   }
 
   /** Place text — optionally along a circular arc (curved text). */
