@@ -34,9 +34,12 @@ function Header() {
           <span className="font-script text-2xl">PrimalPrint AI</span>
         </Link>
         <div className="flex items-center gap-3">
-          <button className="rounded-full border border-border px-4 py-1.5 text-sm hover:bg-muted transition">
+          <Link
+            to="/auth"
+            className="rounded-full border border-border px-4 py-1.5 text-sm hover:bg-muted transition"
+          >
             Sign In
-          </button>
+          </Link>
           <button onClick={() => setOpen((v) => !v)} aria-label="menu" className="p-2">
             {open ? <X size={22} /> : <Menu size={22} />}
           </button>
