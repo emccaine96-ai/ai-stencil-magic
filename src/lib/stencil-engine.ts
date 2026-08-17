@@ -187,9 +187,6 @@ export function applyThreshold(imageData: ImageData, threshold: number): ImageDa
   return new ImageData(data, imageData.width, imageData.height);
 }
 
-/*
-Add the exact applySobelEdge implementation requested by the prompt.
-*/
 export function applySobelEdge(imageData: ImageData, sensitivity: number): ImageData {
   const { width, height } = imageData;
   const src = imageData.data;
@@ -945,7 +942,6 @@ export async function applyFlowPortraitEngine(
   await flowYield();
 
   let result = new ImageData(out, width, height);
-  result = bridgeGaps(result);
 
   if (scale < 1) {
     const smallCanvas = document.createElement("canvas");
@@ -1012,7 +1008,13 @@ export async function processStencil(
       break;
 
     case "flow-portrait":
-      imageData = await applyFlowPortraitEngine(imageData);
+      imageData = await applyFlowPortraitEngine(imageData, {
+        ...DEFAULT_FLOW_PORTRAIT_OPTIONS,
+        hatchIntensity: options.edgeSensitivity ?? DEFAULT_FLOW_PORTRAIT_OPTIONS.hatchIntensity,
+        lineWeight: Math.max(1, Math.min(4, options.lineThickness * 0.75)),
+        structureSigma: Math.max(1, Math.min(6, 6 - options.noiseReduction * 0.4)),
+        etfIterations: Math.max(1, Math.min(5, Math.round(options.smoothing / 2) + 1)),
+      });
       break;
 
     case "threshold":

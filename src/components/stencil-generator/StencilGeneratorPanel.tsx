@@ -142,7 +142,8 @@ export function StencilGeneratorPanel({
       }
       onStencilReady?.(result);
       toast.success("Stencil generated!");
-    } catch {
+    } catch (err) {
+      console.error("Stencil generation failed:", err);
       toast.error("Generation failed. Please try again.");
     } finally {
       setIsProcessing(false);
