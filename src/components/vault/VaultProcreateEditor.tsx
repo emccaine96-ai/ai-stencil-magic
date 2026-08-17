@@ -304,6 +304,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const pendingDraw = useRef<Pt | null>(null);
   const drawRafRef = useRef<number | null>(null);
   const lastEliteTs = useRef(0);
+  const eliteOpInFlight = useRef(false);
   const [curvedText, setCurvedText] = useState(false);
   const [textRadius, setTextRadius] = useState(180);
   const [showSizeMenu, setShowSizeMenu] = useState(false);
@@ -717,9 +718,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   }, [autosaveNow]);
 
   // tick the "Saved 12s ago" label
+  const [, bumpSavedAgoTick] = useState(0);
   useEffect(() => {
     const t = window.setInterval(() => {
-      if (savedAgo) setSavedAgo((s) => s);
+      if (savedAgo) bumpSavedAgoTick((n) => n + 1);
     }, 5000);
     return () => window.clearInterval(t);
   }, [savedAgo]);
@@ -930,77 +932,42 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
       return;
     }
 
+    if (eliteOpInFlight.current) return;
+    eliteOpInFlight.current = true;
     const src = ctx.getImageData(sx, sy, sw, sh);
-    const out = ctx.createImageData(sw, sh);
-    const data = src.data,
-      od = out.data;
-    const cxL = x - sx,
-      cyL = y - sy;
+    const cxL = x - sx;
+    const cyL = y - sy;
 
-    if (eliteTool === "smudge") {
-      // Engine C: linear-interpolated color drag
-      const blend = Math.min(0.85, opacity);
-      for (let py = 0; py < sh; py++) {
-        for (let px = 0; px < sw; px++) {
-          const ddx = px - cxL,
-            ddy = py - cyL;
-          const dist = Math.hypot(ddx, ddy);
-          const f = dist < r ? (1 - dist / r) * blend : 0;
-          const sxs = Math.round(px - dx * f);
-          const sys = Math.round(py - dy * f);
-          const idx = (py * sw + px) * 4;
-          if (sxs >= 0 && sxs < sw && sys >= 0 && sys < sh) {
-            const sIdx = (sys * sw + sxs) * 4;
-            od[idx] = data[idx] * (1 - f) + data[sIdx] * f;
-            od[idx + 1] = data[idx + 1] * (1 - f) + data[sIdx + 1] * f;
-            od[idx + 2] = data[idx + 2] * (1 - f) + data[sIdx + 2] * f;
-            od[idx + 3] = data[idx + 3] * (1 - f) + data[sIdx + 3] * f;
-          } else {
-            od[idx] = data[idx];
-            od[idx + 1] = data[idx + 1];
-            od[idx + 2] = data[idx + 2];
-            od[idx + 3] = data[idx + 3];
-          }
-        }
-      }
-    } else {
-      // Engine D: liquify mesh lattice (push / inflate / deflate) — quadratic falloff
-      const strength = opacity * 0.9;
-      for (let py = 0; py < sh; py++) {
-        for (let px = 0; px < sw; px++) {
-          const ddx = px - cxL,
-            ddy = py - cyL;
-          const dist = Math.hypot(ddx, ddy);
-          const t = dist < r ? 1 - (dist / r) * (dist / r) : 0;
-          let ox = px,
-            oy = py;
-          if (t > 0) {
-            if (eliteTool === "liquify-push") {
-              ox = px - dx * t * strength;
-              oy = py - dy * t * strength;
-            } else if (eliteTool === "liquify-inflate") {
-              const k = 1 + t * strength * 0.6;
-              ox = cxL + ddx / k;
-              oy = cyL + ddy / k;
-            } else {
-              // deflate
-              const k = 1 - t * strength * 0.6;
-              ox = cxL + ddx / Math.max(0.2, k);
-              oy = cyL + ddy / Math.max(0.2, k);
-            }
-          }
-          const sxs = Math.max(0, Math.min(sw - 1, Math.round(ox)));
-          const sys = Math.max(0, Math.min(sh - 1, Math.round(oy)));
-          const idx = (py * sw + px) * 4;
-          const sIdx = (sys * sw + sxs) * 4;
-          od[idx] = data[sIdx];
-          od[idx + 1] = data[sIdx + 1];
-          od[idx + 2] = data[sIdx + 2];
-          od[idx + 3] = data[sIdx + 3];
-        }
-      }
-    }
-    ctx.putImageData(out, sx, sy);
+    const opPromise =
+      eliteTool === "smudge"
+        ? runOp({ op: "smudge", data: src, cxL, cyL, r, dx, dy, blend: Math.min(0.85, opacity) })
+        : runOp({
+            op: "liquify",
+            data: src,
+            cxL,
+            cyL,
+            r,
+            dx,
+            dy,
+            strength: opacity * 0.9,
+            kind:
+              eliteTool === "liquify-push"
+                ? "push"
+                : eliteTool === "liquify-inflate"
+                  ? "inflate"
+                  : "deflate",
+          });
+
+    opPromise
+      .then((out) => {
+        ctx.putImageData(out, sx, sy);
+      })
+      .catch((err) => {
+        console.error("[editor] elite op failed", err);
+      })
+      .finally(() => {
+        eliteOpInFlight.current = false;
+      });
   }
 
   // ---- Post-process filters -----------------------------------------------
@@ -1309,44 +1276,21 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     const w = Math.min(W - ix, Math.ceil(r * 2));
     const h = Math.min(H - iy, Math.ceil(r * 2));
     if (w <= 0 || h <= 0) return;
+    if (eliteOpInFlight.current) return;
+    eliteOpInFlight.current = true;
     const patch = ctx.getImageData(ix, iy, w, h);
-    const d = patch.data;
-    // Compute weighted mean RGB inside the disc.
-    let sr = 0,
-      sg = 0,
-      sb = 0,
-      sw = 0;
-    const cxL = x - ix,
-      cyL = y - iy;
-    for (let py = 0; py < h; py++) {
-      for (let px = 0; px < w; px++) {
-        const dd = Math.hypot(px - cxL, py - cyL);
-        if (dd > r) continue;
-        const wgt = 1 - dd / r;
-        const i = (py * w + px) * 4;
-        sr += d[i] * wgt;
-        sg += d[i + 1] * wgt;
-        sb += d[i + 2] * wgt;
-        sw += wgt;
-      }
-    }
-    if (sw <= 0) return;
-    const mr = sr / sw,
-      mg = sg / sw,
-      mb = sb / sw;
-    // Blend mean back with soft falloff (alpha based on disc distance).
-    for (let py = 0; py < h; py++) {
-      for (let px = 0; px < w; px++) {
-        const dd = Math.hypot(px - cxL, py - cyL);
-        if (dd > r) continue;
-        const a = (1 - dd / r) * Math.min(1, opacity);
-        const i = (py * w + px) * 4;
-        d[i] = d[i] * (1 - a) + mr * a;
-        d[i + 1] = d[i + 1] * (1 - a) + mg * a;
-        d[i + 2] = d[i + 2] * (1 - a) + mb * a;
-      }
-    }
-    ctx.putImageData(patch, ix, iy);
+    const cxL = x - ix;
+    const cyL = y - iy;
+    runOp({ op: "heal", data: patch, cxL, cyL, r, opacity })
+      .then((out) => {
+        ctx.putImageData(out, ix, iy);
+      })
+      .catch((err) => {
+        console.error("[editor] heal failed", err);
+      })
+      .finally(() => {
+        eliteOpInFlight.current = false;
+      });
   }
 
   /** Place text — optionally along a circular arc (curved text). */
