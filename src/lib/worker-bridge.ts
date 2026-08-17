@@ -10,7 +10,10 @@ type Op =
   | { op: "morph"; data: ImageData; passes: number; kind: "erode" | "dilate" | "open" | "close" }
   | { op: "thermal-blue"; data: ImageData }
   | { op: "thermal-purple"; data: ImageData }
-  | { op: "stipple"; data: ImageData; density: number; size: number };
+  | { op: "stipple"; data: ImageData; density: number; size: number }
+  | { op: "smudge"; data: ImageData; cxL: number; cyL: number; r: number; dx: number; dy: number; blend: number }
+  | { op: "liquify"; data: ImageData; cxL: number; cyL: number; r: number; dx: number; dy: number; strength: number; kind: "push" | "inflate" | "deflate" }
+  | { op: "heal"; data: ImageData; cxL: number; cyL: number; r: number; opacity: number };
 
 let _worker: Worker | null = null;
 let _seq = 0;
