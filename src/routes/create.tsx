@@ -15,6 +15,7 @@ import {
 import logo from "@/assets/stencil-logo.png";
 import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
+import { processClassicalPro, getPresetCategories, getPresetsByCategory } from "@/lib/classical-pro-integration";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/create")({
@@ -41,7 +42,7 @@ const STYLES: { id: Style; label: string; sub: string }[] = [
 
 const KEY_STORAGE = "stencilmagic.gemini.key";
 const PROVIDER_STORAGE = "stencilmagic.provider"; // 'openrouter' | 'gemini'
-type Provider = "openrouter" | "gemini";
+type Provider = "openrouter" | "gemini" | "classical";
 const STYLE_PROMPTS: Record<Style, string> = {
   hatching:
     "Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable.",
@@ -83,6 +84,9 @@ function CreatePage() {
   const [keyOpen, setKeyOpen] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
   const [provider, setProvider] = useState<Provider>("openrouter");
+  const [classicalPreset, setClassicalPreset] = useState("portrait");
+  const [classicalMode, setClassicalMode] = useState<"xdog" | "dither">("xdog");
+  const [classicalPurple, setClassicalPurple] = useState(false);
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
@@ -95,7 +99,7 @@ function CreatePage() {
       typeof window !== "undefined"
         ? (localStorage.getItem(PROVIDER_STORAGE) as Provider | null)
         : null;
-    if (p === "openrouter" || p === "gemini") setProvider(p);
+    if (p === "openrouter" || p === "gemini" || p === "classical") setProvider(p);
     // Hand-off from Vault: open a saved entry directly in the editor.
     try {
       const raw =
@@ -173,6 +177,19 @@ function CreatePage() {
     setError(null);
     setStencil(null);
     try {
+      if (provider === "classical") {
+        // Classical Pro Engine — runs locally, no API needed
+        const result = await processClassicalPro(photo, {
+          preset: classicalPreset,
+          mode: classicalMode,
+          intensity,
+          purpleTint: classicalPurple,
+        });
+        setStencil(result.dataUrl);
+        toast.success(`Classical Pro: ${result.presetName} (${result.processingTime}ms)`);
+        setLoading(false);
+        return;
+      }
       const { mimeType, data: imgB64 } = dataUrlToInline(photo);
       const prompt = buildPrompt({ style, intensity, customPrompt });
       if (provider === "openrouter") {
@@ -293,7 +310,7 @@ function CreatePage() {
               <span
                 className={`hidden sm:inline ${provider === "openrouter" ? "text-primary" : apiKey ? "text-primary" : "text-destructive"}`}
               >
-                {provider === "openrouter" ? "OpenRouter AI" : apiKey ? "My key" : "Set key"}
+                {provider === "openrouter" ? "OpenRouter AI" : provider === "classical" ? "Classical Pro" : apiKey ? "My key" : "Set key"}
               </span>
             </button>
           </div>
@@ -307,18 +324,18 @@ function CreatePage() {
               AI provider
             </h2>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => selectProvider("openrouter")}
               className={`p-3 rounded-2xl border text-left transition ${provider === "openrouter" ? "border-primary bg-gradient-primary text-primary-foreground shadow-glow" : "border-border bg-card hover:border-primary/50"}`}
             >
               <div className="flex items-center gap-2 font-bold text-sm">
-                <Sparkles size={14} /> OpenRouter AI
+                <Sparkles size={14} /> OpenRouter
               </div>
               <div
-                className={`text-[11px] mt-1 ${provider === "openrouter" ? "opacity-90" : "text-muted-foreground"}`}
+                className={`text-[10px] mt-1 ${provider === "openrouter" ? "opacity-90" : "text-muted-foreground"}`}
               >
-                Uses OpenRouter credits. Key required for Master Pro.
+                AI generation via OpenRouter
               </div>
             </button>
             <button
@@ -326,15 +343,83 @@ function CreatePage() {
               className={`p-3 rounded-2xl border text-left transition ${provider === "gemini" ? "border-primary bg-gradient-primary text-primary-foreground shadow-glow" : "border-border bg-card hover:border-primary/50"}`}
             >
               <div className="flex items-center gap-2 font-bold text-sm">
-                <KeyRound size={14} /> My Gemini key
+                <KeyRound size={14} /> Gemini
               </div>
               <div
-                className={`text-[11px] mt-1 ${provider === "gemini" ? "opacity-90" : "text-muted-foreground"}`}
+                className={`text-[10px] mt-1 ${provider === "gemini" ? "opacity-90" : "text-muted-foreground"}`}
               >
-                Free tier from Google AI Studio.
+                Free tier from Google AI
+              </div>
+            </button>
+            <button
+              onClick={() => selectProvider("classical")}
+              className={`p-3 rounded-2xl border text-left transition ${provider === "classical" ? "border-primary bg-gradient-primary text-primary-foreground shadow-glow" : "border-border bg-card hover:border-primary/50"}`}
+            >
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <Zap size={14} /> Classical Pro
+              </div>
+              <div
+                className={`text-[10px] mt-1 ${provider === "classical" ? "opacity-90" : "text-muted-foreground"}`}
+              >
+                No API key needed — runs locally
               </div>
             </button>
           </div>
+          {provider === "classical" ? (
+            <div className="mt-3 p-4 rounded-2xl border border-border bg-card space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Subject Preset</label>
+                <select
+                  value={classicalPreset}
+                  onChange={(e) => setClassicalPreset(e.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                >
+                  <option value="portrait">Portrait</option>
+                  <option value="babies">Babies</option>
+                  <option value="elderly">Elderly</option>
+                  <option value="florals">Florals</option>
+                  <option value="geometric">Geometric</option>
+                  <option value="mythology">Mythology</option>
+                  <option value="stippling">Stippling</option>
+                  <option value="animals">Animals</option>
+                  <option value="traditional">Traditional</option>
+                  <option value="bad_photos">Bad Photos (rescue)</option>
+                  <option value="lettering">Lettering</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Mode</label>
+                  <div className="mt-1.5 flex gap-2">
+                    <button
+                      onClick={() => setClassicalMode("xdog")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${classicalMode === "xdog" ? "border-primary bg-primary/10 text-primary" : "border-border"}`}
+                    >
+                      XDoG
+                    </button>
+                    <button
+                      onClick={() => setClassicalMode("dither")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${classicalMode === "dither" ? "border-primary bg-primary/10 text-primary" : "border-border"}`}
+                    >
+                      Dither
+                    </button>
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={classicalPurple}
+                    onChange={(e) => setClassicalPurple(e.target.checked)}
+                    className="accent-primary"
+                  />
+                  Hectograph purple
+                </label>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Classical Pro runs entirely in your browser — no API calls, no credits, no key needed. 50+ subject-specific calibration presets for optimal line work.
+              </p>
+            </div>
+          ) : null}
         </section>
 
         <section>
@@ -444,7 +529,7 @@ function CreatePage() {
         >
           {loading ? (
             <>
-              <Loader2 className="animate-spin" size={18} /> Generating stencil…
+              <Loader2 className="animate-spin" size={18} /> Processing stencil…
             </>
           ) : (
             <>Generate Stencil</>
