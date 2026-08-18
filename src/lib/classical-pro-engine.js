@@ -518,3 +518,6 @@ if (typeof window !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { ClassicalProEngine };
 }
+
+export { ClassicalProEngine };
+export default ClassicalProEngine;
