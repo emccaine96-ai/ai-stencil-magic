@@ -44,7 +44,7 @@ const STYLES: { id: Style; label: string; sub: string }[] = [
 
 const KEY_STORAGE = "stencilmagic.gemini.key";
 const PROVIDER_STORAGE = "stencilmagic.provider"; // 'openrouter' | 'gemini'
-type Provider = "openrouter" | "gemini" | "classical";
+type Provider = "openrouter" | "gemini" | "classical" | "hybrid";
 const STYLE_PROMPTS: Record<Style, string> = {
   hatching:
     "Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable.",
@@ -101,7 +101,7 @@ function CreatePage() {
       typeof window !== "undefined"
         ? (localStorage.getItem(PROVIDER_STORAGE) as Provider | null)
         : null;
-    if (p === "openrouter" || p === "gemini" || p === "classical") setProvider(p);
+    if (p === "openrouter" || p === "gemini" || p === "classical" || p === "hybrid") setProvider(p);
     // Hand-off from Vault: open a saved entry directly in the editor.
     try {
       const raw =
@@ -238,6 +238,87 @@ function CreatePage() {
         setLoading(false);
         return;
       }
+      if (provider === "hybrid") {
+        // Step 1: Classical Pro pre-processing
+        const baseConfig = STYLE_TO_CLASSICAL[style as StencilStyle];
+        const scaledConfig = scaleByIntensity(baseConfig, intensity);
+        const classicalResult = await processClassicalPro(photo, {
+          preset: style,
+          mode: scaledConfig.mode,
+          intensity,
+          purpleTint: false,
+        });
+        // Step 2: Send classical result to AI for refinement
+        const { mimeType: cm, data: cB64 } = dataUrlToInline(classicalResult.dataUrl);
+        const hybridPrompt = `Refine this pre-processed tattoo stencil for the "${style}" style at ${Math.round(intensity * 100)}% density. Keep the structure, improve line quality and add artistic detail. ${customPrompt || ""}`;
+        let hybridDataUrl: string | null = null;
+        // Try server-side first
+        try {
+          const r = await fetch("/api/generate-stencil", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: hybridPrompt,
+              image: { mimeType: cm, data: cB64 },
+              provider: "openrouter",
+            }),
+          });
+          const data = await r.json();
+          if (r.ok && data.dataUrl) hybridDataUrl = data.dataUrl;
+        } catch {}
+        // Fallback: Gemini direct with user key
+        if (!hybridDataUrl && apiKey) {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${encodeURIComponent(apiKey)}`;
+          const r = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ role: "user", parts: [
+                { text: hybridPrompt },
+                { inlineData: { mimeType: cm, data: cB64 } },
+              ]}],
+              generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
+            }),
+          });
+          const data = await r.json();
+          if (r.ok) {
+            const parts = data?.candidates?.[0]?.content?.parts ?? [];
+            const imgPart = parts.find((p: any) => p?.inlineData?.data || p?.inline_data?.data);
+            const inline = imgPart?.inlineData ?? imgPart?.inline_data;
+            if (inline?.data) {
+              const outMime = inline.mimeType || inline.mime_type || "image/png";
+              hybridDataUrl = `data:${outMime};base64,${inline.data}`;
+            }
+          }
+        }
+        if (!hybridDataUrl) {
+          hybridDataUrl = classicalResult.dataUrl;
+          toast.info("No API key set — showing Classical Pro result. Add a Gemini key for AI refinement.");
+        }
+        // Apply hectograph purple if requested
+        if (classicalPurple && hybridDataUrl) {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.src = hybridDataUrl;
+          await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(img, 0, 0);
+          const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const d = id.data;
+          for (let i = 0; i < d.length; i += 4) {
+            if (d[i] < 128) { d[i] = 120; d[i+1] = 0; d[i+2] = 200; d[i+3] = 255; }
+            else { d[i+3] = 0; }
+          }
+          ctx.putImageData(id, 0, 0);
+          hybridDataUrl = canvas.toDataURL("image/png");
+        }
+        setStencil(hybridDataUrl);
+        setLoading(false);
+        return;
+      }
       const { mimeType, data: imgB64 } = dataUrlToInline(photo);
       const prompt = buildPrompt({ style, intensity, customPrompt });
       if (provider === "openrouter") {
@@ -358,7 +439,7 @@ function CreatePage() {
               <span
                 className={`hidden sm:inline ${provider === "openrouter" ? "text-primary" : apiKey ? "text-primary" : "text-destructive"}`}
               >
-                {provider === "openrouter" ? "OpenRouter" : provider === "classical" ? "Classical Pro" : apiKey ? "Gemini key" : "Set key"}
+                {provider === "openrouter" ? "OpenRouter" : provider === "classical" ? "Classical Pro" : provider === "hybrid" ? "Hybrid" : apiKey ? "Gemini key" : "Set key"}
               </span>
             </button>
           </div>
@@ -372,7 +453,7 @@ function CreatePage() {
               Engine
             </h2>
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <button
               onClick={() => selectProvider("openrouter")}
               className={`p-3 rounded-2xl border text-left transition ${provider === "openrouter" ? "border-primary bg-gradient-primary text-primary-foreground shadow-glow" : "border-border bg-card hover:border-primary/50"}`}
@@ -409,7 +490,20 @@ function CreatePage() {
               <div
                 className={`text-[10px] mt-1 ${provider === "classical" ? "opacity-90" : "text-muted-foreground"}`}
               >
-                No API key needed — runs locally
+                No API key — runs locally
+              </div>
+            </button>
+            <button
+              onClick={() => selectProvider("hybrid")}
+              className={`p-3 rounded-2xl border text-left transition ${provider === "hybrid" ? "border-primary bg-gradient-primary text-primary-foreground shadow-glow" : "border-border bg-card hover:border-primary/50"}`}
+            >
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <ChevronsLeftRight size={14} /> Hybrid
+              </div>
+              <div
+                className={`text-[10px] mt-1 ${provider === "hybrid" ? "opacity-90" : "text-muted-foreground"}`}
+              >
+                Classical then AI refine
               </div>
             </button>
           </div>
@@ -429,6 +523,25 @@ function CreatePage() {
                   Hectograph purple
                 </label>
               </div>
+            </div>
+          ) : null}
+          {provider === "hybrid" ? (
+            <div className="mt-3 p-4 rounded-2xl border border-border bg-card space-y-2">
+              <p className="text-[11px] text-muted-foreground">
+                <strong className="text-foreground">Hybrid:</strong> Classical Pro processes the image first (CLAHE, edge detection, line work), then sends it to AI for refinement. Clean structure plus artistic detail.
+              </p>
+              <p className="text-[10px] text-muted-foreground">
+                Uses 1 API call. Falls back to Classical Pro only if no key is set.
+              </p>
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={classicalPurple}
+                  onChange={(e) => setClassicalPurple(e.target.checked)}
+                  className="accent-primary"
+                />
+                Hectograph purple on final output
+              </label>
             </div>
           ) : null}
         </section>
@@ -653,7 +766,7 @@ function CreatePage() {
               <p className="text-[11px] text-muted-foreground">
                 One-tap filters to fine-tune your stencil. Stack multiple — each applies on top of the last.
               </p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
                   { id: "builtin.stencil-sharpen", label: "Sharpen", icon: "✨" },
                   { id: "builtin.smart-contrast", label: "Contrast", icon: "◐" },
