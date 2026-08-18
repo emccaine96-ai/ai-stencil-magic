@@ -61,7 +61,7 @@ export async function exportPDF(
   write(img);
   write("\nendstream\nendobj\n");
 
-  const info = `<< /Title (${opts.title ?? "PrimalCanvas Stencil"}) /Author (${opts.author ?? "PrimalCanvas 2.0"}) /Producer (PrimalCanvas) >>`;
+  const info = `<< /Title (${opts.title ?? "AI Stencil Magic Stencil"}) /Author (${opts.author ?? "AI Stencil Magic 1.0"}) /Producer (AI Stencil Magic) >>`;
   obj(6, info);
 
   const xrefOffset = offset;

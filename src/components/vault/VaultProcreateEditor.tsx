@@ -272,7 +272,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
   const [brushId, setBrushId] = useState<BrushId>("hard-round");
   const [variantIdx, setVariantIdx] = useState(0); // 0..9
-  const [tool, setTool] = useState<Tool>("brush");
+  const [tool, setTool] = useState<Tool>("pan"); // Start in pan/navigate mode — user must select a brush to draw
   const [eliteTool, setEliteTool] = useState<EliteTool | null>(null);
   const [symmetry, setSymmetry] = useState<Symmetry>("none");
   const [stabilizer, setStabilizer] = useState(0.5); // 0..0.9 EMA weight toward target

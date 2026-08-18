@@ -1,4 +1,4 @@
-// Stamp-based brush engine for PrimalCanvas Studio 2.0.
+// Stamp-based brush engine for AI Stencil Magic Studio.
 // All brushes are pure Canvas2D so they work everywhere on Android Chrome.
 
 export type BrushId =

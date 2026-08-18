@@ -1,4 +1,4 @@
-// Selection mask + tools for PrimalCanvas Studio.
+// Selection mask + tools for AI Stencil Magic Studio.
 // A selection is a single-channel (0..255) bitmap the size of the canvas.
 // 0 = unselected, 255 = fully selected. Anti-aliasing & feather use the mid-range.
 

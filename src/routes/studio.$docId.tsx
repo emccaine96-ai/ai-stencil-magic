@@ -87,7 +87,7 @@ import { Share2 } from "lucide-react";
 export const Route = createFileRoute("/studio/$docId")({
   head: () => ({
     meta: [
-      { title: "PrimalCanvas Studio — AI Stencil Magic" },
+      { title: "Canvas Studio — AI Stencil Magic" },
       {
         name: "description",
         content:

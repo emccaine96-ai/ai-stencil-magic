@@ -1,4 +1,4 @@
-// PrimalPrint local document management — IndexedDB store.
+// AI Stencil Magic local document management — IndexedDB store.
 // SSR-safe: every public method bails out when window/indexedDB is missing.
 
 import { openDB, type IDBPDatabase, type DBSchema } from "idb";
@@ -75,7 +75,7 @@ export type DocumentData = {
   schemaVersion: number;
 };
 
-interface PrimalPrintDB extends DBSchema {
+interface StencilMagicDB extends DBSchema {
   documents: {
     key: string;
     value: DocumentData;
@@ -94,15 +94,15 @@ interface PrimalPrintDB extends DBSchema {
   };
 }
 
-const DB_NAME = "PrimalPrintDB";
+const DB_NAME = "StencilMagicDB";
 const DB_VERSION = 1;
 export const CURRENT_SCHEMA = 1;
 
-let _dbPromise: Promise<IDBPDatabase<PrimalPrintDB>> | null = null;
-function db(): Promise<IDBPDatabase<PrimalPrintDB>> | null {
+let _dbPromise: Promise<IDBPDatabase<StencilMagicDB>> | null = null;
+function db(): Promise<IDBPDatabase<StencilMagicDB>> | null {
   if (typeof window === "undefined" || typeof indexedDB === "undefined") return null;
   if (!_dbPromise) {
-    _dbPromise = openDB<PrimalPrintDB>(DB_NAME, DB_VERSION, {
+    _dbPromise = openDB<StencilMagicDB>(DB_NAME, DB_VERSION, {
       upgrade(db) {
         if (!db.objectStoreNames.contains("documents")) {
           const s = db.createObjectStore("documents", { keyPath: "id" });
@@ -302,7 +302,7 @@ export async function moveDocumentToFolder(docId: string, folderId: string | nul
 /* --- Backup / Restore --- */
 
 export type BackupBundle = {
-  format: "primalprint-vault-backup";
+  format: "stencilmagic-library-backup";
   schemaVersion: number;
   exportedAt: number;
   documents: DocumentData[];
@@ -311,7 +311,7 @@ export type BackupBundle = {
 
 export async function exportBackup(): Promise<BackupBundle> {
   return {
-    format: "primalprint-vault-backup",
+    format: "stencilmagic-library-backup",
     schemaVersion: CURRENT_SCHEMA,
     exportedAt: Date.now(),
     documents: await listDocuments(),
@@ -323,7 +323,7 @@ export async function importBackup(
   bundle: BackupBundle,
   opts: { merge?: boolean } = {},
 ): Promise<{ documents: number; folders: number }> {
-  if (bundle.format !== "primalprint-vault-backup") throw new Error("Invalid backup file");
+  if (bundle.format !== "stencilmagic-library-backup") throw new Error("Invalid backup file");
   const d = await db();
   if (!d) return { documents: 0, folders: 0 };
   const tx = d.transaction(["documents", "folders"], "readwrite");

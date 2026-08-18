@@ -60,7 +60,7 @@ function Header() {
             See Examples
           </a>
           <Link to="/vault" className="py-2 text-primary font-semibold" onClick={() => setOpen(false)}>
-            Saved Generations / Storage Vault
+            My Stencils / Library
           </Link>
           <Link to="/gallery" className="py-2" onClick={() => setOpen(false)}>
             Community Gallery

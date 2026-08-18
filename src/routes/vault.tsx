@@ -39,7 +39,7 @@ import { VaultProcreateEditor } from "@/components/vault/VaultProcreateEditor";
 export const Route = createFileRoute("/vault")({
   head: () => ({
     meta: [
-      { title: "Storage Vault — AI Stencil Magic" },
+      { title: "Stencil Library — AI Stencil Magic" },
       {
         name: "description",
         content:
@@ -160,7 +160,7 @@ function VaultPage() {
     const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `primalprint-vault-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `stencilmagic-library-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
@@ -241,7 +241,7 @@ function VaultPage() {
       <main className="mx-auto max-w-7xl px-3 sm:px-4 py-5">
         <div className="flex items-end justify-between gap-3 mb-4 flex-wrap">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold">Storage Vault</h1>
+            <h1 className="text-2xl sm:text-3xl font-extrabold">Stencil Library</h1>
             <p className="text-xs sm:text-sm text-muted-foreground mt-1">
               Local document management. Folders, tags, search, version history & backups. Nothing
               leaves this device.
