@@ -15,6 +15,7 @@ import {
 import logo from "@/assets/stencil-logo.png";
 import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
+import { runPlugin, BUILTIN_PLUGINS } from "@/lib/plugins";
 import { processClassicalPro } from "@/lib/classical-pro-integration";
 import { STYLE_TO_CLASSICAL, scaleByIntensity, type StencilStyle } from "@/lib/style-engine-map";
 import { toast } from "sonner";
@@ -86,6 +87,8 @@ function CreatePage() {
   const [keyDraft, setKeyDraft] = useState("");
   const [provider, setProvider] = useState<Provider>("openrouter");
   const [classicalPurple, setClassicalPurple] = useState(false);
+  const [originalStencil, setOriginalStencil] = useState<string | null>(null);
+  const [pluginProcessing, setPluginProcessing] = useState<string | null>(null);
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
@@ -157,6 +160,50 @@ function CreatePage() {
     localStorage.removeItem(KEY_STORAGE);
     setApiKey("");
     setKeyDraft("");
+  }
+
+  async function applyPlugin(pluginId: string) {
+    if (!stencil) return;
+    const plugin = BUILTIN_PLUGINS.find((p) => p.id === pluginId);
+    if (!plugin) return;
+
+    // Save original if this is the first plugin application
+    if (!originalStencil) setOriginalStencil(stencil);
+
+    setPluginProcessing(pluginId);
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = stencil;
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      const params: Record<string, any> = {};
+      plugin.params?.forEach((p) => { params[p.key] = p.default; });
+
+      const result = await runPlugin(plugin, imageData, params);
+      ctx.putImageData(result, 0, 0);
+      setStencil(canvas.toDataURL("image/png"));
+      toast.success(`${plugin.name} applied`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Plugin failed");
+    } finally {
+      setPluginProcessing(null);
+    }
+  }
+
+  function revertPlugins() {
+    if (originalStencil) {
+      setStencil(originalStencil);
+      setOriginalStencil(null);
+      toast.success("Reverted to original");
+    }
   }
 
   async function onPick(file?: File | null) {
@@ -585,6 +632,54 @@ function CreatePage() {
               <p className="text-[10px] text-muted-foreground text-center">
                 Upscaled in your browser via high-quality bicubic interpolation.
               </p>
+            </div>
+
+            {/* Plugin Enhancement Panel */}
+            <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Zap size={16} className="text-primary" />
+                  <span className="text-sm font-semibold">Quick Enhance</span>
+                </div>
+                {originalStencil ? (
+                  <button
+                    onClick={revertPlugins}
+                    className="text-xs text-muted-foreground hover:text-foreground underline"
+                  >
+                    Revert all
+                  </button>
+                ) : null}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                One-tap filters to fine-tune your stencil. Stack multiple — each applies on top of the last.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: "builtin.stencil-sharpen", label: "Sharpen", icon: "✨" },
+                  { id: "builtin.smart-contrast", label: "Contrast", icon: "◐" },
+                  { id: "builtin.otsu-threshold", label: "Auto B/W", icon: "⬛" },
+                  { id: "builtin.edge-connector", label: "Fix Gaps", icon: "🔗" },
+                  { id: "builtin.line-thinning", label: "Thin Lines", icon: "✏️" },
+                  { id: "builtin.hectograph-purple", label: "Purple Tint", icon: "🟣" },
+                  { id: "builtin.bilateral-smooth", label: "Smooth", icon: "🌊" },
+                  { id: "builtin.halftone-stipple", label: "Stipple", icon: "⚫" },
+                  { id: "builtin.mirror-symmetry", label: "Mirror", icon: "🪞" },
+                ].map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => applyPlugin(p.id)}
+                    disabled={pluginProcessing !== null}
+                    className="flex flex-col items-center gap-1 p-3 rounded-xl border border-border hover:border-primary/50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {pluginProcessing === p.id ? (
+                      <Loader2 size={18} className="animate-spin text-primary" />
+                    ) : (
+                      <span className="text-lg">{p.icon}</span>
+                    )}
+                    <span className="text-[10px] font-medium">{p.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </section>
         ) : null}
