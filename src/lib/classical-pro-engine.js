@@ -61,11 +61,17 @@ class ClassicalProEngine {
     let stencil;
 
     if (s.shadingMode === 'dither') {
-      // Pure thermal-friendly dotwork
-      stencil = this.floydSteinbergDither(img);
-      // Optional light edge overlay so shapes stay readable
-      const edges = this.simpleEdges(img);
-      stencil = this.combineEdgeAndDither(edges, stencil);
+      // Clean closed contour lines from XDoG (same quality source as line styles)
+      const contourLines = this.applyXDoG(img, Math.max(0.8, s.detail_radius), s.edge_sensitivity, Math.max(9, s.shadow_block));
+      // Stochastic (blue-noise-style) stippling — replaces Floyd-Steinberg to avoid
+      // diagonal "worm" streak artifacts and produce clean, organic dot density
+      // graded by local darkness, like real hand-stippled dotwork.
+      const stipple = this.stochasticStipple(img, {
+        minRadius: 0.55,
+        maxRadius: 2.4,
+        spacing: Math.max(2, Math.round(s.detail_radius * 2.5)),
+      });
+      stencil = this.combineEdgeAndDither(contourLines, stipple);
     } else {
       // XDoG path
       stencil = this.applyXDoG(img, s.detail_radius, s.edge_sensitivity, s.shadow_block);
@@ -227,6 +233,85 @@ class ClassicalProEngine {
       o[i] = o[i + 1] = o[i + 2] = v;
       o[i + 3] = 255;
     }
+    return out;
+  }
+
+  /**
+   * Stochastic (blue-noise-style) stippling.
+   * Places dots on a jittered grid; each dot's existence probability and
+   * radius are driven by local darkness (gamma-shaped for contrast), with
+   * per-cell jitter + a seeded PRNG so density reads as organic dot texture
+   * instead of the mechanical streaks/worms Floyd-Steinberg produces.
+   * Resolution-independent: spacing/radius scale with image size.
+   */
+  stochasticStipple(imageData, opts = {}) {
+    const { width, height, data } = imageData;
+    const minRadius = opts.minRadius ?? 0.6;
+    const maxRadius = opts.maxRadius ?? 2.2;
+    const baseSpacing = opts.spacing ?? 4;
+
+    // Scale spacing/radius relative to a 1024px reference so density looks
+    // consistent whether exporting at 1K or 8K.
+    const scale = Math.max(0.5, Math.min(width, height) / 1024);
+    const spacing = Math.max(2, baseSpacing * scale);
+    const minR = minRadius * scale;
+    const maxR = maxRadius * scale;
+
+    const out = new ImageData(width, height);
+    const o = out.data;
+    for (let i = 0; i < o.length; i += 4) {
+      o[i] = o[i + 1] = o[i + 2] = 255;
+      o[i + 3] = 255;
+    }
+
+    // Deterministic seeded PRNG (LCG) so re-runs on the same image are stable
+    let seed = (width * 73856093) ^ (height * 19349663) ^ 0x9e3779b9;
+    const rand = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
+
+    const drawDot = (cx, cy, r) => {
+      if (r < 0.35) return;
+      const rInt = Math.ceil(r);
+      const cxi = Math.round(cx), cyi = Math.round(cy);
+      for (let dy = -rInt; dy <= rInt; dy++) {
+        const ny = cyi + dy;
+        if (ny < 0 || ny >= height) continue;
+        for (let dx = -rInt; dx <= rInt; dx++) {
+          const nx = cxi + dx;
+          if (nx < 0 || nx >= width) continue;
+          if (dx * dx + dy * dy > r * r) continue;
+          const idx = (ny * width + nx) * 4;
+          o[idx] = o[idx + 1] = o[idx + 2] = 0;
+        }
+      }
+    };
+
+    for (let y = -spacing; y < height + spacing; y += spacing) {
+      for (let x = -spacing; x < width + spacing; x += spacing) {
+        // Jitter each candidate point within its cell to break grid regularity
+        const jx = x + (rand() - 0.5) * spacing * 0.9;
+        const jy = y + (rand() - 0.5) * spacing * 0.9;
+        const sx = Math.min(width - 1, Math.max(0, Math.round(jx)));
+        const sy = Math.min(height - 1, Math.max(0, Math.round(jy)));
+        const lum = data[(sy * width + sx) * 4];
+        const darkness = 1 - lum / 255;
+        if (darkness <= 0.02) continue;
+
+        // Gamma-shape darkness so shadows read dense and highlights stay sparse
+        const gamma = Math.pow(darkness, 0.75);
+
+        // Density-first: probability a dot exists at all scales with darkness
+        if (rand() > gamma) continue;
+
+        // Radius scales with darkness for depth, plus slight jitter for
+        // organic, hand-stippled variation instead of uniform dot size
+        const radius = minR + (maxR - minR) * gamma * (0.75 + rand() * 0.5);
+        drawDot(jx, jy, radius);
+      }
+    }
+
     return out;
   }
 
