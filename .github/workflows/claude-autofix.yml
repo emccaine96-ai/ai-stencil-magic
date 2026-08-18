@@ -1,0 +1,25 @@
+name: Claude AutoFix
+
+on:
+  issues:
+    types: [opened, labeled]
+  pull_request:
+    types: [opened, synchronize]
+  workflow_dispatch:
+
+jobs:
+  autofix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Claude AutoFix
+        uses: enriconunes/claude-autofix-action@v2.1.2
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
