@@ -8,7 +8,7 @@ export const Route = createFileRoute("/auth")({
     typeof s.next === "string" ? { next: s.next } : {},
   head: () => ({
     meta: [
-      { title: "Sign in — PrimalPrint AI" },
+      { title: "Sign in — AI Stencil Magic" },
       { name: "description", content: "Sign in to sync your stencil vault across devices." },
     ],
   }),

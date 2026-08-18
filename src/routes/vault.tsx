@@ -39,7 +39,7 @@ import { VaultProcreateEditor } from "@/components/vault/VaultProcreateEditor";
 export const Route = createFileRoute("/vault")({
   head: () => ({
     meta: [
-      { title: "Storage Vault — PrimalPrint AI" },
+      { title: "Storage Vault — AI Stencil Magic" },
       {
         name: "description",
         content:
@@ -230,7 +230,7 @@ function VaultPage() {
           </Link>
           <Link to="/" className="flex items-center gap-2">
             <img src={logo} alt="" width={32} height={32} className="h-8 w-8" />
-            <span className="font-script text-lg sm:text-xl">PrimalPrint AI</span>
+            <span className="font-script text-lg sm:text-xl">AI Stencil Magic</span>
           </Link>
           <Link to="/create" className="text-xs text-primary font-semibold shrink-0">
             + New

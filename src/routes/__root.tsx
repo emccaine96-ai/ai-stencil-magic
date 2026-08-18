@@ -81,16 +81,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
       { name: "theme-color", content: "#0d0d0f" },
-      { title: "PrimalPrint AI — Turn any photo into a perfect tattoo stencil" },
+      { title: "AI Stencil Magic — Turn any photo into a perfect tattoo stencil" },
       {
         name: "description",
         content:
           "Professional AI tattoo stencils with 5-tier tonal layering — hatching, solid, dotwork, and hybrid line styles in 30 seconds.",
       },
-      { name: "author", content: "PrimalPrint AI" },
+      { name: "author", content: "AI Stencil Magic" },
       {
         property: "og:title",
-        content: "PrimalPrint AI — Turn any photo into a perfect tattoo stencil",
+        content: "AI Stencil Magic — Turn any photo into a perfect tattoo stencil",
       },
       {
         property: "og:description",
@@ -99,7 +99,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@PrimalPrintAI" },
+      { name: "twitter:site", content: "@AIStencilMagic" },
     ],
     links: [
       {

@@ -30,8 +30,8 @@ function Header() {
     <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
       <div className="mx-auto max-w-6xl px-4 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2">
-          <img src={logo} alt="PrimalPrint AI logo" width={36} height={36} className="h-9 w-9" />
-          <span className="font-script text-2xl">PrimalPrint AI</span>
+          <img src={logo} alt="AI Stencil Magic logo" width={36} height={36} className="h-9 w-9" />
+          <span className="font-script text-2xl">AI Stencil Magic</span>
         </Link>
         <div className="flex items-center gap-3">
           <Link
@@ -47,28 +47,31 @@ function Header() {
       </div>
       {open ? (
         <div className="mx-auto max-w-6xl px-4 pb-4 flex flex-col gap-3 text-sm">
-          <Link to="/create" className="py-2">
+          <Link to="/create" className="py-2" onClick={() => setOpen(false)}>
             Create Stencil
           </Link>
-          <a href="#how" className="py-2">
+          <a href="#how" className="py-2" onClick={() => setOpen(false)}>
             How it works
           </a>
-          <a href="#results" className="py-2">
+          <a href="#results" className="py-2" onClick={() => setOpen(false)}>
             Best Results
           </a>
-          <a href="#preview" className="py-2">
+          <a href="#preview" className="py-2" onClick={() => setOpen(false)}>
             See Examples
           </a>
-          <Link to="/vault" className="py-2 text-primary font-semibold">
+          <Link to="/vault" className="py-2 text-primary font-semibold" onClick={() => setOpen(false)}>
             Saved Generations / Storage Vault
           </Link>
-          <Link to="/gallery" className="py-2">
+          <Link to="/gallery" className="py-2" onClick={() => setOpen(false)}>
             Community Gallery
           </Link>
-          <Link to="/plugins" className="py-2">
+          <Link to="/plugins" className="py-2" onClick={() => setOpen(false)}>
             Plugins
           </Link>
-          <Link to="/help" className="py-2 text-primary font-semibold">
+          <Link to="/auth" className="py-2 rounded-full border border-border px-4 text-center hover:bg-muted transition" onClick={() => setOpen(false)}>
+            Sign In
+          </Link>
+          <Link to="/help" className="py-2 text-primary font-semibold" onClick={() => setOpen(false)}>
             Help & Instructions
           </Link>
         </div>
@@ -83,7 +86,7 @@ function PlayBanner() {
   return (
     <div className="bg-gradient-banner text-primary-foreground">
       <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-3">
-        <div className="font-semibold">Get PrimalPrintAI on Google Play</div>
+        <div className="font-semibold">Get AI Stencil Magic on Google Play</div>
         <div className="flex items-center gap-2">
           <button className="rounded-full bg-white text-foreground px-4 py-1.5 text-sm font-semibold">
             Download
@@ -367,9 +370,9 @@ function Footer() {
       <div className="mx-auto max-w-6xl px-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
         <div className="flex items-center gap-2">
           <img src={logo} alt="" width={28} height={28} className="h-7 w-7" />
-          <span className="font-script text-xl">PrimalPrint AI</span>
+          <span className="font-script text-xl">AI Stencil Magic</span>
         </div>
-        <div>© {new Date().getFullYear()} PrimalPrint AI. All rights reserved.</div>
+        <div>© {new Date().getFullYear()} AI Stencil Magic. All rights reserved.</div>
       </div>
     </footer>
   );

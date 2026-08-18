@@ -6,8 +6,8 @@ import { Cloud } from "lucide-react";
 export const Route = createFileRoute("/share/$token")({
   head: () => ({
     meta: [
-      { title: "Shared stencil — PrimalPrint AI" },
-      { name: "description", content: "View a shared PrimalPrint stencil." },
+      { title: "Shared stencil — AI Stencil Magic" },
+      { name: "description", content: "View a shared AI Stencil Magic stencil." },
     ],
   }),
   component: SharePage,

@@ -20,7 +20,7 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/create")({
   head: () => ({
     meta: [
-      { title: "Create Stencil — PrimalPrint AI" },
+      { title: "Create Stencil — AI Stencil Magic" },
       {
         name: "description",
         content:
@@ -39,9 +39,9 @@ const STYLES: { id: Style; label: string; sub: string }[] = [
   { id: "hybrid", label: "Hybrid", sub: "Hatch + dots + lines" },
 ];
 
-const KEY_STORAGE = "primalprint.gemini.key";
-const PROVIDER_STORAGE = "primalprint.provider"; // 'lovable' | 'gemini'
-type Provider = "lovable" | "gemini";
+const KEY_STORAGE = "stencilmagic.gemini.key";
+const PROVIDER_STORAGE = "stencilmagic.provider"; // 'openrouter' | 'gemini'
+type Provider = "openrouter" | "gemini";
 const STYLE_PROMPTS: Record<Style, string> = {
   hatching:
     "Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable.",
@@ -82,7 +82,7 @@ function CreatePage() {
   const [apiKey, setApiKey] = useState("");
   const [keyOpen, setKeyOpen] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
-  const [provider, setProvider] = useState<Provider>("lovable");
+  const [provider, setProvider] = useState<Provider>("openrouter");
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
@@ -95,7 +95,7 @@ function CreatePage() {
       typeof window !== "undefined"
         ? (localStorage.getItem(PROVIDER_STORAGE) as Provider | null)
         : null;
-    if (p === "lovable" || p === "gemini") setProvider(p);
+    if (p === "openrouter" || p === "gemini") setProvider(p);
     // Hand-off from Vault: open a saved entry directly in the editor.
     try {
       const raw =
@@ -175,14 +175,20 @@ function CreatePage() {
     try {
       const { mimeType, data: imgB64 } = dataUrlToInline(photo);
       const prompt = buildPrompt({ style, intensity, customPrompt });
-      if (provider === "lovable") {
+      if (provider === "openrouter") {
+        const orKey = typeof window !== "undefined" ? localStorage.getItem("stencilmagic.openrouter.key") : null;
         const r = await fetch("/api/generate-stencil", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt, image: { mimeType, data: imgB64 } }),
+          body: JSON.stringify({
+            prompt,
+            image: { mimeType, data: imgB64 },
+            provider: "openrouter",
+            openrouterKey: orKey || undefined,
+          }),
         });
         const data = await r.json();
-        if (!r.ok) throw new Error(data?.error || `Lovable AI error ${r.status}`);
+        if (!r.ok) throw new Error(data?.error || `OpenRouter AI error ${r.status}`);
         setStencil(data.dataUrl);
       } else {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -259,7 +265,7 @@ function CreatePage() {
           </Link>
           <Link to="/" className="flex items-center gap-2">
             <img src={logo} alt="" width={32} height={32} className="h-8 w-8" />
-            <span className="font-script text-xl">PrimalPrint AI</span>
+            <span className="font-script text-xl">AI Stencil Magic</span>
           </Link>
           <div className="flex items-center gap-2">
             <Link
@@ -285,9 +291,9 @@ function CreatePage() {
             >
               <KeyRound size={14} />
               <span
-                className={`hidden sm:inline ${provider === "lovable" ? "text-primary" : apiKey ? "text-primary" : "text-destructive"}`}
+                className={`hidden sm:inline ${provider === "openrouter" ? "text-primary" : apiKey ? "text-primary" : "text-destructive"}`}
               >
-                {provider === "lovable" ? "Lovable AI" : apiKey ? "My key" : "Set key"}
+                {provider === "openrouter" ? "OpenRouter AI" : apiKey ? "My key" : "Set key"}
               </span>
             </button>
           </div>
@@ -303,16 +309,16 @@ function CreatePage() {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={() => selectProvider("lovable")}
-              className={`p-3 rounded-2xl border text-left transition ${provider === "lovable" ? "border-primary bg-gradient-primary text-primary-foreground shadow-glow" : "border-border bg-card hover:border-primary/50"}`}
+              onClick={() => selectProvider("openrouter")}
+              className={`p-3 rounded-2xl border text-left transition ${provider === "openrouter" ? "border-primary bg-gradient-primary text-primary-foreground shadow-glow" : "border-border bg-card hover:border-primary/50"}`}
             >
               <div className="flex items-center gap-2 font-bold text-sm">
-                <Sparkles size={14} /> Lovable AI
+                <Sparkles size={14} /> OpenRouter AI
               </div>
               <div
-                className={`text-[11px] mt-1 ${provider === "lovable" ? "opacity-90" : "text-muted-foreground"}`}
+                className={`text-[11px] mt-1 ${provider === "openrouter" ? "opacity-90" : "text-muted-foreground"}`}
               >
-                Uses workspace credits. No key required.
+                Uses OpenRouter credits. Key required for Master Pro.
               </div>
             </button>
             <button

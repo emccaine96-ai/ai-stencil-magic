@@ -3,16 +3,14 @@ import { createFileRoute } from "@tanstack/react-router";
 type Body = {
   prompt: string;
   image: { mimeType: string; data: string };
+  provider?: "openrouter" | "gemini";
+  openrouterKey?: string; // client-supplied key for Master Pro tier
 };
 
 export const Route = createFileRoute("/api/generate-stencil")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const key = process.env.GEMINI_API_KEY;
-        if (!key) {
-          return Response.json({ error: "Missing GEMINI_API_KEY" }, { status: 500 });
-        }
         let body: Body;
         try {
           body = (await request.json()) as Body;
@@ -21,6 +19,96 @@ export const Route = createFileRoute("/api/generate-stencil")({
         }
         if (!body?.prompt || !body?.image?.data || !body?.image?.mimeType) {
           return Response.json({ error: "prompt and image are required" }, { status: 400 });
+        }
+
+        const provider = body.provider || "openrouter";
+
+        if (provider === "openrouter") {
+          // OpenRouter: use client-supplied key or server env key
+          const orKey = body.openrouterKey || process.env.OPENROUTER_API_KEY;
+          if (!orKey) {
+            return Response.json(
+              { error: "Missing OpenRouter API key. Add your key in Settings or set OPENROUTER_API_KEY." },
+              { status: 500 },
+            );
+          }
+
+          // OpenRouter chat completions API with vision model
+          const upstream = await fetch(
+            "https://openrouter.ai/api/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${orKey}`,
+                "HTTP-Referer": "https://ai-stencil-magic.app",
+                "X-Title": "AI Stencil Magic",
+              },
+              body: JSON.stringify({
+                model: "google/gemini-2.5-flash-preview",
+                messages: [
+                  {
+                    role: "user",
+                    content: [
+                      { type: "text", text: body.prompt },
+                      {
+                        type: "image_url",
+                        image_url: {
+                          url: `data:${body.image.mimeType};base64,${body.image.data}`,
+                        },
+                      },
+                    ],
+                  },
+                ],
+              }),
+            },
+          );
+
+          if (!upstream.ok) {
+            const errText = await upstream.text();
+            if (upstream.status === 429) {
+              return Response.json(
+                { error: "OpenRouter rate limit reached. Please try again." },
+                { status: 429 },
+              );
+            }
+            if (upstream.status === 401 || upstream.status === 403) {
+              return Response.json(
+                { error: "OpenRouter API key invalid. Check your key in Settings." },
+                { status: upstream.status },
+              );
+            }
+            return Response.json(
+              { error: errText || `OpenRouter error ${upstream.status}` },
+              { status: upstream.status },
+            );
+          }
+
+          const data = await upstream.json();
+          // OpenRouter returns a chat completion — extract any image content
+          const content = data?.choices?.[0]?.message?.content;
+          if (typeof content === "string") {
+            // Try to find base64 image data in the response
+            const imgMatch = content.match(/data:image\/[^;]+;base64,([A-Za-z0-9+/=]+)/);
+            if (imgMatch) {
+              return Response.json({ dataUrl: imgMatch[0] });
+            }
+            // If no image, return the text as an error (OpenRouter text models don't generate images)
+            return Response.json(
+              { error: "OpenRouter model did not return an image. Use a vision-capable model." },
+              { status: 502 },
+            );
+          }
+          return Response.json(
+            { error: "Unexpected OpenRouter response format" },
+            { status: 502 },
+          );
+        }
+
+        // Default: Gemini direct
+        const key = process.env.GEMINI_API_KEY;
+        if (!key) {
+          return Response.json({ error: "Missing GEMINI_API_KEY" }, { status: 500 });
         }
 
         const upstream = await fetch(
@@ -70,7 +158,6 @@ export const Route = createFileRoute("/api/generate-stencil")({
           return Response.json({ error: "Bad upstream response" }, { status: 502 });
         }
 
-        // Gemini native response: candidates[0].content.parts[].inline_data { mime_type, data }
         const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
         const imgPart = parts.find((p) => p?.inline_data?.data || p?.inlineData?.data);
         const inline = imgPart?.inline_data ?? imgPart?.inlineData;
