@@ -12,7 +12,7 @@ import {
 export const Route = createFileRoute("/plugins")({
   head: () => ({
     meta: [
-      { title: "Plugins — PrimalCanvas" },
+      { title: "Plugins — AI Stencil Magic" },
       {
         name: "description",
         content: "Write and run sandboxed JavaScript filters and generators inside the Studio.",

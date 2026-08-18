@@ -15,7 +15,8 @@ import {
 import logo from "@/assets/stencil-logo.png";
 import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
-import { processClassicalPro, getPresetCategories, getPresetsByCategory } from "@/lib/classical-pro-integration";
+import { processClassicalPro } from "@/lib/classical-pro-integration";
+import { STYLE_TO_CLASSICAL, scaleByIntensity, type StencilStyle } from "@/lib/style-engine-map";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/create")({
@@ -84,8 +85,6 @@ function CreatePage() {
   const [keyOpen, setKeyOpen] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
   const [provider, setProvider] = useState<Provider>("openrouter");
-  const [classicalPreset, setClassicalPreset] = useState("portrait");
-  const [classicalMode, setClassicalMode] = useState<"xdog" | "dither">("xdog");
   const [classicalPurple, setClassicalPurple] = useState(false);
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
@@ -178,15 +177,17 @@ function CreatePage() {
     setStencil(null);
     try {
       if (provider === "classical") {
-        // Classical Pro Engine — runs locally, no API needed
+        // Classical Pro Engine — uses the same style as Gemini, mapped to engine params
+        const baseConfig = STYLE_TO_CLASSICAL[style as StencilStyle];
+        const scaledConfig = scaleByIntensity(baseConfig, intensity);
         const result = await processClassicalPro(photo, {
-          preset: classicalPreset,
-          mode: classicalMode,
+          preset: style,
+          mode: scaledConfig.mode,
           intensity,
           purpleTint: classicalPurple,
         });
         setStencil(result.dataUrl);
-        toast.success(`Classical Pro: ${result.presetName} (${result.processingTime}ms)`);
+        toast.success(`Classical Pro: ${style} (${result.processingTime}ms)`);
         setLoading(false);
         return;
       }
@@ -310,7 +311,7 @@ function CreatePage() {
               <span
                 className={`hidden sm:inline ${provider === "openrouter" ? "text-primary" : apiKey ? "text-primary" : "text-destructive"}`}
               >
-                {provider === "openrouter" ? "OpenRouter AI" : provider === "classical" ? "Classical Pro" : apiKey ? "My key" : "Set key"}
+                {provider === "openrouter" ? "OpenRouter" : provider === "classical" ? "Classical Pro" : apiKey ? "Gemini key" : "Set key"}
               </span>
             </button>
           </div>
@@ -321,7 +322,7 @@ function CreatePage() {
         <section>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
-              AI provider
+              Engine
             </h2>
           </div>
           <div className="grid grid-cols-3 gap-2">
@@ -366,46 +367,12 @@ function CreatePage() {
             </button>
           </div>
           {provider === "classical" ? (
-            <div className="mt-3 p-4 rounded-2xl border border-border bg-card space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Subject Preset</label>
-                <select
-                  value={classicalPreset}
-                  onChange={(e) => setClassicalPreset(e.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-                >
-                  <option value="portrait">Portrait</option>
-                  <option value="babies">Babies</option>
-                  <option value="elderly">Elderly</option>
-                  <option value="florals">Florals</option>
-                  <option value="geometric">Geometric</option>
-                  <option value="mythology">Mythology</option>
-                  <option value="stippling">Stippling</option>
-                  <option value="animals">Animals</option>
-                  <option value="traditional">Traditional</option>
-                  <option value="bad_photos">Bad Photos (rescue)</option>
-                  <option value="lettering">Lettering</option>
-                </select>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Mode</label>
-                  <div className="mt-1.5 flex gap-2">
-                    <button
-                      onClick={() => setClassicalMode("xdog")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${classicalMode === "xdog" ? "border-primary bg-primary/10 text-primary" : "border-border"}`}
-                    >
-                      XDoG
-                    </button>
-                    <button
-                      onClick={() => setClassicalMode("dither")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${classicalMode === "dither" ? "border-primary bg-primary/10 text-primary" : "border-border"}`}
-                    >
-                      Dither
-                    </button>
-                  </div>
-                </div>
-                <label className="flex items-center gap-2 text-xs cursor-pointer">
+            <div className="mt-3 p-4 rounded-2xl border border-border bg-card space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] text-muted-foreground flex-1">
+                  Classical Pro uses the same style + shading density as above. Runs locally — no API key, no credits.
+                </p>
+                <label className="flex items-center gap-2 text-xs cursor-pointer ml-3 shrink-0">
                   <input
                     type="checkbox"
                     checked={classicalPurple}
@@ -415,9 +382,6 @@ function CreatePage() {
                   Hectograph purple
                 </label>
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                Classical Pro runs entirely in your browser — no API calls, no credits, no key needed. 50+ subject-specific calibration presets for optimal line work.
-              </p>
             </div>
           ) : null}
         </section>
@@ -460,6 +424,7 @@ function CreatePage() {
 
         <section>
           <h2 className="text-2xl font-extrabold">2. Choose your style</h2>
+          <p className="text-xs text-muted-foreground mt-1">Applies to all engines — AI and Classical Pro</p>
           <div className="mt-4 grid grid-cols-2 gap-3">
             {STYLES.map((s) => (
               <button
