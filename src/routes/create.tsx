@@ -42,6 +42,7 @@ const STYLES: { id: Style; label: string; sub: string }[] = [
 ];
 
 const KEY_STORAGE = "stencilmagic.gemini.key";
+const OR_KEY_STORAGE = "stencilmagic.openrouter.key";
 const PROVIDER_STORAGE = "stencilmagic.provider"; // 'openrouter' | 'gemini'
 type Provider = "openrouter" | "gemini" | "classical" | "hybrid";
 const STYLE_PROMPTS: Record<Style, string> = {
@@ -80,10 +81,12 @@ function CreatePage() {
   const [pos, setPos] = useState(50);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // API key
+  // API keys
   const [apiKey, setApiKey] = useState("");
+  const [orKey, setOrKey] = useState("");
   const [keyOpen, setKeyOpen] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
+  const [orKeyDraft, setOrKeyDraft] = useState("");
   const [provider, setProvider] = useState<Provider>("openrouter");
   const [classicalPurple, setClassicalPurple] = useState(false);
   const [originalStencil, setOriginalStencil] = useState<string | null>(null);
@@ -94,17 +97,16 @@ function CreatePage() {
   const [customPromptOpen, setCustomPromptOpen] = useState(false);
 
   useEffect(() => {
-    const k = typeof window !== "undefined" ? localStorage.getItem(KEY_STORAGE) : null;
+    if (typeof window === "undefined") return;
+    const k = localStorage.getItem(KEY_STORAGE);
     if (k) setApiKey(k);
-    const p =
-      typeof window !== "undefined"
-        ? (localStorage.getItem(PROVIDER_STORAGE) as Provider | null)
-        : null;
+    const ork = localStorage.getItem(OR_KEY_STORAGE);
+    if (ork) setOrKey(ork);
+    const p = localStorage.getItem(PROVIDER_STORAGE) as Provider | null;
     if (p === "openrouter" || p === "gemini" || p === "classical" || p === "hybrid") setProvider(p);
     // Hand-off from Vault: open a saved entry directly in the editor.
     try {
-      const raw =
-        typeof window !== "undefined" ? sessionStorage.getItem("primalprint.editor.load") : null;
+      const raw = sessionStorage.getItem("primalprint.editor.load");
       if (raw) {
         sessionStorage.removeItem("primalprint.editor.load");
         const parsed = JSON.parse(raw) as {
@@ -143,22 +145,38 @@ function CreatePage() {
   function selectProvider(p: Provider) {
     setProvider(p);
     localStorage.setItem(PROVIDER_STORAGE, p);
+    // Prompt for the relevant key when switching to a key-based engine
     if (p === "gemini" && !apiKey) setKeyOpen(true);
+    if (p === "openrouter" && !orKey) setKeyOpen(true);
   }
 
-  function saveKey() {
-    const k = keyDraft.trim();
-    if (!k) return;
-    localStorage.setItem(KEY_STORAGE, k);
-    setApiKey(k);
+  function saveKeys() {
+    const g = keyDraft.trim();
+    const o = orKeyDraft.trim();
+    if (g) {
+      localStorage.setItem(KEY_STORAGE, g);
+      setApiKey(g);
+    }
+    if (o) {
+      localStorage.setItem(OR_KEY_STORAGE, o);
+      setOrKey(o);
+    }
     setKeyDraft("");
+    setOrKeyDraft("");
     setKeyOpen(false);
+    if (g || o) toast.success("API key(s) saved");
   }
 
-  function clearKey() {
+  function clearGeminiKey() {
     localStorage.removeItem(KEY_STORAGE);
     setApiKey("");
     setKeyDraft("");
+  }
+
+  function clearOrKey() {
+    localStorage.removeItem(OR_KEY_STORAGE);
+    setOrKey("");
+    setOrKeyDraft("");
   }
 
   async function applyPlugin(pluginId: string) {
@@ -218,6 +236,11 @@ function CreatePage() {
       setKeyOpen(true);
       return;
     }
+    if (provider === "openrouter" && !orKey) {
+      // Still allow generate — server may have OPENROUTER_API_KEY env fallback
+      // but surface the modal so user can supply their own key.
+      setKeyOpen(true);
+    }
     setLoading(true);
     setError(null);
     setStencil(null);
@@ -244,7 +267,7 @@ function CreatePage() {
         const { mimeType: cm, data: cB64 } = dataUrlToInline(classicalResult.dataUrl);
         const hybridPrompt = `Refine this pre-processed tattoo stencil for the "${style}" style at ${Math.round(intensity * 100)}% density. Keep the structure, improve line quality and add artistic detail. ${customPrompt || ""}`;
         let hybridDataUrl: string | null = null;
-        // Try server-side first
+        // Try server-side first (OpenRouter)
         try {
           const r = await fetch("/api/generate-stencil", {
             method: "POST",
@@ -253,6 +276,7 @@ function CreatePage() {
               prompt: hybridPrompt,
               image: { mimeType: cm, data: cB64 },
               provider: "openrouter",
+              openrouterKey: orKey || undefined,
             }),
           });
           const data = await r.json();
@@ -285,7 +309,7 @@ function CreatePage() {
         }
         if (!hybridDataUrl) {
           hybridDataUrl = classicalResult.dataUrl;
-          toast.info("No API key set — showing Classical Pro result. Add a Gemini key for AI refinement.");
+          toast.info("No API key set — showing Classical Pro result. Add a Gemini or OpenRouter key for AI refinement.");
         }
         // Apply hectograph purple if requested
         if (classicalPurple && hybridDataUrl) {
@@ -314,7 +338,6 @@ function CreatePage() {
       const { mimeType, data: imgB64 } = dataUrlToInline(photo);
       const prompt = buildPrompt({ style, intensity, customPrompt });
       if (provider === "openrouter") {
-        const orKey = typeof window !== "undefined" ? localStorage.getItem("stencilmagic.openrouter.key") : null;
         const r = await fetch("/api/generate-stencil", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -394,6 +417,21 @@ function CreatePage() {
     }
   }
 
+  const keyStatusLabel =
+    provider === "openrouter"
+      ? orKey
+        ? "OpenRouter ✓"
+        : "OpenRouter key"
+      : provider === "classical"
+        ? "Classical Pro"
+        : provider === "hybrid"
+          ? orKey || apiKey
+            ? "Hybrid ✓"
+            : "Hybrid key"
+          : apiKey
+            ? "Gemini key"
+            : "Set key";
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
@@ -429,9 +467,17 @@ function CreatePage() {
             >
               <KeyRound size={14} />
               <span
-                className={`hidden sm:inline ${provider === "openrouter" ? "text-primary" : apiKey ? "text-primary" : "text-destructive"}`}
+                className={`hidden sm:inline ${
+                  (provider === "openrouter" && orKey) ||
+                  (provider === "gemini" && apiKey) ||
+                  (provider === "hybrid" && (orKey || apiKey))
+                    ? "text-primary"
+                    : provider === "classical"
+                      ? "text-muted-foreground"
+                      : "text-destructive"
+                }`}
               >
-                {provider === "openrouter" ? "OpenRouter" : provider === "classical" ? "Classical Pro" : provider === "hybrid" ? "Hybrid" : apiKey ? "Gemini key" : "Set key"}
+                {keyStatusLabel}
               </span>
             </button>
           </div>
@@ -534,6 +580,11 @@ function CreatePage() {
                 />
                 Hectograph purple on final output
               </label>
+            </div>
+          ) : null}
+          {provider === "openrouter" && !orKey ? (
+            <div className="mt-3 p-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 text-[11px] text-amber-200">
+              No OpenRouter key set. Tap the key icon in the header to add your key (or the server env key will be used if configured).
             </div>
           ) : null}
         </section>
@@ -792,50 +843,98 @@ function CreatePage() {
 
       {keyOpen ? (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-3xl border border-border bg-card p-6 space-y-4">
+          <div className="w-full max-w-md rounded-3xl border border-border bg-card p-6 space-y-5">
             <div className="flex items-center gap-2">
               <Settings size={18} className="text-primary" />
-              <h3 className="font-extrabold text-lg">Gemini API Key</h3>
+              <h3 className="font-extrabold text-lg">API Keys</h3>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Your key is stored only in your browser (localStorage) and sent directly to Google. It
-              never touches our servers. Get one at{" "}
-              <a
-                href="https://aistudio.google.com/apikey"
-                target="_blank"
-                rel="noreferrer"
-                className="text-primary underline"
-              >
-                aistudio.google.com/apikey
-              </a>
-              .
-            </p>
-            <input
-              type="password"
-              autoFocus
-              placeholder={apiKey ? "•••• change key" : "Paste your Gemini API key"}
-              value={keyDraft}
-              onChange={(e) => setKeyDraft(e.target.value)}
-              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-primary"
-            />
-            <div className="flex gap-2">
+
+            {/* OpenRouter key */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-semibold flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-primary" /> OpenRouter
+                </label>
+                {orKey ? (
+                  <button
+                    onClick={clearOrKey}
+                    className="text-[11px] text-destructive hover:underline"
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Used for the OpenRouter and Hybrid engines. Stored only in your browser. Get a key at{" "}
+                <a
+                  href="https://openrouter.ai/keys"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary underline"
+                >
+                  openrouter.ai/keys
+                </a>
+                .
+              </p>
+              <input
+                type="password"
+                placeholder={orKey ? "•••• key saved — paste to replace" : "Paste your OpenRouter API key"}
+                value={orKeyDraft}
+                onChange={(e) => setOrKeyDraft(e.target.value)}
+                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-primary"
+              />
+            </div>
+
+            {/* Gemini key */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-semibold flex items-center gap-1.5">
+                  <KeyRound size={14} className="text-primary" /> Gemini
+                </label>
+                {apiKey ? (
+                  <button
+                    onClick={clearGeminiKey}
+                    className="text-[11px] text-destructive hover:underline"
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Used for the Gemini engine (and Hybrid fallback). Stored only in your browser. Get one at{" "}
+                <a
+                  href="https://aistudio.google.com/apikey"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary underline"
+                >
+                  aistudio.google.com/apikey
+                </a>
+                .
+              </p>
+              <input
+                type="password"
+                placeholder={apiKey ? "•••• key saved — paste to replace" : "Paste your Gemini API key"}
+                value={keyDraft}
+                onChange={(e) => setKeyDraft(e.target.value)}
+                className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-primary"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-1">
               <button
-                onClick={saveKey}
-                disabled={!keyDraft.trim()}
+                onClick={saveKeys}
+                disabled={!keyDraft.trim() && !orKeyDraft.trim()}
                 className="flex-1 rounded-full bg-gradient-primary text-primary-foreground py-3 font-bold shadow-glow disabled:opacity-50"
               >
                 Save
               </button>
-              {apiKey ? (
-                <button
-                  onClick={clearKey}
-                  className="rounded-full border border-destructive/40 text-destructive px-4 py-3 font-semibold hover:bg-destructive/10"
-                >
-                  Clear
-                </button>
-              ) : null}
               <button
-                onClick={() => setKeyOpen(false)}
+                onClick={() => {
+                  setKeyDraft("");
+                  setOrKeyDraft("");
+                  setKeyOpen(false);
+                }}
                 className="rounded-full border border-border px-4 py-3 font-semibold hover:border-primary"
               >
                 Close
@@ -851,30 +950,7 @@ function CreatePage() {
 function buildPrompt(o: { style: Style; intensity: number; customPrompt?: string }) {
   // Bake the proven "May 27" defaults into the prompt so first-shot output is
   // gallery-grade without the user needing to touch sliders.
-  const base = `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.
-
-HARD RULES:
-- Output a single image on PURE WHITE background.
-- All ink is the EXACT color #A855F7 (neon purple). No gray, no black, no other colors.
-- Crystal-clear closed contour line work, tattoo-stencil ready.
-- Preserve the subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly.
-- For portraits: apply 3D face-mesh aware crosshatching that follows facial surface curvature (cheek, jawline, brow ridge, nose bridge). Eyes, lips and teeth crisply defined.
-- For flowers / objects: delicate parallel hatching radiating along petal curvature, soft pencil-like graduations from saturated purple in shadow folds to faint outline on outer petals.
-
-TONAL LAYERING (5 tiers via Otsu multi-level thresholding):
-1. Deep shadows — densest mark-making, 3 overlaid hatch directions.
-2. Dark mid-tones — heavy mark-making, 2 hatch directions.
-3. Mid-tones — medium single-direction hatching.
-4. Light mid-tones — sparse parallel strokes.
-5. Highlights — pure white paper.
-
-HATCH GEOMETRY: primary 45°, secondary 135°, tertiary 90°. ~3px line spacing.
-
-STYLE: ${o.style.toUpperCase()}
-${STYLE_PROMPTS[o.style]}
-
-Overall shading density: ${Math.round(o.intensity * 100)}%.
-No text, no watermarks, no signatures, no frame, no background scenery.`;
+  const base = `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.\n\nHARD RULES:\n- Output a single image on PURE WHITE background.\n- All ink is the EXACT color #A855F7 (neon purple). No gray, no black, no other colors.\n- Crystal-clear closed contour line work, tattoo-stencil ready.\n- Preserve the subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly.\n- For portraits: apply 3D face-mesh aware crosshatching that follows facial surface curvature (cheek, jawline, brow ridge, nose bridge). Eyes, lips and teeth crisply defined.\n- For flowers / objects: delicate parallel hatching radiating along petal curvature, soft pencil-like graduations from saturated purple in shadow folds to faint outline on outer petals.\n\nTONAL LAYERING (5 tiers via Otsu multi-level thresholding):\n1. Deep shadows — densest mark-making, 3 overlaid hatch directions.\n2. Dark mid-tones — heavy mark-making, 2 hatch directions.\n3. Mid-tones — medium single-direction hatching.\n4. Light mid-tones — sparse parallel strokes.\n5. Highlights — pure white paper.\n\nHATCH GEOMETRY: primary 45°, secondary 135°, tertiary 90°. ~3px line spacing.\n\nSTYLE: ${o.style.toUpperCase()}\n${STYLE_PROMPTS[o.style]}\n\nOverall shading density: ${Math.round(o.intensity * 100)}%.\nNo text, no watermarks, no signatures, no frame, no background scenery.`;
   const extra = o.customPrompt?.trim();
   if (!extra) return base;
   return `${base}\n\nADDITIONAL ARTIST INSTRUCTIONS (apply on top of everything above; do not violate the hard rules, ink color, white background, or tonal-layering rules above):\n${extra}`;
