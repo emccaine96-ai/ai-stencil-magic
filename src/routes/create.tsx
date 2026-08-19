@@ -17,7 +17,6 @@ import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
 import { runPlugin, BUILTIN_PLUGINS } from "@/lib/plugins";
 import { processClassicalPro } from "@/lib/classical-pro-integration";
-import { STYLE_TO_CLASSICAL, scaleByIntensity, type StencilStyle } from "@/lib/style-engine-map";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/create")({
@@ -224,12 +223,8 @@ function CreatePage() {
     setStencil(null);
     try {
       if (provider === "classical") {
-        // Classical Pro Engine — uses the same style as Gemini, mapped to engine params
-        const baseConfig = STYLE_TO_CLASSICAL[style as StencilStyle];
-        const scaledConfig = scaleByIntensity(baseConfig, intensity);
         const result = await processClassicalPro(photo, {
-          preset: style,
-          mode: scaledConfig.mode,
+          style,
           intensity,
           purpleTint: classicalPurple,
         });
@@ -240,11 +235,8 @@ function CreatePage() {
       }
       if (provider === "hybrid") {
         // Step 1: Classical Pro pre-processing
-        const baseConfig = STYLE_TO_CLASSICAL[style as StencilStyle];
-        const scaledConfig = scaleByIntensity(baseConfig, intensity);
         const classicalResult = await processClassicalPro(photo, {
-          preset: style,
-          mode: scaledConfig.mode,
+          style,
           intensity,
           purpleTint: false,
         });
