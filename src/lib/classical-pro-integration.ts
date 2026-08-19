@@ -1,16 +1,16 @@
 /**
  * Classical Pro Engine Integration Layer
- * Connects ClassicalProEngine.js + presets.json into the stencil generator system.
+ * Connects ClassicalProEngine.js to the create.tsx stencil generator, using
+ * the same 4-style system (hatching/solid/dotwork/hybrid) as the AI engines
+ * via STYLE_TO_CLASSICAL in style-engine-map.ts.
  */
 
 // @ts-ignore — standalone JS module
 import { ClassicalProEngine } from "./classical-pro-engine.js";
-// @ts-ignore — JSON preset file
-import classicalPresets from "./classical-presets.json";
+import { STYLE_TO_CLASSICAL, scaleByIntensity, type StencilStyle } from "./style-engine-map";
 
 export interface ClassicalProOptions {
-  preset: string;
-  mode: "xdog" | "dither";
+  style: StencilStyle;
   intensity: number;
   purpleTint?: boolean;
 }
@@ -21,22 +21,9 @@ export interface ClassicalProResult {
   processingTime: number;
 }
 
-export function getClassicalPresets(): Record<string, any> {
-  return classicalPresets;
-}
-
-export function getPresetCategories(): string[] {
-  return Object.keys(classicalPresets);
-}
-
-export function getPresetsByCategory(category: string): any[] {
-  const data = classicalPresets as any;
-  return data[category] || [];
-}
-
 export async function processClassicalPro(
   imageDataUrl: string,
-  options: ClassicalProOptions
+  options: ClassicalProOptions,
 ): Promise<ClassicalProResult> {
   const t0 = performance.now();
 
@@ -48,37 +35,28 @@ export async function processClassicalPro(
     img.onerror = rej;
   });
 
+  const baseConfig = STYLE_TO_CLASSICAL[options.style];
+  const scaled = scaleByIntensity(baseConfig, options.intensity);
+
   const canvas = document.createElement("canvas");
-  canvas.width = img.width;
-  canvas.height = img.height;
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(img, 0, 0);
-
-  const presets = classicalPresets as any;
-  const categoryPresets = presets[options.preset] || presets["portrait"];
-  const presetConfig = categoryPresets[0] || {};
-
   const engine = new ClassicalProEngine(canvas);
-  const result = engine.processImage({
-    mode: options.mode,
-    intensity: options.intensity,
-    clahe: presetConfig.clahe ?? true,
-    bilateral: presetConfig.bilateral ?? true,
-    structureTensor: presetConfig.structure_tensor ?? true,
-    morphology: presetConfig.morphology ?? true,
-    lineWeight: presetConfig.line_weight ?? 0,
-    dilate: presetConfig.dilate ?? 0,
-    erode: presetConfig.erode ?? 0,
-    purpleTint: options.purpleTint ?? presetConfig.hectograph_purple ?? false,
+
+  const dataUrl: string = engine.processImage(img, {
+    useClahe: scaled.clahe,
+    shadingMode: scaled.shadingMode ?? scaled.mode,
+    skin_smoothness: scaled.skin_smoothness,
+    detail_radius: scaled.detail_radius,
+    edge_sensitivity: scaled.edge_sensitivity,
+    shadow_block: scaled.shadow_block,
+    line_weight: scaled.line_weight,
+    useStructureTensor: scaled.useStructureTensor ?? false,
+    outputPurple: options.purpleTint ?? false,
   });
 
-  const outputCanvas = (result as any).canvas || canvas;
-  const dataUrl = outputCanvas.toDataURL("image/png");
   const elapsed = Math.round(performance.now() - t0);
-
   return {
     dataUrl,
-    presetName: presetConfig.name || options.preset,
+    presetName: options.style,
     processingTime: elapsed,
   };
 }

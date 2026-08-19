@@ -98,26 +98,84 @@ const DB_NAME = "StencilMagicDB";
 const DB_VERSION = 1;
 export const CURRENT_SCHEMA = 1;
 
-let _dbPromise: Promise<IDBPDatabase<StencilMagicDB>> | null = null;
-function db(): Promise<IDBPDatabase<StencilMagicDB>> | null {
-  if (typeof window === "undefined" || typeof indexedDB === "undefined") return null;
-  if (!_dbPromise) {
-    _dbPromise = openDB<StencilMagicDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains("documents")) {
-          const s = db.createObjectStore("documents", { keyPath: "id" });
+const LEGACY_DB_NAME = "PrimalPrintDB";
+let _legacyMigrationRan = false;
+
+async function migrateLegacyDatabaseIfNeeded(): Promise<void> {
+  if (_legacyMigrationRan) return;
+  _legacyMigrationRan = true;
+  if (typeof window === "undefined" || typeof indexedDB === "undefined") return;
+  try {
+    if (typeof indexedDB.databases === "function") {
+      const existing = await indexedDB.databases();
+      const hasLegacy = existing.some((entry) => entry.name === LEGACY_DB_NAME);
+      if (!hasLegacy) return;
+    }
+    const legacyDb = await openDB(LEGACY_DB_NAME, 1).catch(() => null);
+    if (!legacyDb) return;
+    if (!legacyDb.objectStoreNames.contains("documents")) {
+      legacyDb.close();
+      return;
+    }
+    const legacyDocs = await legacyDb.getAll("documents");
+    const legacyFolders = legacyDb.objectStoreNames.contains("folders")
+      ? await legacyDb.getAll("folders")
+      : [];
+    legacyDb.close();
+    if (legacyDocs.length === 0 && legacyFolders.length === 0) return;
+
+    const newDb = await openDB<StencilMagicDB>(DB_NAME, DB_VERSION, {
+      upgrade(d) {
+        if (!d.objectStoreNames.contains("documents")) {
+          const s = d.createObjectStore("documents", { keyPath: "id" });
           s.createIndex("by-name", "name");
           s.createIndex("by-tags", "tags", { multiEntry: true });
           s.createIndex("by-createdAt", "createdAt");
           s.createIndex("by-lastEdited", "lastEdited");
           s.createIndex("by-folder", "folderId");
         }
-        if (!db.objectStoreNames.contains("folders")) {
-          const f = db.createObjectStore("folders", { keyPath: "id" });
+        if (!d.objectStoreNames.contains("folders")) {
+          const f = d.createObjectStore("folders", { keyPath: "id" });
           f.createIndex("by-parent", "parentId");
         }
       },
     });
+    const existingCount = await newDb.count("documents");
+    if (existingCount > 0) return;
+    const tx = newDb.transaction(["documents", "folders"], "readwrite");
+    for (const doc of legacyDocs) await tx.objectStore("documents").put(doc);
+    for (const f of legacyFolders) await tx.objectStore("folders").put(f);
+    await tx.done;
+    console.info(
+      `[vault] Migrated ${legacyDocs.length} document(s) and ${legacyFolders.length} folder(s) from legacy storage.`,
+    );
+  } catch (err) {
+    console.warn("[vault] Legacy database migration skipped due to an error:", err);
+  }
+}
+
+let _dbPromise: Promise<IDBPDatabase<StencilMagicDB>> | null = null;
+function db(): Promise<IDBPDatabase<StencilMagicDB>> | null {
+  if (typeof window === "undefined" || typeof indexedDB === "undefined") return null;
+  if (!_dbPromise) {
+    _dbPromise = migrateLegacyDatabaseIfNeeded().then(() =>
+      openDB<StencilMagicDB>(DB_NAME, DB_VERSION, {
+        upgrade(db) {
+          if (!db.objectStoreNames.contains("documents")) {
+            const s = db.createObjectStore("documents", { keyPath: "id" });
+            s.createIndex("by-name", "name");
+            s.createIndex("by-tags", "tags", { multiEntry: true });
+            s.createIndex("by-createdAt", "createdAt");
+            s.createIndex("by-lastEdited", "lastEdited");
+            s.createIndex("by-folder", "folderId");
+          }
+          if (!db.objectStoreNames.contains("folders")) {
+            const f = db.createObjectStore("folders", { keyPath: "id" });
+            f.createIndex("by-parent", "parentId");
+          }
+        },
+      }),
+    );
   }
   return _dbPromise;
 }
@@ -323,7 +381,9 @@ export async function importBackup(
   bundle: BackupBundle,
   opts: { merge?: boolean } = {},
 ): Promise<{ documents: number; folders: number }> {
-  if (bundle.format !== "stencilmagic-library-backup") throw new Error("Invalid backup file");
+  const looksLikeBackup =
+    bundle && typeof bundle === "object" && Array.isArray((bundle as any).documents);
+  if (!looksLikeBackup) throw new Error("Invalid backup file");
   const d = await db();
   if (!d) return { documents: 0, folders: 0 };
   const tx = d.transaction(["documents", "folders"], "readwrite");
