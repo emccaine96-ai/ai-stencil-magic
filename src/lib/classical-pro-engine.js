@@ -2,12 +2,13 @@
  * ClassicalProEngine
  * -----------------
  * High-quality, fully client-side tattoo stencil engine.
- * Pipeline: CLAHE → Bilateral → XDoG or Floyd-Steinberg Dither → Morphology
- * + Structure Tensor flow modulation for Portrait / Hair styles
- * + Hectograph purple output
- * + Full support for the 50+ subject-type preset library
+ * Pipeline: CLAHE → Edge-preserving Bilateral → S-Curve Contrast →
+ *           XDoG or Stochastic Stipple → Morphology Opening + Blob Filter →
+ *           Structure Tensor flow (optional) → Line weight → Hectograph / Black
  *
  * Zero server cost. Runs on phone and desktop.
+ *
+ * 2026-08 update: aggressive noise suppression for thermal-paper ready output.
  */
 
 class ClassicalProEngine {
@@ -38,7 +39,14 @@ class ClassicalProEngine {
       useStructureTensor: false,    // turn on for portraits / hair
       tensorRadius: 2,
       flowStrength: 0.65,
-      outputPurple: true
+      outputPurple: true,
+
+      // New cleaning controls (safe defaults – can be overridden by preset/settings)
+      contrastStrength: 0.72,      // S-curve amount 0–1
+      gamma: 0.78,                 // <1 pushes midtones darker
+      openKernel: 3,               // morphological opening size (odd)
+      minBlobArea: 6,              // kill dark blobs smaller than this
+      closeKernel: 0,              // optional light close after cleaning
     }, preset || {}, settings);
 
     this.canvas.width = imageSource.width || imageSource.videoWidth;
@@ -55,17 +63,18 @@ class ClassicalProEngine {
       img = this.applyCLAHE(img, 8, 2.0);
     }
 
-    // 3. Bilateral-style smoothing (approximated with guided blur for speed)
+    // 3. Stronger edge-preserving bilateral (replaces previous light blur)
     img = this.bilateralApprox(img, s.skin_smoothness);
+
+    // 4. Aggressive S-curve + gamma – collapses muddy midtones
+    img = this.applySCurveAndGamma(img, s.contrastStrength, s.gamma);
 
     let stencil;
 
     if (s.shadingMode === 'dither') {
-      // Clean closed contour lines from XDoG (same quality source as line styles)
+      // Clean closed contour lines from XDoG
       const contourLines = this.applyXDoG(img, Math.max(0.8, s.detail_radius), s.edge_sensitivity, Math.max(9, s.shadow_block));
-      // Stochastic (blue-noise-style) stippling — replaces Floyd-Steinberg to avoid
-      // diagonal "worm" streak artifacts and produce clean, organic dot density
-      // graded by local darkness, like real hand-stippled dotwork.
+      // Stochastic (blue-noise-style) stippling
       const stipple = this.stochasticStipple(img, {
         minRadius: 0.55,
         maxRadius: 2.4,
@@ -77,18 +86,31 @@ class ClassicalProEngine {
       stencil = this.applyXDoG(img, s.detail_radius, s.edge_sensitivity, s.shadow_block);
     }
 
-    // 4. Structure Tensor flow modulation (Portrait / Hair)
+    // 5. Structure Tensor flow modulation (Portrait / Hair)
     if (s.useStructureTensor) {
       const tensor = this.computeStructureTensor(img, s.tensorRadius);
       stencil = this.applyFlowModulation(stencil, tensor, s.flowStrength);
     }
 
-    // 5. Morphological line weight
+    // 6. Morphological opening (erode → dilate) + minimum-area blob filter
+    //    This is the primary dust / high-frequency noise killer.
+    if (s.openKernel >= 3) {
+      stencil = this.morphology(stencil, s.openKernel, 'open');
+    }
+    if (s.minBlobArea > 0) {
+      stencil = this.removeSmallBlobs(stencil, s.minBlobArea);
+    }
+    // Optional light close to reconnect thin structural lines that may have been nicked
+    if (s.closeKernel >= 3) {
+      stencil = this.morphology(stencil, s.closeKernel, 'close');
+    }
+
+    // 7. Morphological line weight (existing behaviour)
     if (s.line_weight !== 0) {
       stencil = this.dilateErode(stencil, s.line_weight);
     }
 
-    // 6. Optional hectograph purple
+    // 8. Optional hectograph purple
     if (s.outputPurple) {
       stencil = this.mapToHectographPurple(stencil);
     } else {
@@ -117,15 +139,10 @@ class ClassicalProEngine {
     const out = new ImageData(width, height);
     const outData = out.data;
 
-    const tilesX = Math.ceil(width / tileSize);
-    const tilesY = Math.ceil(height / tileSize);
-
-    // For speed we do a lighter global + local blend instead of full CLAHE
-    // (Full per-tile CLAHE is possible but heavier on mobile)
+    // Lightweight global + local blend (full per-tile CLAHE is heavier on mobile)
     const hist = new Array(256).fill(0);
     for (let i = 0; i < data.length; i += 4) hist[data[i]]++;
 
-    // Clip and build CDF
     const total = width * height;
     const clipped = hist.map(v => Math.min(v, (total / 256) * clipLimit));
     const excess = hist.reduce((a, b, i) => a + (hist[i] - clipped[i]), 0);
@@ -146,10 +163,61 @@ class ClassicalProEngine {
     return out;
   }
 
+  /**
+   * Improved edge-preserving bilateral approximation.
+   * Separable spatial blur + range weighting so shading noise is smoothed
+   * while primary structural edges stay razor sharp.
+   */
   bilateralApprox(imageData, strength) {
-    // Fast approximation: light Gaussian + edge-preserving mix
-    const radius = Math.max(1, Math.round(strength / 25));
-    return this.fastBlur(imageData, radius);
+    const radius = Math.max(1, Math.round(strength / 22));
+    const spatial = this.fastBlur(imageData, radius);
+    const { width, height, data } = imageData;
+    const out = new ImageData(width, height);
+    const o = out.data;
+    const sData = spatial.data;
+    const inv = 1 / (strength * 0.55 + 8);
+
+    for (let i = 0; i < data.length; i += 4) {
+      const orig = data[i];
+      const blur = sData[i];
+      const diff = Math.abs(orig - blur);
+      const weight = Math.exp(-diff * inv);          // range kernel
+      const v = orig * (1 - weight) + blur * weight;
+      o[i] = o[i + 1] = o[i + 2] = v;
+      o[i + 3] = 255;
+    }
+    return out;
+  }
+
+  /**
+   * Aggressive contrast S-curve + gamma.
+   * Forces muddy dark grays → solid black and weak light grays → clean white.
+   */
+  applySCurveAndGamma(imageData, contrast = 0.72, gamma = 0.78) {
+    const { width, height, data } = imageData;
+    const out = new ImageData(width, height);
+    const o = out.data;
+    const lut = new Uint8ClampedArray(256);
+
+    for (let i = 0; i < 256; i++) {
+      let v = i / 255;
+      // Smooth S-curve
+      if (v < 0.5) {
+        v = 0.5 * Math.pow(2 * v, 1 + contrast * 2.2);
+      } else {
+        v = 1 - 0.5 * Math.pow(2 * (1 - v), 1 + contrast * 2.2);
+      }
+      // Gamma (< 1 darkens midtones – helps solid blacks on thermal)
+      v = Math.pow(Math.max(0, Math.min(1, v)), gamma);
+      lut[i] = (v * 255 + 0.5) | 0;
+    }
+
+    for (let i = 0; i < data.length; i += 4) {
+      const v = lut[data[i]];
+      o[i] = o[i + 1] = o[i + 2] = v;
+      o[i + 3] = 255;
+    }
+    return out;
   }
 
   applyXDoG(imageData, detailRadius, edgeSensitivity, shadowBlock) {
@@ -165,13 +233,11 @@ class ClassicalProEngine {
 
     for (let i = 0; i < d1.length; i += 4) {
       const val = d1[i] - edgeSensitivity * d2[i];
-      // Normalize roughly into 0-255 range
       let v = Math.max(0, Math.min(255, val + 128));
       o[i] = o[i + 1] = o[i + 2] = v;
       o[i + 3] = 255;
     }
 
-    // Adaptive-style threshold (simplified)
     return this.adaptiveThreshold(out, shadowBlock);
   }
 
@@ -204,45 +270,9 @@ class ClassicalProEngine {
     return out;
   }
 
-  floydSteinbergDither(imageData) {
-    const { width, height, data } = imageData;
-    const copy = new Float32Array(width * height);
-    for (let i = 0, p = 0; i < data.length; i += 4, p++) copy[p] = data[i];
-
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const i = y * width + x;
-        const old = copy[i];
-        const neu = old < 128 ? 0 : 255;
-        copy[i] = neu;
-        const err = old - neu;
-
-        if (x + 1 < width) copy[i + 1] += err * 7 / 16;
-        if (y + 1 < height) {
-          if (x > 0) copy[i + width - 1] += err * 3 / 16;
-          copy[i + width] += err * 5 / 16;
-          if (x + 1 < width) copy[i + width + 1] += err * 1 / 16;
-        }
-      }
-    }
-
-    const out = new ImageData(width, height);
-    const o = out.data;
-    for (let i = 0, p = 0; i < o.length; i += 4, p++) {
-      const v = copy[p] < 128 ? 0 : 255;
-      o[i] = o[i + 1] = o[i + 2] = v;
-      o[i + 3] = 255;
-    }
-    return out;
-  }
-
   /**
    * Stochastic (blue-noise-style) stippling.
-   * Places dots on a jittered grid; each dot's existence probability and
-   * radius are driven by local darkness (gamma-shaped for contrast), with
-   * per-cell jitter + a seeded PRNG so density reads as organic dot texture
-   * instead of the mechanical streaks/worms Floyd-Steinberg produces.
-   * Resolution-independent: spacing/radius scale with image size.
+   * Places dots on a jittered grid; density driven by local darkness.
    */
   stochasticStipple(imageData, opts = {}) {
     const { width, height, data } = imageData;
@@ -250,8 +280,6 @@ class ClassicalProEngine {
     const maxRadius = opts.maxRadius ?? 2.2;
     const baseSpacing = opts.spacing ?? 4;
 
-    // Scale spacing/radius relative to a 1024px reference so density looks
-    // consistent whether exporting at 1K or 8K.
     const scale = Math.max(0.5, Math.min(width, height) / 1024);
     const spacing = Math.max(2, baseSpacing * scale);
     const minR = minRadius * scale;
@@ -264,7 +292,6 @@ class ClassicalProEngine {
       o[i + 3] = 255;
     }
 
-    // Deterministic seeded PRNG (LCG) so re-runs on the same image are stable
     let seed = (width * 73856093) ^ (height * 19349663) ^ 0x9e3779b9;
     const rand = () => {
       seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -290,7 +317,6 @@ class ClassicalProEngine {
 
     for (let y = -spacing; y < height + spacing; y += spacing) {
       for (let x = -spacing; x < width + spacing; x += spacing) {
-        // Jitter each candidate point within its cell to break grid regularity
         const jx = x + (rand() - 0.5) * spacing * 0.9;
         const jy = y + (rand() - 0.5) * spacing * 0.9;
         const sx = Math.min(width - 1, Math.max(0, Math.round(jx)));
@@ -299,14 +325,9 @@ class ClassicalProEngine {
         const darkness = 1 - lum / 255;
         if (darkness <= 0.02) continue;
 
-        // Gamma-shape darkness so shadows read dense and highlights stay sparse
         const gamma = Math.pow(darkness, 0.75);
-
-        // Density-first: probability a dot exists at all scales with darkness
         if (rand() > gamma) continue;
 
-        // Radius scales with darkness for depth, plus slight jitter for
-        // organic, hand-stippled variation instead of uniform dot size
         const radius = minR + (maxR - minR) * gamma * (0.75 + rand() * 0.5);
         drawDot(jx, jy, radius);
       }
@@ -315,36 +336,11 @@ class ClassicalProEngine {
     return out;
   }
 
-  simpleEdges(imageData) {
-    // Lightweight Sobel for combining with dither
-    const { width, height, data } = imageData;
-    const out = new ImageData(width, height);
-    const o = out.data;
-
-    for (let y = 1; y < height - 1; y++) {
-      for (let x = 1; x < width - 1; x++) {
-        const gx =
-          -data[((y - 1) * width + (x - 1)) * 4] - 2 * data[(y * width + (x - 1)) * 4] - data[((y + 1) * width + (x - 1)) * 4] +
-           data[((y - 1) * width + (x + 1)) * 4] + 2 * data[(y * width + (x + 1)) * 4] + data[((y + 1) * width + (x + 1)) * 4];
-        const gy =
-          -data[((y - 1) * width + (x - 1)) * 4] - 2 * data[((y - 1) * width + x) * 4] - data[((y - 1) * width + (x + 1)) * 4] +
-           data[((y + 1) * width + (x - 1)) * 4] + 2 * data[((y + 1) * width + x) * 4] + data[((y + 1) * width + (x + 1)) * 4];
-        const mag = Math.sqrt(gx * gx + gy * gy);
-        const v = mag > 40 ? 0 : 255;
-        const idx = (y * width + x) * 4;
-        o[idx] = o[idx + 1] = o[idx + 2] = v;
-        o[idx + 3] = 255;
-      }
-    }
-    return out;
-  }
-
   combineEdgeAndDither(edges, dither) {
     const { width, height } = edges;
     const out = new ImageData(width, height);
     const e = edges.data, d = dither.data, o = out.data;
     for (let i = 0; i < e.length; i += 4) {
-      // Black if either edge or dither says black
       const v = (e[i] < 128 || d[i] < 128) ? 0 : 255;
       o[i] = o[i + 1] = o[i + 2] = v;
       o[i + 3] = 255;
@@ -354,7 +350,7 @@ class ClassicalProEngine {
 
   computeStructureTensor(imageData, radius = 2) {
     const { width, height, data } = imageData;
-    const tensor = new Float32Array(width * height * 2); // coherence, angle
+    const tensor = new Float32Array(width * height * 2);
 
     const gx = new Float32Array(width * height);
     const gy = new Float32Array(width * height);
@@ -371,7 +367,6 @@ class ClassicalProEngine {
       }
     }
 
-    // Simple box blur of tensor components
     const blur = (src, r) => {
       const out = new Float32Array(src.length);
       for (let y = 0; y < height; y++) {
@@ -426,13 +421,124 @@ class ClassicalProEngine {
     return out;
   }
 
+  /**
+   * Morphological open / close.
+   * open  = erode then dilate  → removes small dark speckles
+   * close = dilate then erode  → fills small gaps in lines
+   */
+  morphology(imageData, ksize, op = 'open') {
+    const kernel = Math.max(3, ksize | 1); // force odd
+    const r = (kernel - 1) >> 1;
+    const { width, height, data } = imageData;
+
+    const erode = (src) => {
+      const dst = new Uint8ClampedArray(src.length);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          let minV = 255;
+          for (let ky = -r; ky <= r; ky++) {
+            for (let kx = -r; kx <= r; kx++) {
+              const yy = Math.max(0, Math.min(height - 1, y + ky));
+              const xx = Math.max(0, Math.min(width - 1, x + kx));
+              minV = Math.min(minV, src[(yy * width + xx) * 4]);
+            }
+          }
+          const idx = (y * width + x) * 4;
+          dst[idx] = dst[idx + 1] = dst[idx + 2] = minV;
+          dst[idx + 3] = 255;
+        }
+      }
+      return dst;
+    };
+
+    const dilate = (src) => {
+      const dst = new Uint8ClampedArray(src.length);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          let maxV = 0;
+          for (let ky = -r; ky <= r; ky++) {
+            for (let kx = -r; kx <= r; kx++) {
+              const yy = Math.max(0, Math.min(height - 1, y + ky));
+              const xx = Math.max(0, Math.min(width - 1, x + kx));
+              maxV = Math.max(maxV, src[(yy * width + xx) * 4]);
+            }
+          }
+          const idx = (y * width + x) * 4;
+          dst[idx] = dst[idx + 1] = dst[idx + 2] = maxV;
+          dst[idx + 3] = 255;
+        }
+      }
+      return dst;
+    };
+
+    const srcArr = data;
+    const resultArr = op === 'open' ? dilate(erode(srcArr)) : erode(dilate(srcArr));
+
+    const out = new ImageData(width, height);
+    out.data.set(resultArr);
+    return out;
+  }
+
+  /**
+   * Connected-component area filter.
+   * Removes isolated dark pixel clusters smaller than minArea.
+   * 4-connected for speed; sufficient for dust / paper texture.
+   */
+  removeSmallBlobs(imageData, minArea = 6) {
+    const { width, height, data } = imageData;
+    const visited = new Uint8Array(width * height);
+    const out = new ImageData(new Uint8ClampedArray(data), width, height);
+    const o = out.data;
+    const stack = [];
+
+    const dirs = [-1, 1, -width, width];
+
+    for (let i = 0; i < width * height; i++) {
+      if (data[i * 4] >= 128 || visited[i]) continue; // only dark (ink) blobs
+
+      stack.length = 0;
+      stack.push(i);
+      visited[i] = 1;
+      let area = 0;
+      const pixels = [];
+
+      while (stack.length) {
+        const p = stack.pop();
+        pixels.push(p);
+        area++;
+
+        const x = p % width;
+        for (const d of dirs) {
+          const np = p + d;
+          if (np < 0 || np >= width * height) continue;
+          const nx = np % width;
+          if (Math.abs(nx - x) > 1) continue; // prevent horizontal wrap
+          if (data[np * 4] < 128 && !visited[np]) {
+            visited[np] = 1;
+            stack.push(np);
+          }
+        }
+      }
+
+      // Kill small dark blobs → turn them white
+      if (area < minArea) {
+        for (const p of pixels) {
+          const idx = p * 4;
+          o[idx] = o[idx + 1] = o[idx + 2] = 255;
+          o[idx + 3] = 255;
+        }
+      }
+    }
+    return out;
+  }
+
   dilateErode(imageData, amount) {
     if (amount === 0) return imageData;
     const { width, height, data } = imageData;
     const out = new ImageData(width, height);
     const o = out.data;
     const r = Math.abs(amount);
-    const isDilate = amount > 0; // for black lines on white, dilate black = erode white
+    const isDilate = amount > 0;
 
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -489,22 +595,39 @@ class ClassicalProEngine {
     const out = new ImageData(width, height);
     const o = out.data;
 
+    // Separable box blur for better performance
+    const tmp = new Float32Array(width * height);
+
+    // Horizontal
     for (let y = 0; y < height; y++) {
+      let sum = 0;
+      for (let x = -r; x <= r; x++) {
+        const xx = Math.max(0, Math.min(width - 1, x));
+        sum += data[(y * width + xx) * 4];
+      }
       for (let x = 0; x < width; x++) {
-        let sum = 0, c = 0;
-        for (let dy = -r; dy <= r; dy++) {
-          for (let dx = -r; dx <= r; dx++) {
-            const nx = x + dx, ny = y + dy;
-            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-              sum += data[(ny * width + nx) * 4];
-              c++;
-            }
-          }
-        }
+        tmp[y * width + x] = sum / (2 * r + 1);
+        const x1 = Math.max(0, Math.min(width - 1, x - r));
+        const x2 = Math.max(0, Math.min(width - 1, x + r + 1));
+        sum += data[(y * width + x2) * 4] - data[(y * width + x1) * 4];
+      }
+    }
+
+    // Vertical
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      for (let y = -r; y <= r; y++) {
+        const yy = Math.max(0, Math.min(height - 1, y));
+        sum += tmp[yy * width + x];
+      }
+      for (let y = 0; y < height; y++) {
+        const v = sum / (2 * r + 1);
         const idx = (y * width + x) * 4;
-        const v = sum / c;
         o[idx] = o[idx + 1] = o[idx + 2] = v;
         o[idx + 3] = 255;
+        const y1 = Math.max(0, Math.min(height - 1, y - r));
+        const y2 = Math.max(0, Math.min(height - 1, y + r + 1));
+        sum += tmp[y2 * width + x] - tmp[y1 * width + x];
       }
     }
     return out;
