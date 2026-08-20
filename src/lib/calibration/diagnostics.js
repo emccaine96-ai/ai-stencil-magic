@@ -60,13 +60,6 @@ async function runDiagnostics(engine, settings = {}) {
     diagonalStripes: null,
     crashed: false,
     hadNaN: false,
-    // Check for NaN/infinity in output
-    for (let i = 0; i < out.data.length; i += 4) {
-      if (isNaN(out.data[i]) || isNaN(out.data[i+1]) || isNaN(out.data[i+2]) || !isFinite(out.data[i])) {
-        results.hadNaN = true;
-        break;
-      }
-    }
     messages: []
   };
 
@@ -95,6 +88,8 @@ async function runDiagnostics(engine, settings = {}) {
 }
 
 // Export for browser or module use
+export { createBandedGradient, createDiagonalStripes, runDiagnostics };
+
 if (typeof window !== 'undefined') {
   window.StencilDiagnostics = { createBandedGradient, createDiagonalStripes, runDiagnostics };
 }
