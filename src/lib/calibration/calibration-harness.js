@@ -1,5 +1,5 @@
 // Module-based import (replaces window.StencilFScore)
-const { scoreStencilPair } = require('./fscore');
+import { scoreStencilPair } from './fscore.js';
 
 /**
  * Batch calibration harness skeleton
@@ -90,9 +90,8 @@ async function simpleCoordinateDescent(engine, pairs, initialSettings, paramRang
   return { bestSettings, bestScore };
 }
 
+export { runBatchCalibration, simpleCoordinateDescent };
+
 if (typeof window !== 'undefined') {
   window.StencilCalibration = { runBatchCalibration, simpleCoordinateDescent };
-}
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { runBatchCalibration, simpleCoordinateDescent };
 }
