@@ -149,58 +149,112 @@ class ClassicalProEngine {
     return imageData;
   }
 
-  /** Simple CLAHE approximation (tile histogram equalization) */
-  applyCLAHE(imageData, tileSize = 8, clipLimit = 2.0) {
+  /** Real tile-based CLAHE with clip-limiting and bilinear tile blending */
+  applyCLAHE(imageData, gridSize = 8, clipLimit = 2.0) {
     const { width, height, data } = imageData;
+    const tilesX = Math.max(1, gridSize);
+    const tilesY = Math.max(1, gridSize);
+    const tileW = Math.ceil(width / tilesX);
+    const tileH = Math.ceil(height / tilesY);
+
+    const tileCdfs = [];
+    for (let ty = 0; ty < tilesY; ty++) {
+      const row = [];
+      for (let tx = 0; tx < tilesX; tx++) {
+        const x0 = tx * tileW, y0 = ty * tileH;
+        const x1 = Math.min(width, x0 + tileW), y1 = Math.min(height, y0 + tileH);
+        const hist = new Array(256).fill(0);
+        let count = 0;
+        for (let y = y0; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            hist[data[(y * width + x) * 4]]++;
+            count++;
+          }
+        }
+        const clipVal = Math.max(1, (count / 256) * clipLimit);
+        let excess = 0;
+        for (let i = 0; i < 256; i++) {
+          if (hist[i] > clipVal) {
+            excess += hist[i] - clipVal;
+            hist[i] = clipVal;
+          }
+        }
+        const redistribute = excess / 256;
+        for (let i = 0; i < 256; i++) hist[i] += redistribute;
+        const cdf = new Array(256);
+        cdf[0] = hist[0];
+        for (let i = 1; i < 256; i++) cdf[i] = cdf[i - 1] + hist[i];
+        const cdfMin = cdf.find((v) => v > 0) || 0;
+        const denom = Math.max(1, count - cdfMin);
+        const map = new Array(256);
+        for (let i = 0; i < 256; i++) map[i] = Math.round(((cdf[i] - cdfMin) / denom) * 255);
+        row.push(map);
+      }
+      tileCdfs.push(row);
+    }
+
     const out = new ImageData(width, height);
     const outData = out.data;
+    for (let y = 0; y < height; y++) {
+      const fy = (y - tileH / 2) / tileH;
+      const ty0 = Math.max(0, Math.min(tilesY - 1, Math.floor(fy)));
+      const ty1 = Math.max(0, Math.min(tilesY - 1, ty0 + 1));
+      const wy = Math.max(0, Math.min(1, fy - ty0));
+      for (let x = 0; x < width; x++) {
+        const fx = (x - tileW / 2) / tileW;
+        const tx0 = Math.max(0, Math.min(tilesX - 1, Math.floor(fx)));
+        const tx1 = Math.max(0, Math.min(tilesX - 1, tx0 + 1));
+        const wx = Math.max(0, Math.min(1, fx - tx0));
 
-    // Lightweight global + local blend (full per-tile CLAHE is heavier on mobile)
-    const hist = new Array(256).fill(0);
-    for (let i = 0; i < data.length; i += 4) hist[data[i]]++;
+        const v = data[(y * width + x) * 4];
+        const m00 = tileCdfs[ty0][tx0][v];
+        const m10 = tileCdfs[ty0][tx1][v];
+        const m01 = tileCdfs[ty1][tx0][v];
+        const m11 = tileCdfs[ty1][tx1][v];
+        const top = m00 * (1 - wx) + m10 * wx;
+        const bottom = m01 * (1 - wx) + m11 * wx;
+        const eq = Math.round(top * (1 - wy) + bottom * wy);
 
-    const total = width * height;
-    const clipped = hist.map(v => Math.min(v, (total / 256) * clipLimit));
-    const excess = hist.reduce((a, b, i) => a + (hist[i] - clipped[i]), 0);
-    const extra = excess / 256;
-    for (let i = 0; i < 256; i++) clipped[i] += extra;
-
-    const cdf = new Array(256);
-    cdf[0] = clipped[0];
-    for (let i = 1; i < 256; i++) cdf[i] = cdf[i - 1] + clipped[i];
-    const cdfMin = cdf.find(v => v > 0) || 0;
-
-    for (let i = 0; i < data.length; i += 4) {
-      const v = data[i];
-      const eq = Math.round(((cdf[v] - cdfMin) / Math.max(1, (total - cdfMin))) * 255);
-      outData[i] = outData[i + 1] = outData[i + 2] = eq;
-      outData[i + 3] = 255;
+        const idx = (y * width + x) * 4;
+        outData[idx] = outData[idx + 1] = outData[idx + 2] = eq;
+        outData[idx + 3] = 255;
+      }
     }
     return out;
   }
 
   /**
-   * Improved edge-preserving bilateral approximation.
-   * Separable spatial blur + range weighting so shading noise is smoothed
-   * while primary structural edges stay razor sharp.
+   * Real edge-preserving bilateral filter (5x5 spatial kernel + range weighting).
+   * Smooths flat skin regions while keeping true edges razor sharp.
    */
   bilateralApprox(imageData, strength) {
-    const radius = Math.max(1, Math.round(strength / 22));
-    const spatial = this.fastBlur(imageData, radius);
     const { width, height, data } = imageData;
+    const spatialWeights = [1, 0.6, 0.25];
+    const rangeSigma = Math.max(4, strength / 2);
     const out = new ImageData(width, height);
     const o = out.data;
-    const sData = spatial.data;
-    const inv = 1 / (strength * 0.55 + 8);
-
-    for (let i = 0; i < data.length; i += 4) {
-      const orig = data[i];
-      const blur = sData[i];
-      const diff = Math.abs(orig - blur);
-      const weight = Math.exp(-diff * inv);          // range kernel
-      const v = orig * (1 - weight) + blur * weight;
-      o[i] = o[i + 1] = o[i + 2] = v;
-      o[i + 3] = 255;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const center = data[(y * width + x) * 4];
+        let wsum = 0, vsum = 0;
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            const xx = Math.min(width - 1, Math.max(0, x + dx));
+            const yy = Math.min(height - 1, Math.max(0, y + dy));
+            const v = data[(yy * width + xx) * 4];
+            const sw = spatialWeights[Math.min(2, Math.abs(dx))] * spatialWeights[Math.min(2, Math.abs(dy))];
+            const rangeDiff = v - center;
+            const rw = Math.exp(-(rangeDiff * rangeDiff) / (2 * rangeSigma * rangeSigma));
+            const w = sw * rw;
+            wsum += w;
+            vsum += w * v;
+          }
+        }
+        const val = wsum > 0 ? vsum / wsum : center;
+        const idx = (y * width + x) * 4;
+        o[idx] = o[idx + 1] = o[idx + 2] = val;
+        o[idx + 3] = 255;
+      }
     }
     return out;
   }
