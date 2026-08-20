@@ -95,3 +95,6 @@ export { runBatchCalibration, simpleCoordinateDescent };
 if (typeof window !== 'undefined') {
   window.StencilCalibration = { runBatchCalibration, simpleCoordinateDescent };
 }
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { runBatchCalibration, simpleCoordinateDescent };
+}
