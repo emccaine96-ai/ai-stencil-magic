@@ -49,11 +49,18 @@ class ClassicalProEngine {
       closeKernel: 0,              // optional light close after cleaning
     }, preset || {}, settings);
 
-    this.canvas.width = imageSource.width || imageSource.videoWidth;
-    this.canvas.height = imageSource.height || imageSource.videoHeight;
-    this.ctx.drawImage(imageSource, 0, 0);
+    const srcW = imageSource.width || imageSource.videoWidth || 1;
+    const srcH = imageSource.height || imageSource.videoHeight || 1;
+    const MAX_EDGE = 2400;
+    const scale = Math.min(1, MAX_EDGE / Math.max(srcW, srcH));
+    const workW = Math.max(1, Math.round(srcW * scale));
+    const workH = Math.max(1, Math.round(srcH * scale));
 
-    let img = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+    this.canvas.width = workW;
+    this.canvas.height = workH;
+    this.ctx.drawImage(imageSource, 0, 0, workW, workH);
+
+    let img = this.ctx.getImageData(0, 0, workW, workH);
 
     // 1. Grayscale
     img = this.toGrayscale(img);
@@ -119,6 +126,15 @@ class ClassicalProEngine {
     }
 
     this.ctx.putImageData(stencil, 0, 0);
+    if (scale < 1) {
+      const fullCanvas = document.createElement('canvas');
+      fullCanvas.width = srcW;
+      fullCanvas.height = srcH;
+      const fctx = fullCanvas.getContext('2d');
+      fctx.imageSmoothingEnabled = false;
+      fctx.drawImage(this.canvas, 0, 0, srcW, srcH);
+      return fullCanvas.toDataURL('image/png');
+    }
     return this.canvas.toDataURL('image/png');
   }
 
