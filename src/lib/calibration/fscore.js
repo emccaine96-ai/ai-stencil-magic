@@ -112,6 +112,8 @@ async function scoreStencilPair(predSource, gtSource, options = {}) {
   return edgeOverlapFScore(predMask, gtMask, dilateRadius);
 }
 
+export { toBinaryMask, dilateMask, edgeOverlapFScore, scoreStencilPair };
+
 if (typeof window !== 'undefined') {
   window.StencilFScore = { toBinaryMask, dilateMask, edgeOverlapFScore, scoreStencilPair };
 }
