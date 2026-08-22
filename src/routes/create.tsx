@@ -1,1 +1,1 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+FILE_CONTENT_FROM_DISK
