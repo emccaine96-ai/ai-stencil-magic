@@ -17,7 +17,7 @@ class ClassicalProEngine {
     this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
 
     // Classic Spirit / hectograph thermal purple (approximate)
-    this.hectographPurple = { r: 120, g: 0, b: 200 };
+    this.hectographPurple = { r: 168, g: 85, b: 247 }; // matches app brand purple #A855F7
   }
 
   /**
@@ -44,7 +44,7 @@ class ClassicalProEngine {
       // New cleaning controls (safe defaults – can be overridden by preset/settings)
       contrastStrength: 0.72,      // S-curve amount 0–1
       gamma: 0.78,                 // <1 pushes midtones darker
-      openKernel: 3,               // morphological opening size (odd)
+      openKernel: 0,               // morphological opening size (odd) — off by default; erosion destroys thin linework, only enable for genuinely noisy source photos
       minBlobArea: 6,              // kill dark blobs smaller than this
       closeKernel: 0,              // optional light close after cleaning
     }, preset || {}, settings);
