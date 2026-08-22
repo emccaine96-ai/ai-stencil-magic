@@ -1,1 +1,1 @@
-PLACEHOLDER_WILL_BE_REPLACED
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
