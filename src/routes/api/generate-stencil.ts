@@ -5,6 +5,7 @@ type Body = {
   image: { mimeType: string; data: string };
   provider?: "openrouter" | "gemini";
   openrouterKey?: string; // client-supplied key for Master Pro tier
+  model?: string; // client-supplied model override for OpenRouter
 };
 
 export const Route = createFileRoute("/api/generate-stencil")({
@@ -45,7 +46,7 @@ export const Route = createFileRoute("/api/generate-stencil")({
                 "X-Title": "AI Stencil Magic",
               },
               body: JSON.stringify({
-                model: "google/gemini-2.5-flash-preview",
+                model: body.model || "google/gemini-2.5-flash-preview",
                 messages: [
                   {
                     role: "user",

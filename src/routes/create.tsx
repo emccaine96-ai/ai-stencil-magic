@@ -44,6 +44,7 @@ const STYLES: { id: Style; label: string; sub: string }[] = [
 const KEY_STORAGE = "stencilmagic.gemini.key";
 const OR_KEY_STORAGE = "stencilmagic.openrouter.key";
 const PROVIDER_STORAGE = "stencilmagic.provider"; // 'openrouter' | 'gemini'
+const OR_MODEL_STORAGE = "stencilmagic.openrouter.model"; // 'openrouter' | 'gemini'
 type Provider = "openrouter" | "gemini" | "classical" | "hybrid";
 const STYLE_PROMPTS: Record<Style, string> = {
   hatching:
@@ -119,6 +120,7 @@ function CreatePage() {
   // API keys
   const [apiKey, setApiKey] = useState("");
   const [orKey, setOrKey] = useState("");
+  const [orModel, setOrModel] = useState("google/gemini-2.5-flash-preview");
   const [keyOpen, setKeyOpen] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
   const [orKeyDraft, setOrKeyDraft] = useState("");
@@ -137,6 +139,8 @@ function CreatePage() {
     if (k) setApiKey(k);
     const ork = localStorage.getItem(OR_KEY_STORAGE);
     if (ork) setOrKey(ork);
+    const orm = localStorage.getItem(OR_MODEL_STORAGE);
+    if (orm) setOrModel(orm);
     const p = localStorage.getItem(PROVIDER_STORAGE) as Provider | null;
     if (p === "openrouter" || p === "gemini" || p === "classical" || p === "hybrid") setProvider(p);
     // Hand-off from Vault: open a saved entry directly in the editor.
@@ -324,6 +328,7 @@ function CreatePage() {
               ],
               provider: "openrouter",
               openrouterKey: orKey || undefined,
+              model: orModel,
             }),
           });
           const data = await r.json();
@@ -377,6 +382,7 @@ function CreatePage() {
             image: { mimeType, data: imgB64 },
             provider: "openrouter",
             openrouterKey: orKey || undefined,
+            model: orModel,
           }),
         });
         const data = await r.json();
