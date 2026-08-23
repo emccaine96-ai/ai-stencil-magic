@@ -1,0 +1,4 @@
+# Codespaces environment files
+.env.local
+.env.development.local
+node_modules/
