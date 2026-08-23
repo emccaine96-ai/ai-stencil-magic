@@ -17,9 +17,9 @@ const GEMINI_KEY_STORAGE = "stencilmagic.gemini.key";
 const OPENROUTER_KEY_STORAGE = "stencilmagic.openrouter.key";
 const OPENROUTER_MODEL_STORAGE = "stencilmagic.openrouter.model";
 
-// Popular vision-capable models on OpenRouter
+// Popular vision/image-capable models on OpenRouter
 const POPULAR_MODELS = [
-  { id: "google/gemini-2.5-flash-preview", label: "Gemini 2.5 Flash (default)" },
+  { id: "google/gemini-2.5-flash-image", label: "Gemini 2.5 Flash Image (default)" },
   { id: "google/gemini-2.5-pro-preview", label: "Gemini 2.5 Pro" },
   { id: "google/gemini-flash-1.5", label: "Gemini 1.5 Flash" },
   { id: "google/gemini-pro-1.5", label: "Gemini 1.5 Pro" },
@@ -247,7 +247,7 @@ function ModelSelector() {
         setCustom(saved);
       }
     } else {
-      setSelected("google/gemini-2.5-flash-preview");
+      setSelected("google/gemini-2.5-flash-image");
     }
   }, []);
 
