@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 type Body = {
   prompt: string;
   image: { mimeType: string; data: string };
+  images?: { mimeType: string; data: string }[];
   provider?: "openrouter" | "gemini";
   openrouterKey?: string; // client-supplied key for Master Pro tier
   model?: string; // client-supplied model override for OpenRouter
@@ -34,7 +35,9 @@ export const Route = createFileRoute("/api/generate-stencil")({
             );
           }
 
-          // OpenRouter chat completions API with vision model
+          // OpenRouter chat completions API with vision model.
+          // Prefer body.images (hybrid: original + classical guide) when present;
+          // fall back to the single body.image field for standard generation.
           const upstream = await fetch(
             "https://openrouter.ai/api/v1/chat/completions",
             {
@@ -46,18 +49,18 @@ export const Route = createFileRoute("/api/generate-stencil")({
                 "X-Title": "AI Stencil Magic",
               },
               body: JSON.stringify({
-                model: body.model || "google/gemini-2.5-flash-preview",
+                model: body.model || "google/gemini-2.5-flash-image",
                 messages: [
                   {
                     role: "user",
                     content: [
                       { type: "text", text: body.prompt },
-                      {
-                        type: "image_url",
-                        image_url: {
-                          url: `data:${body.image.mimeType};base64,${body.image.data}`,
-                        },
-                      },
+                      ...(body.images && body.images.length > 0 ? body.images : [body.image]).map(
+                        (img) => ({
+                          type: "image_url" as const,
+                          image_url: { url: `data:${img.mimeType};base64,${img.data}` },
+                        }),
+                      ),
                     ],
                   },
                 ],
@@ -99,6 +102,23 @@ export const Route = createFileRoute("/api/generate-stencil")({
               { error: "OpenRouter model did not return an image. Use a vision-capable model." },
               { status: 502 },
             );
+          }
+          // Some image models return content as an array of parts
+          if (Array.isArray(content)) {
+            for (const part of content) {
+              if (typeof part === "string") {
+                const imgMatch = part.match(/data:image\/[^;]+;base64,([A-Za-z0-9+/=]+)/);
+                if (imgMatch) return Response.json({ dataUrl: imgMatch[0] });
+              }
+              if (part?.type === "image_url" && part?.image_url?.url) {
+                return Response.json({ dataUrl: part.image_url.url });
+              }
+              if (part?.inline_data?.data || part?.inlineData?.data) {
+                const inline = part.inline_data ?? part.inlineData;
+                const mime = inline.mime_type ?? inline.mimeType ?? "image/png";
+                return Response.json({ dataUrl: `data:${mime};base64,${inline.data}` });
+              }
+            }
           }
           return Response.json(
             { error: "Unexpected OpenRouter response format" },
