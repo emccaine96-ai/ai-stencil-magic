@@ -3,7 +3,12 @@
  * Keeps manual Save, autosave, and "Save now" on one correct path.
  */
 
-import type { EditorState, LayerState } from "@/lib/localDB";
+import {
+  persistStudioEdit,
+  type DocumentData,
+  type EditorState,
+  type LayerState,
+} from "@/lib/localDB";
 
 export type BuildEditorStateOpts = {
   refLoaded: boolean;
@@ -75,4 +80,25 @@ export function makeEditorThumbnail(
   tctx.fillRect(0, 0, tc.width, tc.height);
   tctx.drawImage(canvas, 0, 0, tc.width, tc.height);
   return tc.toDataURL("image/jpeg", quality);
+}
+
+/**
+ * One-call path used by the header "Save Stencil" button.
+ * Writes flatten PNG + layered state + thumbnail + optional version snapshot.
+ */
+export async function persistFromCanvases(
+  doc: DocumentData,
+  canvas: HTMLCanvasElement,
+  refCanvas: HTMLCanvasElement | null,
+  opts: BuildEditorStateOpts & { snapshotChanges?: string },
+): Promise<DocumentData> {
+  const editorState = buildEditorState(canvas, refCanvas, opts);
+  const thumbnail = makeEditorThumbnail(canvas);
+  const flattenPng = canvas.toDataURL("image/png");
+  return persistStudioEdit(doc, {
+    flattenPng,
+    thumbnail,
+    editorState,
+    snapshotChanges: opts.snapshotChanges,
+  });
 }
