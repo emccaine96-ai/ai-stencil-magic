@@ -44,7 +44,7 @@ const STYLES: { id: Style; label: string; sub: string }[] = [
 const KEY_STORAGE = "stencilmagic.gemini.key";
 const OR_KEY_STORAGE = "stencilmagic.openrouter.key";
 const PROVIDER_STORAGE = "stencilmagic.provider"; // 'openrouter' | 'gemini'
-const OR_MODEL_STORAGE = "stencilmagic.openrouter.model"; // 'openrouter' | 'gemini'
+const OR_MODEL_STORAGE = "stencilmagic.openrouter.model";
 type Provider = "openrouter" | "gemini" | "classical" | "hybrid";
 const STYLE_PROMPTS: Record<Style, string> = {
   hatching:
@@ -120,12 +120,11 @@ function CreatePage() {
   // API keys
   const [apiKey, setApiKey] = useState("");
   const [orKey, setOrKey] = useState("");
-  const [orModel, setOrModel] = useState("google/gemini-2.5-flash-preview");
+  const [orModel, setOrModel] = useState("google/gemini-2.5-flash-image");
   const [keyOpen, setKeyOpen] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
   const [orKeyDraft, setOrKeyDraft] = useState("");
   const [provider, setProvider] = useState<Provider>("openrouter");
-  const [classicalPurple, setClassicalPurple] = useState(false);
   const [originalStencil, setOriginalStencil] = useState<string | null>(null);
   const [pluginProcessing, setPluginProcessing] = useState<string | null>(null);
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
@@ -590,20 +589,9 @@ function CreatePage() {
           </div>
           {provider === "classical" ? (
             <div className="mt-3 p-4 rounded-2xl border border-border bg-card space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] text-muted-foreground flex-1">
-                  Classical Pro uses the same style + shading density as above. Runs locally — no API key, no credits.
-                </p>
-                <label className="flex items-center gap-2 text-xs cursor-pointer ml-3 shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={classicalPurple}
-                    onChange={(e) => setClassicalPurple(e.target.checked)}
-                    className="accent-primary"
-                  />
-                  Hectograph purple
-                </label>
-              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Classical Pro uses the same style + shading density as above. Runs locally — no API key, no credits.
+              </p>
             </div>
           ) : null}
           {provider === "hybrid" ? (
@@ -614,15 +602,6 @@ function CreatePage() {
               <p className="text-[10px] text-muted-foreground">
                 Uses 1 API call. Falls back to Classical Pro only if no key is set.
               </p>
-              <label className="flex items-center gap-2 text-xs cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={classicalPurple}
-                  onChange={(e) => setClassicalPurple(e.target.checked)}
-                  className="accent-primary"
-                />
-                Hectograph purple on final output
-              </label>
             </div>
           ) : null}
           {provider === "openrouter" && !orKey ? (
@@ -703,7 +682,7 @@ function CreatePage() {
               max={100}
               value={intensity * 100}
               onChange={(e) => setIntensity(Number(e.target.value) / 100)}
-              className="w-full mt-2 accent-[oklch(0.64_0.26_303)]"
+              className="w-full mt-2 accent-primary"
             />
             <p className="text-xs text-muted-foreground mt-2">
               Controls the 5-tier tonal layering: shadows → dark mids → mids → light mids →
@@ -859,7 +838,6 @@ function CreatePage() {
                   { id: "builtin.otsu-threshold", label: "Auto B/W", icon: "⬛" },
                   { id: "builtin.edge-connector", label: "Fix Gaps", icon: "🔗" },
                   { id: "builtin.line-thinning", label: "Thin Lines", icon: "✏️" },
-                  { id: "builtin.hectograph-purple", label: "Purple Tint", icon: "🟣" },
                   { id: "builtin.bilateral-smooth", label: "Smooth", icon: "🌊" },
                   { id: "builtin.halftone-stipple", label: "Stipple", icon: "⚫" },
                   { id: "builtin.mirror-symmetry", label: "Mirror", icon: "🪞" },

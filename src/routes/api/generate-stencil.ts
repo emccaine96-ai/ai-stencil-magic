@@ -50,6 +50,7 @@ export const Route = createFileRoute("/api/generate-stencil")({
               },
               body: JSON.stringify({
                 model: body.model || "google/gemini-2.5-flash-image",
+                modalities: ["image", "text"],
                 messages: [
                   {
                     role: "user",

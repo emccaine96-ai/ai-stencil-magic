@@ -17,22 +17,6 @@ const GEMINI_KEY_STORAGE = "stencilmagic.gemini.key";
 const OPENROUTER_KEY_STORAGE = "stencilmagic.openrouter.key";
 const OPENROUTER_MODEL_STORAGE = "stencilmagic.openrouter.model";
 
-// Popular vision/image-capable models on OpenRouter
-const POPULAR_MODELS = [
-  { id: "google/gemini-2.5-flash-image", label: "Gemini 2.5 Flash Image (default)" },
-  { id: "google/gemini-2.5-pro-preview", label: "Gemini 2.5 Pro" },
-  { id: "google/gemini-flash-1.5", label: "Gemini 1.5 Flash" },
-  { id: "google/gemini-pro-1.5", label: "Gemini 1.5 Pro" },
-  { id: "openai/gpt-4o", label: "GPT-4o" },
-  { id: "openai/gpt-4o-mini", label: "GPT-4o Mini" },
-  { id: "anthropic/claude-3.5-sonnet", label: "Claude 3.5 Sonnet" },
-  { id: "anthropic/claude-3-opus", label: "Claude 3 Opus" },
-  { id: "meta-llama/llama-3.2-90b-vision-instruct", label: "Llama 3.2 90B Vision" },
-  { id: "mistralai/pixtral-12b", label: "Pixtral 12B" },
-  { id: "qwen/qwen-2-vl-72b-instruct", label: "Qwen 2 VL 72B" },
-  { id: "nvidia/nemotron-vila-8b", label: "NVIDIA Nemotron VILA 8B" },
-];
-
 type TestStatus = "idle" | "testing" | "success" | "error";
 
 function ProviderCard(props: {
@@ -231,90 +215,104 @@ async function testOpenRouter(key: string): Promise<{ ok: boolean; message: stri
   return { ok: true, message: "Key is valid" };
 }
 
+interface OpenRouterModel {
+  id: string;
+  name: string;
+  pricing: { prompt: string; completion: string; image?: string };
+}
+
+function formatImagePrice(model: OpenRouterModel): string {
+  const p = model.pricing?.image;
+  if (!p) return "pricing varies";
+  const n = Number(p);
+  if (!Number.isFinite(n) || n <= 0) return "pricing varies";
+  return `~$${n.toFixed(3)}/image`;
+}
+
 function ModelSelector() {
-  const [selected, setSelected] = useState("");
+  const [models, setModels] = useState<OpenRouterModel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState("");
+  const [selected, setSelected] = useState("google/gemini-2.5-flash-image");
+  const [query, setQuery] = useState("");
   const [custom, setCustom] = useState("");
-  const [isCustom, setIsCustom] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const saved = localStorage.getItem(OPENROUTER_MODEL_STORAGE);
-    if (saved) {
-      setSelected(saved);
-      // If saved model isn't in the popular list, show it in custom field
-      if (!POPULAR_MODELS.find((m) => m.id === saved)) {
-        setIsCustom(true);
-        setCustom(saved);
-      }
-    } else {
-      setSelected("google/gemini-2.5-flash-image");
-    }
+    if (saved) setSelected(saved);
   }, []);
 
-  function save(value: string) {
-    localStorage.setItem(OPENROUTER_MODEL_STORAGE, value);
-    setSelected(value);
-    toast.success("Model saved");
-  }
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("https://openrouter.ai/api/v1/models?output_modalities=image");
+        if (!r.ok) throw new Error(`OpenRouter returned ${r.status}`);
+        const json = await r.json();
+        if (!cancelled) setModels(Array.isArray(json?.data) ? json.data : []);
+      } catch (e) {
+        if (!cancelled) {
+          setFetchError(e instanceof Error ? e.message : "Could not load the OpenRouter model list");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  function selectModel(id: string) {
-    setIsCustom(false);
-    setCustom("");
-    save(id);
+  function choose(id: string) {
+    setSelected(id);
+    localStorage.setItem(OPENROUTER_MODEL_STORAGE, id);
+    toast.success("Model saved");
   }
 
   function saveCustom() {
     const v = custom.trim();
     if (!v) return;
-    save(v);
+    choose(v);
+    setCustom("");
   }
+
+  const filtered = models.filter(
+    (m) =>
+      !query.trim() ||
+      m.id.toLowerCase().includes(query.toLowerCase()) ||
+      m.name.toLowerCase().includes(query.toLowerCase()),
+  );
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
       <div className="flex items-center gap-2">
         <Sparkles size={18} className="text-primary" />
         <h3 className="font-bold text-lg">OpenRouter Model</h3>
-        <span className="ml-auto text-[10px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-          {selected || "default"}
-        </span>
       </div>
       <p className="text-sm text-muted-foreground">
-        Pick which AI model OpenRouter routes to. Vision-capable models can generate images —
-        text-only models will return an error.
+        Live list from OpenRouter, filtered to models that actually support image output.
+      </p>
+      <p className="text-xs text-muted-foreground">
+        No free-tier OpenRouter model currently supports image generation — every option below is
+        metered per image.
       </p>
 
-      {!isCustom ? (
-        <div className="space-y-2">
-          <select
-            value={selected}
-            onChange={(e) => {
-              if (e.target.value === "__custom__") {
-                setIsCustom(true);
-              } else {
-                selectModel(e.target.value);
-              }
-            }}
-            className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-primary"
-          >
-            {POPULAR_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-            <option value="__custom__">Custom model ID…</option>
-          </select>
-          <p className="text-[11px] text-muted-foreground">
-            Current: <code className="text-primary">{selected}</code>
-          </p>
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 size={14} className="animate-spin" /> Loading live model list…
         </div>
-      ) : (
+      ) : fetchError ? (
         <div className="space-y-2">
+          <p className="text-sm text-destructive">
+            {fetchError} — using default model.
+          </p>
           <div className="flex gap-2">
             <input
               type="text"
               value={custom}
               onChange={(e) => setCustom(e.target.value)}
-              placeholder="e.g. openai/gpt-4o, anthropic/claude-3.5-sonnet"
+              placeholder="Paste a model ID from openrouter.ai/models"
               className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
             />
             <button
@@ -325,27 +323,39 @@ function ModelSelector() {
               Save
             </button>
           </div>
-          <button
-            onClick={() => setIsCustom(false)}
-            className="text-xs text-muted-foreground hover:text-foreground underline"
-          >
-            ← Back to list
-          </button>
         </div>
+      ) : (
+        <>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search models…"
+            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+          />
+          <div className="max-h-64 overflow-y-auto space-y-1 rounded-xl border border-border p-1">
+            {filtered.length === 0 ? (
+              <p className="text-xs text-muted-foreground p-2">No models match "{query}".</p>
+            ) : (
+              filtered.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => choose(m.id)}
+                  className={`w-full text-left rounded-lg px-3 py-2 text-sm flex items-center justify-between gap-2 ${
+                    selected === m.id ? "bg-primary/10 text-primary font-semibold" : "hover:bg-muted"
+                  }`}
+                >
+                  <span className="truncate">{m.name || m.id}</span>
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    {formatImagePrice(m)}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </>
       )}
-
-      <p className="text-[11px] text-muted-foreground">
-        Browse all available models at{" "}
-        <a
-          href="https://openrouter.ai/models"
-          target="_blank"
-          rel="noreferrer"
-          className="text-primary underline"
-        >
-          openrouter.ai/models
-        </a>
-        . Copy the model ID and paste it in the custom field.
-      </p>
+      <p className="text-[11px] text-muted-foreground font-mono">Current: {selected}</p>
     </div>
   );
 }
