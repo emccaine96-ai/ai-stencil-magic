@@ -18,7 +18,7 @@ import {
   Aperture,
   Star,
   Layers,
-  SliersHorizontal,
+  SlidersHorizontal,
   Rocket,
   Eraser,
   Stamp,
