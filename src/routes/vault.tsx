@@ -30,6 +30,7 @@ import {
   importBackup,
   saveDocument,
   createDocument,
+  bestExportUrl,
   type DocumentData,
   type Folder,
   type BackupBundle,
@@ -141,7 +142,7 @@ function VaultPage() {
 
   function download(d: DocumentData) {
     const a = document.createElement("a");
-    a.href = d.originalAIImage ?? d.thumbnail;
+    a.href = bestExportUrl(d);
     a.download = `${d.name.replace(/\s+/g, "-")}.png`;
     a.click();
   }
@@ -276,7 +277,6 @@ function VaultPage() {
           </div>
         </div>
 
-        {/* Controls */}
         <div className="rounded-2xl border border-border bg-card p-3 mb-4 flex gap-2 flex-wrap items-center">
           <div className="relative flex-1 min-w-[180px]">
             <Search
@@ -317,7 +317,6 @@ function VaultPage() {
           </div>
         </div>
 
-        {/* Tag filter */}
         {allTags.length > 0 && (
           <div className="flex gap-1.5 flex-wrap mb-4">
             {allTags.map((t) => (
@@ -342,7 +341,6 @@ function VaultPage() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4">
-          {/* Folder sidebar */}
           <aside className="rounded-2xl border border-border bg-card p-2 text-sm h-fit">
             <div className="flex items-center justify-between p-2">
               <span className="font-bold text-xs uppercase tracking-wider text-muted-foreground">
@@ -383,7 +381,6 @@ function VaultPage() {
             />
           </aside>
 
-          {/* Document area */}
           <section>
             {docs === null ? (
               <div className="text-sm text-muted-foreground p-8">Loading…</div>
