@@ -101,6 +101,44 @@ export const CURRENT_SCHEMA = 1;
 const LEGACY_DB_NAME = "PrimalPrintDB";
 let _legacyMigrationRan = false;
 
+function isQuotaError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { name?: string; message?: string };
+  return (
+    e.name === "QuotaExceededError" ||
+    e.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+    /quota/i.test(e.message ?? "")
+  );
+}
+
+/** Drop heavy blobs from older version snapshots so a retry can succeed. */
+function thinVersionHistory(doc: DocumentData): DocumentData {
+  const hist = (doc.versionHistory ?? []).slice(-8).map((v, i, arr) => {
+    // Keep the last 2 full; strip editorState + shrink older thumbs
+    if (i < arr.length - 2) {
+      return { ...v, editorState: undefined, thumbnail: v.thumbnail?.slice(0, 64) ?? "" };
+    }
+    return { ...v, editorState: undefined };
+  });
+  return { ...doc, versionHistory: hist };
+}
+
+async function putDocument(
+  d: IDBPDatabase<StencilMagicDB>,
+  doc: DocumentData,
+): Promise<DocumentData> {
+  try {
+    await d.put("documents", doc);
+    return doc;
+  } catch (err) {
+    if (!isQuotaError(err)) throw err;
+    console.warn("[vault] QuotaExceeded — thinning version history and retrying once");
+    const thinned = thinVersionHistory(doc);
+    await d.put("documents", thinned);
+    return thinned;
+  }
+}
+
 async function migrateLegacyDatabaseIfNeeded(): Promise<void> {
   if (_legacyMigrationRan) return;
   _legacyMigrationRan = true;
@@ -204,6 +242,20 @@ export async function makeThumbnail(dataUrl: string, max = 384): Promise<string>
   });
 }
 
+/** Prefer the latest stencil layer, then originalAIImage, then thumbnail. */
+export function bestExportUrl(doc: DocumentData): string {
+  if (doc.layeredEditorData) {
+    try {
+      const es = JSON.parse(doc.layeredEditorData) as EditorState;
+      const stencil = es.layers?.find((l) => l.name === "Stencil" || l.id === "stencil");
+      if (stencil?.dataUrl) return stencil.dataUrl;
+    } catch {
+      /* ignore parse errors */
+    }
+  }
+  return doc.originalAIImage ?? doc.thumbnail;
+}
+
 /* --- Document CRUD --- */
 
 export async function createDocument(
@@ -226,7 +278,7 @@ export async function createDocument(
     schemaVersion: CURRENT_SCHEMA,
   };
   const d = await db();
-  if (d) await d.put("documents", doc);
+  if (d) await putDocument(d, doc);
   return doc;
 }
 
@@ -251,8 +303,7 @@ export async function saveDocument(
     // Keep last 40 versions to bound storage.
     next.versionHistory = hist.slice(-40);
   }
-  await d.put("documents", next);
-  return next;
+  return putDocument(d, next);
 }
 
 export async function getDocument(id: string): Promise<DocumentData | undefined> {
@@ -303,14 +354,48 @@ export async function saveEditorState(
   if (!d) return;
   const cur = await d.get("documents", id);
   if (!cur) return;
-  await d.put("documents", {
+  await putDocument(d, {
     ...cur,
     layeredEditorData: JSON.stringify(editorState),
     animationData: animationData ?? cur.animationData,
     thumbnail: thumbnail ?? cur.thumbnail,
+    // Keep flatten in sync with the active stencil layer so library export is current.
+    originalAIImage:
+      editorState.layers.find((l) => l.name === "Stencil" || l.id === "stencil")?.dataUrl ??
+      cur.originalAIImage,
     lastEdited: Date.now(),
     schemaVersion: CURRENT_SCHEMA,
   });
+}
+
+/** Single path: write both flatten PNG + layered editor state + thumbnail. */
+export async function persistStudioEdit(
+  doc: DocumentData,
+  opts: {
+    flattenPng: string;
+    thumbnail: string;
+    editorState: EditorState;
+    snapshotChanges?: string;
+  },
+): Promise<DocumentData> {
+  const next: DocumentData = {
+    ...doc,
+    originalAIImage: opts.flattenPng,
+    thumbnail: opts.thumbnail,
+    layeredEditorData: JSON.stringify(opts.editorState),
+    lastEdited: Date.now(),
+    schemaVersion: CURRENT_SCHEMA,
+  };
+  return saveDocument(
+    next,
+    opts.snapshotChanges
+      ? {
+          changes: opts.snapshotChanges,
+          thumbnail: opts.thumbnail,
+          editorState: opts.editorState ? JSON.stringify(opts.editorState) : undefined,
+        }
+      : undefined,
+  );
 }
 
 /* --- Folder CRUD --- */
