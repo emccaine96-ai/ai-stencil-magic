@@ -18,7 +18,7 @@ import {
   Aperture,
   Star,
   Layers,
-  SlidersHorizontal,
+  SliersHorizontal,
   Rocket,
   Eraser,
   Stamp,
@@ -28,20 +28,16 @@ import {
   Thermometer,
   Circle,
   FlipHorizontal2,
-  FlipVertical2,
-  RotateCw,
-  ZoomIn,
-  PaintBucket,
-  Lightbulb,
-  ScanLine,
-  Activity,
-  Pipette,
-  Hand,
   Maximize2,
   Sparkle,
   Wand,
   Layout,
   Gauge,
+  ZoomIn,
+  PaintBucket,
+  Lightbulb,
+  ScanLine,
+  Activity,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -61,7 +57,6 @@ export type DockCategory = {
 };
 
 export type PicsartDockHandlers = {
-  // tools
   openCrop: () => void;
   setSelectionMode: () => void;
   openAdjust: () => void;
@@ -82,7 +77,6 @@ export type PicsartDockHandlers = {
   cloneStamp: () => void;
   curves: () => void;
   upscale6k: () => void;
-  // effects
   stencilClean: () => void;
   threshold: () => void;
   thermalBlue: () => void;
@@ -100,7 +94,6 @@ export type PicsartDockHandlers = {
   glow: () => void;
   chromatic: () => void;
   gradientMap: () => void;
-  // retouch
   smudge: () => void;
   heal: () => void;
   liquifyPush: () => void;
@@ -108,7 +101,6 @@ export type PicsartDockHandlers = {
   liquifyDeflate: () => void;
   removeBg: () => void;
   cutout: () => void;
-  // content
   text: () => void;
   addPhoto: () => void;
   openBrushes: () => void;
@@ -129,6 +121,18 @@ export type PicsartDockHandlers = {
 export function buildCategories(h: PicsartDockHandlers): DockCategory[] {
   return [
     {
+      id: "draw",
+      label: "Draw",
+      icon: Pen,
+      actions: [{ id: "draw", label: "Draw", icon: Pen, run: h.draw }],
+    },
+    {
+      id: "brushes",
+      label: "Brushes",
+      icon: Brush,
+      actions: [{ id: "vault", label: "Brush Library", icon: Brush, run: h.openBrushes }],
+    },
+    {
       id: "tools",
       label: "Tools",
       icon: Crop,
@@ -138,7 +142,7 @@ export function buildCategories(h: PicsartDockHandlers): DockCategory[] {
         { id: "shape-crop", label: "Shape Crop", icon: Shapes, run: h.shapeCrop },
         { id: "dispersion", label: "Dispersion", icon: Sparkles, run: h.dispersion },
         { id: "clone", label: "Clone", icon: Stamp, run: h.cloneStamp },
-        { id: "ai-replace", label: "AI Replace", icon: Wand2, ai: true, run: h.aiReplace },
+        { id: "select-replace", label: "Select & Replace", icon: Wand2, run: h.aiReplace },
         { id: "stretch", label: "Stretch", icon: Maximize2, run: h.stretch },
         { id: "motion", label: "Motion", icon: Wind, run: h.motion },
         { id: "selection", label: "Selection", icon: ScanLine, run: h.setSelectionMode },
@@ -146,11 +150,11 @@ export function buildCategories(h: PicsartDockHandlers): DockCategory[] {
         { id: "adjust", label: "Adjust", icon: SlidersHorizontal, run: h.openAdjust },
         { id: "enhance", label: "Enhance", icon: Sparkle, run: h.enhance },
         { id: "tilt", label: "Tilt Shift", icon: Aperture, run: h.tiltShift },
-        { id: "perspective", label: "Perspective", icon: Layout, run: h.perspective },
+        { id: "perspective", label: "Reframe", icon: Layout, run: h.perspective },
         { id: "resize", label: "Resize", icon: Maximize2, run: h.resizeMenu },
-        { id: "flip", label: "Flip/Rotate", icon: FlipHorizontal2, run: h.flipH },
-        { id: "ai-enhance", label: "AI Enhance", icon: Rocket, pro: true, run: h.upscale6k },
-        { id: "ai-expand", label: "AI Expand", icon: Maximize2, ai: true, run: h.aiExpand },
+        { id: "flip", label: "Flip H", icon: FlipHorizontal2, run: h.flipH },
+        { id: "upscale-6k", label: "Upscale 6K", icon: Rocket, pro: true, run: h.upscale6k },
+        { id: "expand-canvas", label: "Expand Canvas", icon: Maximize2, run: h.aiExpand },
       ],
     },
     {
@@ -200,12 +204,6 @@ export function buildCategories(h: PicsartDockHandlers): DockCategory[] {
       actions: [{ id: "rm-bg", label: "Remove BG", icon: Eraser, pro: true, run: h.removeBg }],
     },
     {
-      id: "sticker",
-      label: "Sticker",
-      icon: Star,
-      actions: [{ id: "sticker", label: "Add Sticker", icon: Star, run: h.sticker }],
-    },
-    {
       id: "cutout",
       label: "Cutout",
       icon: Scissors,
@@ -219,15 +217,15 @@ export function buildCategories(h: PicsartDockHandlers): DockCategory[] {
     },
     {
       id: "add-photo",
-      label: "Add Photo",
+      label: "Reference",
       icon: ImagePlus,
       actions: [{ id: "ref", label: "Reference Photo", icon: ImagePlus, run: h.addPhoto }],
     },
     {
-      id: "brushes",
-      label: "Brushes",
-      icon: Brush,
-      actions: [{ id: "vault", label: "Brush Vault", icon: Brush, run: h.openBrushes }],
+      id: "sticker",
+      label: "Sticker",
+      icon: Star,
+      actions: [{ id: "sticker", label: "Add Image", icon: Star, run: h.sticker }],
     },
     {
       id: "border",
@@ -262,24 +260,6 @@ export function buildCategories(h: PicsartDockHandlers): DockCategory[] {
       actions: [{ id: "mask", label: "Mask", icon: Layers, run: h.mask }],
     },
     {
-      id: "draw",
-      label: "Draw",
-      icon: Pen,
-      actions: [{ id: "draw", label: "Draw", icon: Pen, run: h.draw }],
-    },
-    {
-      id: "ai-try",
-      label: "AI Try On",
-      icon: Shirt,
-      actions: [{ id: "ai-try", label: "AI Try On", icon: Shirt, ai: true, run: h.aiTryOn }],
-    },
-    {
-      id: "lens",
-      label: "Lens Flare",
-      icon: Lightbulb,
-      actions: [{ id: "lens", label: "Lens Flare", icon: Lightbulb, run: h.lensFlare }],
-    },
-    {
       id: "shape-mask",
       label: "Shape Mask",
       icon: Shapes,
@@ -298,16 +278,28 @@ export function buildCategories(h: PicsartDockHandlers): DockCategory[] {
       actions: [{ id: "callout", label: "Callout", icon: MessageSquare, run: h.callout }],
     },
     {
+      id: "lens",
+      label: "Lens",
+      icon: Lightbulb,
+      actions: [{ id: "lens", label: "Lens Flare", icon: Lightbulb, run: h.lensFlare }],
+    },
+    {
       id: "apps",
-      label: "Apps",
+      label: "Plugins",
       icon: Grid3x3,
       actions: [{ id: "apps", label: "Plugins", icon: Grid3x3, run: h.apps }],
     },
     {
+      id: "ai-try",
+      label: "Try On",
+      icon: Shirt,
+      actions: [{ id: "ai-try", label: "Try On", icon: Shirt, run: h.aiTryOn }],
+    },
+    {
       id: "folders",
-      label: "My folders",
+      label: "Library",
       icon: FolderOpen,
-      actions: [{ id: "vault", label: "Open Vault", icon: FolderOpen, run: h.myFolders }],
+      actions: [{ id: "vault", label: "Open Library", icon: FolderOpen, run: h.myFolders }],
     },
   ];
 }
@@ -322,7 +314,6 @@ export function PicsartDock({ handlers, hidden }: Props) {
   const cats = buildCategories(handlers);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Close popup when tapping outside
   useEffect(() => {
     if (!openCat) return;
     const onDown = (e: PointerEvent) => {
@@ -345,7 +336,6 @@ export function PicsartDock({ handlers, hidden }: Props) {
         transition: "opacity 0.2s",
       }}
     >
-      {/* Popup grid panel */}
       {active && active.actions.length > 1 && (
         <div
           className="mx-2 mb-1 rounded-xl overflow-hidden"
@@ -389,7 +379,6 @@ export function PicsartDock({ handlers, hidden }: Props) {
         </div>
       )}
 
-      {/* Horizontal scroll tab bar */}
       <div
         ref={scrollRef}
         className="flex items-center gap-0 overflow-x-auto overflow-y-hidden no-scrollbar"
@@ -405,6 +394,7 @@ export function PicsartDock({ handlers, hidden }: Props) {
         {cats.map((cat) => {
           const Icon = cat.icon;
           const isOpen = openCat === cat.id;
+          const isDraw = cat.id === "draw";
           return (
             <button
               key={cat.id}
@@ -422,10 +412,12 @@ export function PicsartDock({ handlers, hidden }: Props) {
               <Icon
                 size={22}
                 strokeWidth={1.7}
-                className={isOpen ? "text-[#00F5D4]" : "text-white"}
+                className={isOpen || isDraw ? "text-[#00F5D4]" : "text-white"}
               />
               <span
-                className={`text-[10px] ${isOpen ? "text-[#00F5D4] font-semibold" : "text-white/85"}`}
+                className={`text-[10px] ${
+                  isOpen || isDraw ? "text-[#00F5D4] font-semibold" : "text-white/85"
+                }`}
               >
                 {cat.label}
               </span>
