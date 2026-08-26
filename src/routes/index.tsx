@@ -1,27 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import logo from "@/assets/stencil-logo.png";
-import hibiscusBefore from "@/lib/example-assets/hibiscus_before";
-import hibiscusAfter from "@/lib/example-assets/hibiscus_after";
-import elderBefore from "@/lib/example-assets/elder_before";
-import elderAfter from "@/lib/example-assets/elder_after";
-import aztecBefore from "@/lib/example-assets/aztec_before";
-import aztecAfter from "@/lib/example-assets/aztec_after";
-import babyBefore from "@/lib/example-assets/baby_before";
-import babyAfter from "@/lib/example-assets/baby_after";
-import poseidonBefore from "@/lib/example-assets/poseidon_before";
-import poseidonAfter from "@/lib/example-assets/poseidon_after";
+import { TRUE_EXAMPLES } from "@/lib/example-assets";
 import { Menu, X, Upload, Palette, Download, Check, ChevronRight, ChevronLeft, ChevronsLeftRight } from "lucide-react";
 
 export const Route = createFileRoute("/")({ component: Index });
-
-const TRUE_EXAMPLES = [
-  { id: "hibiscus", title: "Hibiscus Botanical", subtitle: "Line + hatch shading from a detailed drawing", before: hibiscusBefore, after: hibiscusAfter, beforeLabel: "Original", afterLabel: "Stencil" },
-  { id: "elder", title: "Portrait — Character Study", subtitle: "Complex wrinkles, fabric & jewelry preserved as clean linework", before: elderBefore, after: elderAfter, beforeLabel: "Photo", afterLabel: "Stencil" },
-  { id: "aztec", title: "Aztec Calendar", subtitle: "Dense ornamental geometry → closed thermal-ready contours", before: aztecBefore, after: aztecAfter, beforeLabel: "Reference", afterLabel: "Stencil" },
-  { id: "baby", title: "Portrait — Child", subtitle: "Soft photo tones converted to confident contour + hatch", before: babyBefore, after: babyAfter, beforeLabel: "Photo", afterLabel: "Stencil" },
-  { id: "poseidon", title: "Mythic Portrait", subtitle: "Hair, beard & metal detail mapped into printable line layers", before: poseidonBefore, after: poseidonAfter, beforeLabel: "Reference", afterLabel: "Stencil" },
-] as const;
 
 function Header() {
   const [open, setOpen] = useState(false);
@@ -124,7 +107,7 @@ function BeforeAfter() {
   return (
     <section id="preview" className="py-16">
       <div className="mx-auto max-w-3xl px-4 text-center">
-        <h2 className="text-3xl sm:text-4xl font-extrabold">Real before &amp; after</h2>
+        <h2 className="text-3xl sm:text-4xl font-extrabold">Real before & after</h2>
         <p className="text-muted-foreground mt-3">True photo → stencil pairs from AI Stencil Magic. Drag the slider to compare.</p>
       </div>
       <div className="mx-auto max-w-2xl px-4 mt-8">
@@ -132,7 +115,7 @@ function BeforeAfter() {
           <div className="flex gap-1 p-2 overflow-x-auto border-b border-border">
             {TRUE_EXAMPLES.map((e, i) => (
               <button key={e.id} onClick={() => setIdx(i)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${i === idx ? "bg-gradient-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}>
-                {e.title.split("—")[0].trim()}
+                {e.title.split("\u2014")[0].trim()}
               </button>
             ))}
           </div>
@@ -167,7 +150,7 @@ function BestResults() {
                 <li key={d} className="flex items-center gap-2 border-b border-border pb-2"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> {d}</li>
               ))}
             </ul>
-            <div className="mt-5 flex items-center gap-2 text-destructive font-bold"><X size={18} /> DON&apos;T</div>
+            <div className="mt-5 flex items-center gap-2 text-destructive font-bold"><X size={18} /> DON'T</div>
             <ul className="mt-3 space-y-2 text-sm">
               {["Blurry photos", "Cluttered backgrounds", "Heavy filters", "Tiny faraway subjects"].map((d) => (
                 <li key={d} className="flex items-center gap-2 border-b border-border pb-2"><span className="h-1.5 w-1.5 rounded-full bg-destructive" /> {d}</li>
