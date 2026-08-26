@@ -6,10 +6,6 @@ import { Menu, X, Upload, Palette, Download, Check, ChevronRight, ChevronLeft, C
 
 export const Route = createFileRoute("/")({ component: Index });
 
-/** Approximate stencil look for demo pairs (same photo, high-contrast B&W line feel) */
-const STENCIL_FILTER =
-  "grayscale(1) contrast(2.2) brightness(1.15) saturate(0)";
-
 function Header() {
   const [open, setOpen] = useState(false);
   return (
@@ -78,8 +74,7 @@ function Hero() {
               src={e.after}
               alt={`Stencil sample ${i + 1}`}
               loading="lazy"
-              style={{ filter: STENCIL_FILTER }}
-              className="snap-center shrink-0 w-[70%] sm:w-80 aspect-[4/5] object-cover rounded-2xl border border-border bg-white"
+              className="snap-center shrink-0 w-[70%] sm:w-80 aspect-[4/5] object-contain rounded-2xl border border-border bg-white"
             />
           ))}
         </div>
@@ -158,7 +153,7 @@ function CompareSlider({
         src={after}
         alt={afterLabel}
         className="absolute inset-0 h-full w-full object-cover"
-        style={{ clipPath: `inset(0 0 0 ${pos}%)`, filter: STENCIL_FILTER }}
+        style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
         draggable={false}
       />
       <input
@@ -196,9 +191,9 @@ function BeforeAfter() {
   return (
     <section id="preview" className="py-16">
       <div className="mx-auto max-w-3xl px-4 text-center">
-        <h2 className="text-3xl sm:text-4xl font-extrabold">Before & after</h2>
+        <h2 className="text-3xl sm:text-4xl font-extrabold">Real before & after</h2>
         <p className="text-muted-foreground mt-3">
-          Drag the slider to compare the original photo with a stencil-style conversion.
+          True photo → stencil pairs from AI Stencil Magic. Drag the slider to compare.
         </p>
       </div>
       <div className="mx-auto max-w-2xl px-4 mt-8">
@@ -266,7 +261,6 @@ function BestResults() {
             src={TRUE_EXAMPLES[0].after}
             alt=""
             loading="lazy"
-            style={{ filter: STENCIL_FILTER }}
             className="w-full aspect-[3/4] object-cover bg-white"
           />
           <div className="p-5">

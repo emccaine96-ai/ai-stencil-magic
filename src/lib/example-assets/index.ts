@@ -1,18 +1,8 @@
 /**
  * Homepage before/after examples.
- * Uses real photos already shipped in src/assets/.
- * "After" uses the same source photo; the homepage applies a stencil CSS filter.
+ * Real JPEG files live in /public/examples/ so a bad base64 blob can never
+ * break the production build again.
  */
-
-import sample1 from "@/assets/sample-1.jpg";
-import sample2 from "@/assets/sample-2.jpg";
-import sample3 from "@/assets/sample-3.jpg";
-import samplePortrait from "@/assets/sample-portrait.jpg";
-
-/** Fallback 1×1 transparent GIF */
-export const TRANSPARENT_PIXEL =
-  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-
 export type ExamplePair = {
   id: string;
   title: string;
@@ -26,43 +16,40 @@ export type ExamplePair = {
 export const TRUE_EXAMPLES: ExamplePair[] = [
   {
     id: "portrait",
-    title: "Portrait Study",
-    subtitle: "Soft photo tones converted to confident contour + hatch",
-    before: samplePortrait,
-    after: samplePortrait,
+    title: "Floral Back Piece",
+    subtitle: "Photo converted to hectograph-purple stencil with closed thermal-ready contours",
+    before: "/examples/portrait-before.jpg",
+    after: "/examples/portrait-after.jpg",
     beforeLabel: "Photo",
     afterLabel: "Stencil",
   },
   {
-    id: "sample1",
-    title: "Reference Study",
-    subtitle: "Clean edges and tonal structure for thermal transfer",
-    before: sample1,
-    after: sample1,
+    id: "floral",
+    title: "Botanical Linework",
+    subtitle: "Dense floral forms mapped into hatch + contour layers",
+    before: "/examples/floral-back-before.jpg",
+    after: "/examples/floral-back-after.jpg",
     beforeLabel: "Original",
     afterLabel: "Stencil",
   },
   {
-    id: "sample2",
-    title: "Character Detail",
-    subtitle: "Fabric, hair and facial structure mapped into line layers",
-    before: sample2,
-    after: sample2,
+    id: "shoulder",
+    title: "Shoulder Study",
+    subtitle: "Solid outlines and clean edges for a confident transfer",
+    before: "/examples/shoulder-before.jpg",
+    after: "/examples/shoulder-after.jpg",
     beforeLabel: "Photo",
     afterLabel: "Stencil",
   },
   {
-    id: "sample3",
-    title: "Bold Form",
-    subtitle: "Strong contrast subjects convert cleanly to printable contours",
-    before: sample3,
-    after: sample3,
+    id: "detail",
+    title: "Ornamental Detail",
+    subtitle: "Fine petal structure preserved as printable line + stipple",
+    before: "/examples/detail-before.jpg",
+    after: "/examples/detail-after.jpg",
     beforeLabel: "Reference",
     afterLabel: "Stencil",
   },
 ];
 
-// Legacy named placeholders (kept so old imports do not crash)
-export const PLACEHOLDER_BEFORE = samplePortrait;
-export const PLACEHOLDER_AFTER = samplePortrait;
-export default samplePortrait;
+export default TRUE_EXAMPLES[0].before;

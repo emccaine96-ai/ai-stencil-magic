@@ -1,1 +1,1 @@
-export { PLACEHOLDER_AFTER as default } from "./index";
+export default "/examples/portrait-after.jpg";
