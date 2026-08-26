@@ -1,1 +1,1 @@
-export default "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+export { PLACEHOLDER_BEFORE as default } from "./index";
