@@ -1,8 +1,18 @@
 /**
- * Homepage before/after examples.
- * Real JPEG files live in /public/examples/ so a bad base64 blob can never
- * break the production build again.
+ * Real homepage before/after examples — verified complete JPEG data URLs.
+ * Do not replace with PLACEHOLDER text; that breaks the build.
  */
+import babyBefore from "./baby_before";
+import babyAfter from "./baby_after";
+import elderBefore from "./elder_before";
+import elderAfter from "./elder_after";
+import poseidonBefore from "./poseidon_before";
+import poseidonAfter from "./poseidon_after";
+import aztecBefore from "./aztec_before";
+import aztecAfter from "./aztec_after";
+import hibiscusBefore from "./hibiscus_before";
+import hibiscusAfter from "./hibiscus_after";
+
 export type ExamplePair = {
   id: string;
   title: string;
@@ -15,39 +25,48 @@ export type ExamplePair = {
 
 export const TRUE_EXAMPLES: ExamplePair[] = [
   {
-    id: "portrait",
-    title: "Floral Back Piece",
-    subtitle: "Photo converted to hectograph-purple stencil with closed thermal-ready contours",
-    before: "/examples/portrait-before.jpg",
-    after: "/examples/portrait-after.jpg",
-    beforeLabel: "Photo",
-    afterLabel: "Stencil",
-  },
-  {
-    id: "floral",
-    title: "Botanical Linework",
-    subtitle: "Dense floral forms mapped into hatch + contour layers",
-    before: "/examples/floral-back-before.jpg",
-    after: "/examples/floral-back-after.jpg",
+    id: "hibiscus",
+    title: "Hibiscus Botanical",
+    subtitle: "Dense floral forms converted to clean purple contour + hatch",
+    before: hibiscusBefore,
+    after: hibiscusAfter,
     beforeLabel: "Original",
     afterLabel: "Stencil",
   },
   {
-    id: "shoulder",
-    title: "Shoulder Study",
-    subtitle: "Solid outlines and clean edges for a confident transfer",
-    before: "/examples/shoulder-before.jpg",
-    after: "/examples/shoulder-after.jpg",
+    id: "elder",
+    title: "Elder Portrait",
+    subtitle: "Deep facial structure mapped into thermal-ready linework",
+    before: elderBefore,
+    after: elderAfter,
     beforeLabel: "Photo",
     afterLabel: "Stencil",
   },
   {
-    id: "detail",
-    title: "Ornamental Detail",
-    subtitle: "Fine petal structure preserved as printable line + stipple",
-    before: "/examples/detail-before.jpg",
-    after: "/examples/detail-after.jpg",
+    id: "baby",
+    title: "Baby Portrait",
+    subtitle: "Soft features preserved as confident closed contours",
+    before: babyBefore,
+    after: babyAfter,
+    beforeLabel: "Photo",
+    afterLabel: "Stencil",
+  },
+  {
+    id: "aztec",
+    title: "Aztec Calendar",
+    subtitle: "Intricate ornamental detail kept printable and sharp",
+    before: aztecBefore,
+    after: aztecAfter,
     beforeLabel: "Reference",
+    afterLabel: "Stencil",
+  },
+  {
+    id: "poseidon",
+    title: "Poseidon",
+    subtitle: "Mythic portrait with full trident detail in purple ink",
+    before: poseidonBefore,
+    after: poseidonAfter,
+    beforeLabel: "Artwork",
     afterLabel: "Stencil",
   },
 ];
