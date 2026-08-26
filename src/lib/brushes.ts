@@ -13,6 +13,8 @@ export type BrushId =
   | "charcoal"
   | "marker"
   | "calligraphy"
+  | "blackletter-nib"
+  | "pointed-script"
   | "spray"
   | "ink-pen"
   | "noise-grain"
@@ -724,6 +726,32 @@ export const DEFAULTS: Record<BrushId, Omit<BrushSettings, "color">> = {
     pressureOpacity: 0.2,
     pressureCurve: 1.0,
   },
+  "blackletter-nib": {
+    id: "blackletter-nib",
+    size: 26,
+    opacity: 1.0,
+    flow: 1.0,
+    spacing: 0.03,
+    hardness: 1.0,
+    scatter: 0,
+    rotationJitter: 0,
+    pressureSize: 0.35,
+    pressureOpacity: 0.1,
+    pressureCurve: 1.0,
+  },
+  "pointed-script": {
+    id: "pointed-script",
+    size: 20,
+    opacity: 1.0,
+    flow: 1.0,
+    spacing: 0.025,
+    hardness: 1.0,
+    scatter: 0,
+    rotationJitter: 0,
+    pressureSize: 0.95,
+    pressureOpacity: 0.15,
+    pressureCurve: 1.6,
+  },
 };
 
 export const BRUSH_LABELS: Record<BrushId, string> = {
@@ -777,6 +805,8 @@ export const BRUSH_LABELS: Record<BrushId, string> = {
   "lightning-bolt": "Lightning",
   "smoke-puff": "Smoke",
   confetti: "Confetti",
+  "blackletter-nib": "Blackletter Nib",
+  "pointed-script": "Pointed Script",
 };
 
 function rgb(hex: string): [number, number, number] {
@@ -872,6 +902,32 @@ export function buildStamp(b: BrushSettings, radius: number, angle: number): HTM
     ctx.fillStyle = `rgb(${r},${g},${bl})`;
     ctx.beginPath();
     ctx.ellipse(0, 0, radius, Math.max(0.6, radius * 0.32), 0, 0, Math.PI * 2);
+    ctx.fill();
+    return c;
+  }
+  if (b.id === "blackletter-nib") {
+    // Broad chisel nib held at a fixed ~38° angle regardless of stroke
+    // direction. That fixed-angle-vs-travel-direction relationship is what
+    // produces real blackletter's thick downstrokes and thin hairline
+    // crossings — wider and higher-contrast than the existing "calligraphy" id.
+    const nibAngle = (38 * Math.PI) / 180;
+    ctx.translate(cx, cy);
+    ctx.rotate(nibAngle);
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius, Math.max(0.5, radius * 0.16), 0, 0, Math.PI * 2);
+    ctx.fill();
+    return c;
+  }
+  if (b.id === "pointed-script") {
+    // Pointed flex nib — thick/thin contrast comes almost entirely from
+    // pressure (see pressureSize/pressureCurve above). The stamp itself is a
+    // slim taper aligned to actual stroke direction for a copperplate swell.
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    ctx.fillStyle = `rgb(${r},${g},${bl})`;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius, radius * 0.42, 0, 0, Math.PI * 2);
     ctx.fill();
     return c;
   }

@@ -29,6 +29,7 @@ import {
   type StrokeContext,
 } from "@/lib/brushes";
 import { PicsartDock, type PicsartDockHandlers } from "./PicsartDock";
+import { BrushPickerPanel } from "./BrushPickerPanel";
 import { useNavigate } from "@tanstack/react-router";
 
 type Props = {
@@ -74,6 +75,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [drawMode, setDrawMode] = useState(false);
   const [coachVisible, setCoachVisible] = useState(false);
+  const [brushPickerOpen, setBrushPickerOpen] = useState(false);
 
   const navigate = useNavigate();
 
@@ -474,7 +476,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     cutout: stub("Cutout"),
     text: stub("Text"),
     addPhoto: stub("Reference"),
-    openBrushes: () => enterDrawMode(),
+    openBrushes: () => setBrushPickerOpen(true),
     shapeMask: stub("Shape mask"),
     frame: stub("Frame"),
     callout: stub("Callout"),
@@ -699,6 +701,18 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
         </div>
       )}
 
+      {brushPickerOpen && (
+        <BrushPickerPanel
+          current={brushId}
+          onPick={(id) => {
+            setBrushId(id);
+            setTool("brush");
+            enterDrawMode();
+            setBrushPickerOpen(false);
+          }}
+          onClose={() => setBrushPickerOpen(false)}
+        />
+      )}
       <PicsartDock handlers={dockHandlers} />
     </div>
   );
