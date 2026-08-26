@@ -549,8 +549,7 @@ function CreatePage() {
             </button>
             <button
               onClick={() => selectProvider("gemini")}
-              className={`p-3 rounded-2xl border text-left transition ${provider === "gemini" ? "border-primary bg-gradient-primary text-primary-foreground shadow-glow" : "border-border bg-card hover:border-primary/50"}`
-              }
+              className={`p-3 rounded-2xl border text-left transition ${provider === "gemini" ? "border-primary bg-gradient-primary text-primary-foreground shadow-glow" : "border-border bg-card hover:border-primary/50"}`}
             >
               <div className="flex items-center gap-2 font-bold text-sm">
                 <KeyRound size={14} /> Gemini
