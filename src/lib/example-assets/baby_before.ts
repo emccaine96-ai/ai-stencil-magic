@@ -1,1 +1,1 @@
-export default "/examples/portrait-before.jpg";
+PLACEHOLDER_WILL_FAIL
