@@ -61,7 +61,7 @@ function Hero() {
 
 function HowItWorks() {
   const steps = [
-    { n: 1, icon: Upload, title: "Upload", body: "Upload any reference—portraits, animals, nature, or custom artwork." },
+    { n: 1, icon: Upload, title: "Upload", body: "Upload any reference — portraits, animals, nature, or custom artwork." },
     { n: 2, icon: Palette, title: "Choose Your Style", body: "Select clean solid outlines, dense crosshatching, dotwork, or hybrid." },
     { n: 3, icon: Download, title: "Print Your Stencil", body: "Download a high-res file optimized for professional stencil results." },
   ];
@@ -86,17 +86,50 @@ function HowItWorks() {
   );
 }
 
-function CompareSlider({ before, after, beforeLabel = "Original", afterLabel = "Stencil" }: { before: string; after: string; beforeLabel?: string; afterLabel?: string }) {
+function CompareSlider({
+  before,
+  after,
+  beforeLabel = "Original",
+  afterLabel = "Stencil",
+}: {
+  before: string;
+  after: string;
+  beforeLabel?: string;
+  afterLabel?: string;
+}) {
   const [pos, setPos] = useState(50);
   return (
     <div className="relative aspect-[3/4] bg-white select-none">
       <img src={before} alt={beforeLabel} className="absolute inset-0 h-full w-full object-cover" draggable={false} />
-      <img src={after} alt={afterLabel} className="absolute inset-0 h-full w-full object-cover" style={{ clipPath: `inset(0 0 0 ${pos}%)` }} draggable={false} />
-      <input type="range" min={0} max={100} value={pos} onChange={(e) => setPos(Number(e.target.value))} className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-10" aria-label="Compare original and stencil" />
+      <img
+        src={after}
+        alt={afterLabel}
+        className="absolute inset-0 h-full w-full object-cover"
+        style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
+        draggable={false}
+      />
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={pos}
+        onChange={(e) => setPos(Number(e.target.value))}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-10"
+        aria-label="Compare original and stencil"
+      />
       <div className="absolute top-0 bottom-0 w-px bg-primary pointer-events-none z-[5]" style={{ left: `${pos}%` }} />
-      <div className="absolute h-10 w-10 rounded-full bg-primary/90 text-primary-foreground flex items-center justify-center pointer-events-none shadow-glow z-[5]" style={{ left: `calc(${pos}% - 20px)`, top: "calc(50% - 20px)" }}><ChevronsLeftRight size={18} /></div>
-      <div className="absolute top-3 left-3 rounded-full bg-black/60 text-white text-[10px] font-semibold px-2.5 py-1 pointer-events-none">{beforeLabel}</div>
-      <div className="absolute top-3 right-3 rounded-full bg-primary/90 text-primary-foreground text-[10px] font-semibold px-2.5 py-1 pointer-events-none">{afterLabel}</div>
+      <div
+        className="absolute h-10 w-10 rounded-full bg-primary/90 text-primary-foreground flex items-center justify-center pointer-events-none shadow-glow z-[5]"
+        style={{ left: `calc(${pos}% - 20px)`, top: "calc(50% - 20px)" }}
+      >
+        <ChevronsLeftRight size={18} />
+      </div>
+      <div className="absolute top-3 left-3 rounded-full bg-black/60 text-white text-[10px] font-semibold px-2.5 py-1 pointer-events-none">
+        {beforeLabel}
+      </div>
+      <div className="absolute top-3 right-3 rounded-full bg-primary/90 text-primary-foreground text-[10px] font-semibold px-2.5 py-1 pointer-events-none">
+        {afterLabel}
+      </div>
     </div>
   );
 }
@@ -108,25 +141,54 @@ function BeforeAfter() {
     <section id="preview" className="py-16">
       <div className="mx-auto max-w-3xl px-4 text-center">
         <h2 className="text-3xl sm:text-4xl font-extrabold">Real before & after</h2>
-        <p className="text-muted-foreground mt-3">True photo → stencil pairs from AI Stencil Magic. Drag the slider to compare.</p>
+        <p className="text-muted-foreground mt-3">
+          True photo → stencil pairs from AI Stencil Magic. Drag the slider to compare.
+        </p>
       </div>
       <div className="mx-auto max-w-2xl px-4 mt-8">
         <div className="rounded-3xl border border-border bg-card overflow-hidden">
           <div className="flex gap-1 p-2 overflow-x-auto border-b border-border">
             {TRUE_EXAMPLES.map((e, i) => (
-              <button key={e.id} onClick={() => setIdx(i)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${i === idx ? "bg-gradient-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}>
-                {e.title.split("\u2014")[0].trim()}
+              <button
+                key={e.id}
+                onClick={() => setIdx(i)}
+                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  i === idx
+                    ? "bg-gradient-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {e.id.charAt(0).toUpperCase() + e.id.slice(1)}
               </button>
             ))}
           </div>
-          <CompareSlider before={ex.before} after={ex.after} beforeLabel={ex.beforeLabel} afterLabel={ex.afterLabel} />
+          <CompareSlider
+            before={ex.before}
+            after={ex.after}
+            beforeLabel={ex.beforeLabel}
+            afterLabel={ex.afterLabel}
+          />
           <div className="p-5 text-center">
             <h3 className="font-bold text-lg">{ex.title}</h3>
             <p className="text-sm text-muted-foreground mt-1">{ex.subtitle}</p>
             <div className="flex items-center justify-center gap-3 mt-4">
-              <button onClick={() => setIdx((p) => (p - 1 + TRUE_EXAMPLES.length) % TRUE_EXAMPLES.length)} className="p-2 rounded-full bg-muted" aria-label="Previous"><ChevronLeft size={18} /></button>
-              <span className="text-xs text-muted-foreground">{idx + 1} / {TRUE_EXAMPLES.length}</span>
-              <button onClick={() => setIdx((p) => (p + 1) % TRUE_EXAMPLES.length)} className="p-2 rounded-full bg-muted" aria-label="Next"><ChevronRight size={18} /></button>
+              <button
+                onClick={() => setIdx((p) => (p - 1 + TRUE_EXAMPLES.length) % TRUE_EXAMPLES.length)}
+                className="p-2 rounded-full bg-muted"
+                aria-label="Previous"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <span className="text-xs text-muted-foreground">
+                {idx + 1} / {TRUE_EXAMPLES.length}
+              </span>
+              <button
+                onClick={() => setIdx((p) => (p + 1) % TRUE_EXAMPLES.length)}
+                className="p-2 rounded-full bg-muted"
+                aria-label="Next"
+              >
+                <ChevronRight size={18} />
+              </button>
             </div>
           </div>
         </div>
@@ -140,21 +202,44 @@ function BestResults() {
     <section id="results" className="py-16 bg-[oklch(0.12_0.03_295)]">
       <div className="mx-auto max-w-3xl px-4 text-center">
         <h2 className="text-3xl sm:text-4xl font-extrabold">How to Get Best Results</h2>
-        <p className="text-muted-foreground mt-3">High-resolution, sharp images with good lighting and strong contrast work best.</p>
+        <p className="text-muted-foreground mt-3">
+          High-resolution, sharp images with good lighting and strong contrast work best.
+        </p>
         <div className="mt-8 rounded-3xl overflow-hidden border border-border bg-card text-left">
-          <img src={TRUE_EXAMPLES[1].after} alt="" loading="lazy" className="w-full aspect-[3/4] object-cover bg-white" />
+          <img
+            src={TRUE_EXAMPLES[1].after}
+            alt=""
+            loading="lazy"
+            className="w-full aspect-[3/4] object-cover bg-white"
+          />
           <div className="p-5">
-            <div className="flex items-center gap-2 text-emerald-400 font-bold"><Check size={18} /> DO</div>
+            <div className="flex items-center gap-2 text-emerald-400 font-bold">
+              <Check size={18} /> DO
+            </div>
             <ul className="mt-3 space-y-2 text-sm">
-              {["High-resolution designs", "Clear, sharp images", "Good lighting on subject", "Front-facing portraits", "Strong tonal contrast"].map((d) => (
-                <li key={d} className="flex items-center gap-2 border-b border-border pb-2"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> {d}</li>
+              {[
+                "High-resolution designs",
+                "Clear, sharp images",
+                "Good lighting on subject",
+                "Front-facing portraits",
+                "Strong tonal contrast",
+              ].map((d) => (
+                <li key={d} className="flex items-center gap-2 border-b border-border pb-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> {d}
+                </li>
               ))}
             </ul>
-            <div className="mt-5 flex items-center gap-2 text-destructive font-bold"><X size={18} /> DON'T</div>
+            <div className="mt-5 flex items-center gap-2 text-destructive font-bold">
+              <X size={18} /> DON'T
+            </div>
             <ul className="mt-3 space-y-2 text-sm">
-              {["Blurry photos", "Cluttered backgrounds", "Heavy filters", "Tiny faraway subjects"].map((d) => (
-                <li key={d} className="flex items-center gap-2 border-b border-border pb-2"><span className="h-1.5 w-1.5 rounded-full bg-destructive" /> {d}</li>
-              ))}
+              {["Blurry photos", "Cluttered backgrounds", "Heavy filters", "Tiny faraway subjects"].map(
+                (d) => (
+                  <li key={d} className="flex items-center gap-2 border-b border-border pb-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-destructive" /> {d}
+                  </li>
+                ),
+              )}
             </ul>
           </div>
         </div>
