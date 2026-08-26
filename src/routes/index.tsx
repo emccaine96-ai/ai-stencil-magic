@@ -6,6 +6,10 @@ import { Menu, X, Upload, Palette, Download, Check, ChevronRight, ChevronLeft, C
 
 export const Route = createFileRoute("/")({ component: Index });
 
+/** Approximate stencil look for demo pairs (same photo, high-contrast B&W line feel) */
+const STENCIL_FILTER =
+  "grayscale(1) contrast(2.2) brightness(1.15) saturate(0)";
+
 function Header() {
   const [open, setOpen] = useState(false);
   return (
@@ -16,17 +20,31 @@ function Header() {
           <span className="font-script text-2xl">AI Stencil Magic</span>
         </Link>
         <div className="flex items-center gap-3">
-          <Link to="/auth" className="rounded-full border border-border px-4 py-1.5 text-sm hover:bg-muted transition">Sign In</Link>
-          <button onClick={() => setOpen((v) => !v)} aria-label="menu" className="p-2">{open ? <X size={22} /> : <Menu size={22} />}</button>
+          <Link to="/auth" className="rounded-full border border-border px-4 py-1.5 text-sm hover:bg-muted transition">
+            Sign In
+          </Link>
+          <button onClick={() => setOpen((v) => !v)} aria-label="menu" className="p-2">
+            {open ? <X size={22} /> : <Menu size={22} />}
+          </button>
         </div>
       </div>
       {open ? (
         <div className="mx-auto max-w-6xl px-4 pb-4 flex flex-col gap-3 text-sm">
-          <Link to="/create" className="py-2" onClick={() => setOpen(false)}>Create Stencil</Link>
-          <a href="#how" className="py-2" onClick={() => setOpen(false)}>How it works</a>
-          <a href="#preview" className="py-2" onClick={() => setOpen(false)}>See Examples</a>
-          <Link to="/vault" className="py-2 text-primary font-semibold" onClick={() => setOpen(false)}>My Stencils / Library</Link>
-          <Link to="/help" className="py-2 text-primary font-semibold" onClick={() => setOpen(false)}>Help & Instructions</Link>
+          <Link to="/create" className="py-2" onClick={() => setOpen(false)}>
+            Create Stencil
+          </Link>
+          <a href="#how" className="py-2" onClick={() => setOpen(false)}>
+            How it works
+          </a>
+          <a href="#preview" className="py-2" onClick={() => setOpen(false)}>
+            See Examples
+          </a>
+          <Link to="/vault" className="py-2 text-primary font-semibold" onClick={() => setOpen(false)}>
+            My Stencils / Library
+          </Link>
+          <Link to="/help" className="py-2 text-primary font-semibold" onClick={() => setOpen(false)}>
+            Help & Instructions
+          </Link>
         </div>
       ) : null}
     </header>
@@ -42,16 +60,27 @@ function Hero() {
           Turn any photo into a <span className="gradient-text">perfect stencil</span> in 30 seconds
         </h1>
         <p className="mt-5 text-muted-foreground text-base sm:text-lg max-w-xl mx-auto">
-          Better stencils mean better tattoos and happier clients. Crystal-clear lines that transfer perfectly every time.
+          Better stencils mean better tattoos and happier clients. Crystal-clear lines that transfer
+          perfectly every time.
         </p>
-        <Link to="/create" className="inline-flex items-center gap-2 mt-8 rounded-full bg-gradient-primary text-primary-foreground px-7 py-3 font-semibold shadow-glow hover:opacity-95 transition">
+        <Link
+          to="/create"
+          className="inline-flex items-center gap-2 mt-8 rounded-full bg-gradient-primary text-primary-foreground px-7 py-3 font-semibold shadow-glow hover:opacity-95 transition"
+        >
           Create Stencil <ChevronRight size={18} />
         </Link>
       </div>
       <div className="mx-auto max-w-6xl px-4 pb-6">
         <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-2 -mx-4 px-4">
-          {TRUE_EXAMPLES.slice(0, 3).map((e, i) => (
-            <img key={i} src={e.after} alt={`Stencil sample ${i + 1}`} loading="lazy" className="snap-center shrink-0 w-[70%] sm:w-80 aspect-[4/5] object-cover rounded-2xl border border-border bg-white" />
+          {TRUE_EXAMPLES.map((e, i) => (
+            <img
+              key={e.id}
+              src={e.after}
+              alt={`Stencil sample ${i + 1}`}
+              loading="lazy"
+              style={{ filter: STENCIL_FILTER }}
+              className="snap-center shrink-0 w-[70%] sm:w-80 aspect-[4/5] object-cover rounded-2xl border border-border bg-white"
+            />
           ))}
         </div>
       </div>
@@ -61,9 +90,24 @@ function Hero() {
 
 function HowItWorks() {
   const steps = [
-    { n: 1, icon: Upload, title: "Upload", body: "Upload any reference — portraits, animals, nature, or custom artwork." },
-    { n: 2, icon: Palette, title: "Choose Your Style", body: "Select clean solid outlines, dense crosshatching, dotwork, or hybrid." },
-    { n: 3, icon: Download, title: "Print Your Stencil", body: "Download a high-res file optimized for professional stencil results." },
+    {
+      n: 1,
+      icon: Upload,
+      title: "Upload",
+      body: "Upload any reference — portraits, animals, nature, or custom artwork.",
+    },
+    {
+      n: 2,
+      icon: Palette,
+      title: "Choose Your Style",
+      body: "Select clean solid outlines, dense crosshatching, dotwork, or hybrid.",
+    },
+    {
+      n: 3,
+      icon: Download,
+      title: "Print Your Stencil",
+      body: "Download a high-res file optimized for professional stencil results.",
+    },
   ];
   return (
     <section id="how" className="py-16">
@@ -73,8 +117,12 @@ function HowItWorks() {
           {steps.map(({ n, icon: Icon, title, body }) => (
             <div key={n} className="flex flex-col items-center">
               <div className="relative">
-                <div className="h-20 w-20 rounded-2xl bg-card border border-border flex items-center justify-center shadow-glow"><Icon className="text-primary" size={26} /></div>
-                <div className="absolute -top-3 -right-3 h-8 w-8 rounded-full bg-gradient-primary text-primary-foreground text-sm font-bold flex items-center justify-center">{n}</div>
+                <div className="h-20 w-20 rounded-2xl bg-card border border-border flex items-center justify-center shadow-glow">
+                  <Icon className="text-primary" size={26} />
+                </div>
+                <div className="absolute -top-3 -right-3 h-8 w-8 rounded-full bg-gradient-primary text-primary-foreground text-sm font-bold flex items-center justify-center">
+                  {n}
+                </div>
               </div>
               <h3 className="mt-5 text-xl font-bold">{title}</h3>
               <p className="text-muted-foreground mt-2 max-w-xs">{body}</p>
@@ -100,12 +148,17 @@ function CompareSlider({
   const [pos, setPos] = useState(50);
   return (
     <div className="relative aspect-[3/4] bg-white select-none">
-      <img src={before} alt={beforeLabel} className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+      <img
+        src={before}
+        alt={beforeLabel}
+        className="absolute inset-0 h-full w-full object-cover"
+        draggable={false}
+      />
       <img
         src={after}
         alt={afterLabel}
         className="absolute inset-0 h-full w-full object-cover"
-        style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
+        style={{ clipPath: `inset(0 0 0 ${pos}%)`, filter: STENCIL_FILTER }}
         draggable={false}
       />
       <input
@@ -117,7 +170,10 @@ function CompareSlider({
         className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-10"
         aria-label="Compare original and stencil"
       />
-      <div className="absolute top-0 bottom-0 w-px bg-primary pointer-events-none z-[5]" style={{ left: `${pos}%` }} />
+      <div
+        className="absolute top-0 bottom-0 w-px bg-primary pointer-events-none z-[5]"
+        style={{ left: `${pos}%` }}
+      />
       <div
         className="absolute h-10 w-10 rounded-full bg-primary/90 text-primary-foreground flex items-center justify-center pointer-events-none shadow-glow z-[5]"
         style={{ left: `calc(${pos}% - 20px)`, top: "calc(50% - 20px)" }}
@@ -140,9 +196,9 @@ function BeforeAfter() {
   return (
     <section id="preview" className="py-16">
       <div className="mx-auto max-w-3xl px-4 text-center">
-        <h2 className="text-3xl sm:text-4xl font-extrabold">Real before & after</h2>
+        <h2 className="text-3xl sm:text-4xl font-extrabold">Before & after</h2>
         <p className="text-muted-foreground mt-3">
-          True photo → stencil pairs from AI Stencil Magic. Drag the slider to compare.
+          Drag the slider to compare the original photo with a stencil-style conversion.
         </p>
       </div>
       <div className="mx-auto max-w-2xl px-4 mt-8">
@@ -158,7 +214,7 @@ function BeforeAfter() {
                     : "text-muted-foreground hover:bg-muted"
                 }`}
               >
-                {e.id.charAt(0).toUpperCase() + e.id.slice(1)}
+                {e.title.split(" ")[0]}
               </button>
             ))}
           </div>
@@ -207,9 +263,10 @@ function BestResults() {
         </p>
         <div className="mt-8 rounded-3xl overflow-hidden border border-border bg-card text-left">
           <img
-            src={TRUE_EXAMPLES[1].after}
+            src={TRUE_EXAMPLES[0].after}
             alt=""
             loading="lazy"
+            style={{ filter: STENCIL_FILTER }}
             className="w-full aspect-[3/4] object-cover bg-white"
           />
           <div className="p-5">
