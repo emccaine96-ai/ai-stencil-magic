@@ -90,8 +90,23 @@ export const Route = createFileRoute("/api/generate-stencil")({
           }
 
           const data = await upstream.json();
-          // OpenRouter returns a chat completion — extract any image content
-          const content = data?.choices?.[0]?.message?.content;
+          const message = data?.choices?.[0]?.message;
+
+          // Primary path: OpenRouter's documented format for image-generating
+          // models (including google/gemini-2.5-flash-image) returns the
+          // generated image in message.images, NOT message.content — content
+          // is typically just a plain text sentence with no image data in it.
+          const images = message?.images;
+          if (Array.isArray(images) && images.length > 0) {
+            const url = images[0]?.image_url?.url ?? images[0]?.url;
+            if (typeof url === "string" && url.length > 0) {
+              return Response.json({ dataUrl: url });
+            }
+          }
+
+          // Fallback paths below, kept as-is for models/providers that might
+          // inline the image into content instead.
+          const content = message?.content;
           if (typeof content === "string") {
             // Try to find base64 image data in the response
             const imgMatch = content.match(/data:image\/[^;]+;base64,([A-Za-z0-9+/=]+)/);
