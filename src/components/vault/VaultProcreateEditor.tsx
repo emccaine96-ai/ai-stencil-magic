@@ -31,6 +31,8 @@ import {
 import { PicsartDock, type PicsartDockHandlers } from "./PicsartDock";
 import { BrushPickerPanel } from "./BrushPickerPanel";
 import { useNavigate } from "@tanstack/react-router";
+import { applyAdjustmentsToCanvas, type AdjustmentValues } from "@/lib/canvas/adjustments";
+import { runPlugin, BUILTIN_PLUGINS } from "@/lib/plugins";
 
 type Props = {
   doc: DocumentData;
@@ -76,6 +78,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [drawMode, setDrawMode] = useState(false);
   const [coachVisible, setCoachVisible] = useState(false);
   const [brushPickerOpen, setBrushPickerOpen] = useState(false);
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [adjustments, setAdjustments] = useState<AdjustmentValues>({});
 
   const navigate = useNavigate();
 
@@ -427,13 +431,42 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     setTool("pan");
   }, []);
 
+  // --- Adjust panel helpers ---
+  function applyAdjustPreview(next: AdjustmentValues) {
+    setAdjustments(next);
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    const base = undoStack.current[undoStack.current.length - 1];
+    if (base) ctx.putImageData(base, 0, 0);
+    applyAdjustmentsToCanvas(ctx.canvas, next);
+  }
+
+  function commitAdjust() {
+    pushUndo();
+    setAdjustOpen(false);
+  }
+
+  // --- Plugin helper ---
+  async function applyDockPlugin(pluginId: string) {
+    const plugin = BUILTIN_PLUGINS.find((p) => p.id === pluginId);
+    if (!plugin) return;
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    const imageData = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+    const params: Record<string, any> = {};
+    plugin.params?.forEach((p) => { params[p.key] = p.default; });
+    const result = await runPlugin(plugin, imageData, params);
+    ctx.putImageData(result, 0, 0);
+    pushUndo();
+  }
+
   const stub = (label: string) => () => toast.info(`${label} in full studio`);
 
   const dockHandlers: PicsartDockHandlers = {
     openCrop: stub("Crop"),
     setSelectionMode: stub("Selection"),
-    openAdjust: stub("Adjust"),
-    enhance: stub("Enhance"),
+    openAdjust: () => setAdjustOpen(true),
+    enhance: () => setAdjustOpen(true),
     resizeMenu: stub("Resize"),
     flipH: stub("Flip"),
     flipV: stub("Flip"),
@@ -450,16 +483,16 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     cloneStamp: stub("Clone"),
     curves: stub("Curves"),
     upscale6k: stub("Upscale"),
-    stencilClean: stub("Stencil clean"),
-    threshold: stub("Threshold"),
+    stencilClean: () => applyDockPlugin("builtin.edge-connector"),
+    threshold: () => applyDockPlugin("builtin.otsu-threshold"),
     thermalBlue: stub("Thermal"),
-    thermalPurple: stub("Thermal"),
-    sharpen: stub("Sharpen"),
+    thermalPurple: () => applyDockPlugin("builtin.hectograph-purple"),
+    sharpen: () => applyDockPlugin("builtin.stencil-sharpen"),
     blur: stub("Blur"),
     vignette: stub("Vignette"),
-    halftone: stub("Halftone"),
+    halftone: () => applyDockPlugin("builtin.halftone-stipple"),
     pixelate: stub("Pixelate"),
-    posterize: stub("Posterize"),
+    posterize: () => applyDockPlugin("builtin.posterize"),
     edge: stub("Edge"),
     grain: stub("Grain"),
     sepia: stub("Sepia"),
@@ -712,6 +745,59 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           }}
           onClose={() => setBrushPickerOpen(false)}
         />
+      )}
+      {adjustOpen && (
+        <div className="absolute inset-x-2 bottom-[64px] z-[20] max-h-[60vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#141417]/95 backdrop-blur-xl p-4 space-y-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-neutral-400 uppercase">Adjust</span>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => { setAdjustments({}); applyAdjustPreview({}); }} className="text-xs text-neutral-400 hover:text-neutral-200">Reset</button>
+              <button type="button" onClick={commitAdjust} className="text-xs font-bold text-[#00F5D4]">Done</button>
+            </div>
+          </div>
+          {([
+            { key: "brightness", label: "Brightness", min: -100, max: 100 },
+            { key: "contrast", label: "Contrast", min: -100, max: 100 },
+            { key: "saturation", label: "Saturation", min: -100, max: 100 },
+            { key: "exposure", label: "Exposure", min: -100, max: 100 },
+            { key: "gamma", label: "Gamma", min: 0.1, max: 3.0, step: 0.1 },
+            { key: "temperature", label: "Temperature", min: -100, max: 100 },
+            { key: "tint", label: "Tint", min: -100, max: 100 },
+            { key: "vibrance", label: "Vibrance", min: -100, max: 100 },
+          ] as const).map((ctrl) => (
+            <div key={ctrl.key} className="space-y-1">
+              <label className="text-[10px] font-bold text-neutral-500 uppercase">{ctrl.label}</label>
+              <input
+                type="range"
+                min={ctrl.min}
+                max={ctrl.max}
+                step={"step" in ctrl ? ctrl.step : 1}
+                value={(adjustments[ctrl.key] as number) ?? ("step" in ctrl ? 1 : 0)}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  applyAdjustPreview({ ...adjustments, [ctrl.key]: v });
+                }}
+                className="w-full accent-[#00F5D4]"
+              />
+            </div>
+          ))}
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => applyAdjustPreview({ ...adjustments, invert: !adjustments.invert })}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold border ${adjustments.invert ? "bg-[#00F5D4]/20 text-[#00F5D4] border-[#00F5D4]/40" : "border-white/10 text-neutral-300"}`}
+            >
+              Invert
+            </button>
+            <button
+              type="button"
+              onClick={() => applyAdjustPreview({ ...adjustments, grayscale: !adjustments.grayscale })}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold border ${adjustments.grayscale ? "bg-[#00F5D4]/20 text-[#00F5D4] border-[#00F5D4]/40" : "border-white/10 text-neutral-300"}`}
+            >
+              Grayscale
+            </button>
+          </div>
+        </div>
       )}
       <PicsartDock handlers={dockHandlers} />
     </div>

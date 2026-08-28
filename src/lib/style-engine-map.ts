@@ -29,8 +29,8 @@ export const STYLE_TO_CLASSICAL: Record<StencilStyle, ClassicalProConfig> = {
     mode: "xdog",
     skin_smoothness: 40,
     detail_radius: 1.2,
-    edge_sensitivity: 0.97,
-    shadow_block: 19,
+    edge_sensitivity: 0.93,   // recalibrated from 0.97 via coordinate descent [0.88-0.97]
+    shadow_block: 13,         // recalibrated from 19 via coordinate descent [9-21]
     line_weight: 0,
     useStructureTensor: true,
     clahe: true,
@@ -41,8 +41,8 @@ export const STYLE_TO_CLASSICAL: Record<StencilStyle, ClassicalProConfig> = {
     mode: "xdog",
     skin_smoothness: 60,
     detail_radius: 2.0,
-    edge_sensitivity: 1.0,
-    shadow_block: 31,
+    edge_sensitivity: 0.92,   // recalibrated from 1.0 via coordinate descent [0.88-0.97]
+    shadow_block: 11,         // recalibrated from 31 via coordinate descent [9-21]
     line_weight: 1,
     clahe: true,
     bilateral: true,
