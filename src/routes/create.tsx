@@ -17,6 +17,7 @@ import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
 import { runPlugin, BUILTIN_PLUGINS } from "@/lib/plugins";
 import { processClassicalPro } from "@/lib/classical-pro-integration";
+import { computeStencilMetrics, computeTattooability, type TattooabilityResult } from "@/lib/classical-engine/inspector";
 import { toast } from "sonner";
 import { CustomPromptPanel } from "@/components/CustomPromptPanel";
 
@@ -107,6 +108,28 @@ async function normalizeToPurpleInk(dataUrl: string): Promise<string> {
   return canvas.toDataURL("image/png");
 }
 
+async function scoreStencil(dataUrl: string): Promise<TattooabilityResult> {
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.src = dataUrl;
+  await new Promise((res, rej) => {
+    img.onload = res;
+    img.onerror = rej;
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(img, 0, 0);
+  const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const ink = new Uint8ClampedArray(width * height);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    ink[p] = data[i + 3] > 10 ? 255 : 0;
+  }
+  const metrics = computeStencilMetrics(ink, width, height);
+  return computeTattooability(metrics);
+}
+
 function CreatePage() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [style, setStyle] = useState<Style>("hatching");
@@ -114,6 +137,7 @@ function CreatePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stencil, setStencil] = useState<string | null>(null);
+  const [tattooability, setTattooability] = useState<TattooabilityResult | null>(null);
   const [pos, setPos] = useState(50);
   const fileRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
@@ -263,6 +287,7 @@ function CreatePage() {
   async function onPick(file?: File | null) {
     if (!file) return;
     setStencil(null);
+    setTattooability(null);
     setError(null);
     setPhoto(await fileToDataUrl(file));
   }
@@ -290,6 +315,7 @@ function CreatePage() {
         });
         const purpleResult = await normalizeToPurpleInk(result.dataUrl);
         setStencil(purpleResult);
+        scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
         toast.success(`Classical Pro: ${style} (${result.processingTime}ms)`);
         setLoading(false);
         return;
@@ -367,6 +393,7 @@ function CreatePage() {
         }
         const purpleResult = await normalizeToPurpleInk(hybridDataUrl);
         setStencil(purpleResult);
+        scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
         setLoading(false);
         return;
       }
@@ -386,7 +413,11 @@ function CreatePage() {
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data?.error || `OpenRouter AI error ${r.status}`);
-        setStencil(await normalizeToPurpleInk(data.dataUrl));
+        {
+          const purpleResult = await normalizeToPurpleInk(data.dataUrl);
+          setStencil(purpleResult);
+          scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
+        }
       } else {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${encodeURIComponent(apiKey)}`;
         const r = await fetch(url, {
@@ -407,7 +438,11 @@ function CreatePage() {
         const imgPart = parts.find((p: any) => p?.inlineData?.data);
         if (!imgPart) throw new Error("No image returned by Gemini");
         const outMime = imgPart.inlineData.mimeType || "image/png";
-        setStencil(await normalizeToPurpleInk(`data:${outMime};base64,${imgPart.inlineData.data}`));
+        {
+          const purpleResult = await normalizeToPurpleInk(`data:${outMime};base64,${imgPart.inlineData.data}`);
+          setStencil(purpleResult);
+          scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate");
@@ -721,6 +756,35 @@ function CreatePage() {
         {stencil ? (
           <section className="space-y-4">
             <h2 className="text-2xl font-extrabold">Your stencil</h2>
+            {tattooability ? (
+              <div className="rounded-2xl border border-border bg-card p-4 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Tattooability
+                  </span>
+                  <span
+                    className={`text-lg font-extrabold ${
+                      tattooability.score >= 75
+                        ? "text-primary"
+                        : tattooability.score >= 50
+                          ? "text-amber-400"
+                          : "text-destructive"
+                    }`}
+                  >
+                    {tattooability.score}/100
+                  </span>
+                </div>
+                {tattooability.reasons.length > 0 ? (
+                  <ul className="text-[11px] text-muted-foreground space-y-0.5 list-disc list-inside">
+                    {tattooability.reasons.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">Clean, tattoo-ready line work.</p>
+                )}
+              </div>
+            ) : null}
             <div className="relative aspect-square bg-white rounded-3xl overflow-hidden border border-border">
               {photo ? (
                 <img
