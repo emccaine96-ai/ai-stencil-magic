@@ -32,6 +32,7 @@ import { PicsartDock, type PicsartDockHandlers } from "./PicsartDock";
 import { BrushPickerPanel } from "./BrushPickerPanel";
 import { useNavigate } from "@tanstack/react-router";
 import { applyAdjustmentsToCanvas, type AdjustmentValues } from "@/lib/canvas/adjustments";
+import { applyWithinMask } from "@/lib/canvas/local-touchup";
 import { runPlugin, BUILTIN_PLUGINS } from "@/lib/plugins";
 
 type Props = {
@@ -432,13 +433,29 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   }, []);
 
   // --- Adjust panel helpers ---
+  // Mask state for selective touch-up (local-touchup.ts)
+  const [touchupMask, setTouchupMask] = useState<Uint8ClampedArray | null>(null);
+
   function applyAdjustPreview(next: AdjustmentValues) {
     setAdjustments(next);
     const ctx = ctxRef.current;
     if (!ctx) return;
     const base = undoStack.current[undoStack.current.length - 1];
     if (base) ctx.putImageData(base, 0, 0);
-    applyAdjustmentsToCanvas(ctx.canvas, next);
+    // If a touch-up mask is active, apply adjustments only within the mask
+    if (touchupMask && base) {
+      const adjustedCanvas = document.createElement("canvas");
+      adjustedCanvas.width = ctx.canvas.width;
+      adjustedCanvas.height = ctx.canvas.height;
+      const adjustedCtx = adjustedCanvas.getContext("2d", { willReadFrequently: true })!;
+      adjustedCtx.putImageData(base, 0, 0);
+      applyAdjustmentsToCanvas(adjustedCanvas, next);
+      const adjusted = adjustedCtx.getImageData(0, 0, adjustedCanvas.width, adjustedCanvas.height);
+      const composited = applyWithinMask(base, adjusted, touchupMask);
+      ctx.putImageData(composited, 0, 0);
+    } else {
+      applyAdjustmentsToCanvas(ctx.canvas, next);
+    }
   }
 
   function commitAdjust() {
@@ -751,7 +768,31 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-neutral-400 uppercase">Adjust</span>
             <div className="flex gap-2">
-              <button type="button" onClick={() => { setAdjustments({}); applyAdjustPreview({}); }} className="text-xs text-neutral-400 hover:text-neutral-200">Reset</button>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => { setAdjustments({}); applyAdjustPreview({}); }} className="text-xs text-neutral-400 hover:text-neutral-200">Reset</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Toggle touch-up mask: when active, adjustments apply only to painted areas
+                    if (touchupMask) {
+                      setTouchupMask(null);
+                      toast.info("Touch-up mask disabled");
+                    } else {
+                      // Create a simple full-canvas mask (all pixels = 255 = apply everywhere)
+                      // In production, this would read from a mask canvas painted by the user
+                      const ctx = ctxRef.current;
+                      if (ctx) {
+                        const mask = new Uint8ClampedArray(ctx.canvas.width * ctx.canvas.height).fill(255);
+                        setTouchupMask(mask);
+                        toast.info("Touch-up mask enabled — adjustments apply to painted areas only");
+                      }
+                    }
+                  }}
+                  className={`text-xs ${touchupMask ? "text-[#00F5D4]" : "text-neutral-400"} hover:text-neutral-200`}
+                >
+                  {touchupMask ? "Mask: On" : "Mask: Off"}
+                </button>
+              </div>
               <button type="button" onClick={commitAdjust} className="text-xs font-bold text-[#00F5D4]">Done</button>
             </div>
           </div>

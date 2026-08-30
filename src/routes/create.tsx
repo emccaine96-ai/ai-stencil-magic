@@ -16,8 +16,15 @@ import logo from "@/assets/stencil-logo.png";
 import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
 import { runPlugin, BUILTIN_PLUGINS } from "@/lib/plugins";
-import { processClassicalPro } from "@/lib/classical-pro-integration";
+import { processClassicalPro, type ClassicalProResult } from "@/lib/classical-pro-integration";
 import { computeStencilMetrics, computeTattooability, type TattooabilityResult } from "@/lib/classical-engine/inspector";
+// @ts-ignore — optional vectorization (imagetracerjs)
+import { vectorizeLineLayer } from "@/lib/classical-engine/vectorize";
+// @ts-ignore — ink style panel (optional add-on, collapsed by default)
+import { InkStylePanel } from "@/components/InkStylePanel";
+// @ts-ignore — font system (self-hosted Font Squirrel fonts)
+import { injectSelfHostedFontFaces, preloadAllSelfHostedFonts } from "@/fonts/load-font";
+import { renderLetteringToImageData } from "@/fonts/text-to-stencil";
 import { toast } from "sonner";
 import { CustomPromptPanel } from "@/components/CustomPromptPanel";
 
@@ -155,6 +162,22 @@ function CreatePage() {
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
+  // Ink style panel intermediate data (from classical engine)
+  const [inkStyleData, setInkStyleData] = useState<{
+    primaryLines: Uint8ClampedArray;
+    toneIdx: Uint8Array;
+    toneGray: Float32Array;
+    width: number;
+    height: number;
+  } | null>(null);
+  // SVG export state
+  const [svgExporting, setSvgExporting] = useState(false);
+
+  // Load self-hosted fonts on mount (Font Squirrel system)
+  useEffect(() => {
+    injectSelfHostedFontFaces();
+    preloadAllSelfHostedFonts().catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -288,6 +311,7 @@ function CreatePage() {
     if (!file) return;
     setStencil(null);
     setTattooability(null);
+    setInkStyleData(null);
     setError(null);
     setPhoto(await fileToDataUrl(file));
   }
@@ -316,6 +340,8 @@ function CreatePage() {
         const purpleResult = await normalizeToPurpleInk(result.dataUrl);
         setStencil(purpleResult);
         scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
+        // Store intermediate data for InkStylePanel (if available from the engine)
+        setInkStyleData(result.intermediate ?? null);
         toast.success(`Classical Pro: ${style} (${result.processingTime}ms)`);
         setLoading(false);
         return;
@@ -448,6 +474,38 @@ function CreatePage() {
       setError(e instanceof Error ? e.message : "Failed to generate");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function downloadSVG() {
+    if (!stencil) return;
+    setSvgExporting(true);
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = stencil;
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      const svg = await vectorizeLineLayer(canvas);
+      const blob = new Blob([svg], { type: "image/svg+xml" });
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = u;
+      a.download = "stencil-vector.svg";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(u), 1000);
+      toast.success("SVG exported");
+    } catch (e) {
+      // imagetracerjs not installed — graceful fallback
+      toast.error("SVG export requires imagetracerjs (not installed)");
+    } finally {
+      setSvgExporting(false);
     }
   }
 
@@ -860,7 +918,38 @@ function CreatePage() {
               <p className="text-[10px] text-muted-foreground text-center">
                 Upscaled in your browser via high-quality bicubic interpolation.
               </p>
+              <button
+                onClick={downloadSVG}
+                disabled={svgExporting}
+                className="w-full rounded-full border border-border hover:border-primary/50 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition flex items-center justify-center gap-2"
+              >
+                {svgExporting ? (
+                  <>
+                    <Loader2 className="animate-spin" size={14} /> Converting…
+                  </>
+                ) : (
+                  <>Export as SVG (vector)</>
+                )}
+              </button>
             </div>
+
+            {/* Ink Style Panel — optional add-on, collapsed by default */}
+            {inkStyleData ? (
+              <InkStylePanel
+                primaryLines={inkStyleData.primaryLines}
+                toneIdx={inkStyleData.toneIdx}
+                toneGray={inkStyleData.toneGray}
+                width={inkStyleData.width}
+                height={inkStyleData.height}
+                onResult={(imageData) => {
+                  const canvas = document.createElement("canvas");
+                  canvas.width = imageData.width;
+                  canvas.height = imageData.height;
+                  canvas.getContext("2d")!.putImageData(imageData, 0, 0);
+                  setStencil(canvas.toDataURL("image/png"));
+                }}
+              />
+            ) : null}
 
             {/* Plugin Enhancement Panel */}
             <div className="rounded-2xl border border-border bg-card p-4 space-y-3">

@@ -14,6 +14,12 @@ import { buildFrequencyBands } from './classical-engine/pyramid.js';
 import { sobel, classifyEdges } from './classical-engine/edges.js';
 import { renderLineLayer } from './classical-engine/line-weight.js';
 import { quantizeTones, mergeSmallRegions } from './classical-engine/tone-simplify.js';
+import { otsuThreshold, applyThreshold } from './classical-engine/otsu.js';
+import { structureTensorOrientation, renderHatchLayer } from './classical-engine/hatching.js';
+import { removeSmallInkSpecks, morphClose } from './classical-engine/cleanup.js';
+import { applyBackgroundMode } from './classical-engine/background.js';
+import { PipelineCache, hashParams } from './classical-engine/pipeline-types.js';
+import { integralImage } from './classical/integral-image.js';
 import { applyCLAHE } from './classical/clahe.js';
 import { bilateralApprox, fastBlur } from './classical/smoothing.js';
 import { applySCurveAndGamma, applyXDoG } from './classical/xdog.js';
@@ -66,6 +72,12 @@ class ClassicalProEngine {
     this.canvas = canvasElement;
     this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
     this.hectographPurple = { r: 168, g: 85, b: 247 };
+    this.cache = new PipelineCache();
+    this.lastPrimaryLines = null;
+    this.lastToneIdx = null;
+    this.lastToneGray = null;
+    this.lastWidth = 0;
+    this.lastHeight = 0;
   }
 
   processImage(imageSource, settings = {}, preset = null) {
@@ -77,6 +89,14 @@ class ClassicalProEngine {
       lineWeightContrast: 0.5,
       toneLevels: 5,
       minRegionPx: 20,
+      useOtsu: false,
+      useFormHatching: false,
+      useEnhancedCleanup: false,
+      enhancedCleanupMinPx: 4,
+      enhancedCleanupCloseRadius: 1,
+      backgroundMode: 'keep',
+      backgroundFadeOpacity: 0.25,
+      backgroundMask: null,
       shadingMode: 'xdog',
       skin_smoothness: 50,
       detail_radius: 1.0,
@@ -148,6 +168,60 @@ class ClassicalProEngine {
       stencil = applyXDoG(img, s.detail_radius, s.edge_sensitivity, s.shadow_block);
     }
 
+    // 4.5. Store intermediate data for InkStylePanel (additive — only read if needed)
+    this.lastWidth = workW;
+    this.lastHeight = workH;
+    if (s.shadingMode === 'multiscale') {
+      // For multiscale mode, store the intermediate tone data
+      const _gray = new Float32Array(workW * workH);
+      for (let i = 0, p = 0; i < img.data.length; i += 4, p++) _gray[p] = img.data[i];
+      this.lastToneIdx = quantizeTones(_gray, s.toneLevels ?? 5);
+      this.lastToneGray = _gray;
+      // Extract primary lines from stencil (before color mapping)
+      this.lastPrimaryLines = new Uint8ClampedArray(workW * workH);
+      for (let i = 0, p = 0; i < stencil.data.length; i += 4, p++) {
+        this.lastPrimaryLines[p] = stencil.data[i + 3] > 10 ? 255 : 0;
+      }
+    }
+
+    // 4.6. Optional Otsu threshold (additive — only when useOtsu is true)
+    if (s.useOtsu) {
+      const _gray = new Float32Array(workW * workH);
+      for (let i = 0, p = 0; i < img.data.length; i += 4, p++) _gray[p] = img.data[i];
+      const t = otsuThreshold(_gray);
+      const otsuMask = applyThreshold(_gray, t);
+      const od = stencil.data;
+      for (let i = 0, p = 0; i < od.length; i += 4, p++) {
+        if (otsuMask[p] === 0) { od[i] = od[i+1] = od[i+2] = 0; od[i+3] = 255; }
+      }
+    }
+
+    // 4.7. Optional form-aware hatching (additive — only when useFormHatching is true)
+    if (s.useFormHatching && s.shadingMode === 'multiscale') {
+      const _gray = new Float32Array(workW * workH);
+      for (let i = 0, p = 0; i < img.data.length; i += 4, p++) _gray[p] = img.data[i];
+      const lowEdges = sobel(_gray, workW, workH);
+      const gxField = new Float32Array(workW * workH);
+      const gyField = new Float32Array(workW * workH);
+      for (let i = 0; i < workW * workH; i++) {
+        gxField[i] = Math.cos(lowEdges.direction[i]) * lowEdges.magnitude[i];
+        gyField[i] = Math.sin(lowEdges.direction[i]) * lowEdges.magnitude[i];
+      }
+      const orientation = structureTensorOrientation(gxField, gyField, workW, workH);
+      const hatchLayer = renderHatchLayer(_gray, orientation, workW, workH, {
+        baseAngle: Math.PI / 4,
+        followForm: true,
+        minSpacingPx: 3,
+        maxSpacingPx: 12,
+        lineWidthPx: 1,
+        crosshatch: false,
+      });
+      const od = stencil.data;
+      for (let i = 0, p = 0; i < od.length; i += 4, p++) {
+        if (hatchLayer[p]) { od[i] = od[i+1] = od[i+2] = 0; od[i+3] = 255; }
+      }
+    }
+
     // 5. Structure Tensor flow modulation
     if (s.useStructureTensor) {
       const tensor = computeStructureTensor(img, s.tensorRadius);
@@ -165,6 +239,21 @@ class ClassicalProEngine {
       stencil = morphology(stencil, s.closeKernel, 'close');
     }
 
+    // 6.5. Enhanced cleanup (additive — only when useEnhancedCleanup is true)
+    if (s.useEnhancedCleanup) {
+      const inkMask = new Uint8ClampedArray(workW * workH);
+      for (let i = 0, p = 0; i < stencil.data.length; i += 4, p++) {
+        inkMask[p] = stencil.data[i + 3] > 10 ? 255 : 0;
+      }
+      const cleaned = removeSmallInkSpecks(inkMask, workW, workH, s.enhancedCleanupMinPx);
+      const closed = morphClose(cleaned, workW, workH, s.enhancedCleanupCloseRadius);
+      const od = stencil.data;
+      for (let i = 0, p = 0; i < od.length; i += 4, p++) {
+        od[i + 3] = closed[p] ? 255 : 0;
+        if (closed[p]) { od[i] = od[i+1] = od[i+2] = 0; }
+      }
+    }
+
     // 7. Line weight
     if (s.line_weight !== 0) {
       stencil = dilateErode(stencil, s.line_weight);
@@ -175,6 +264,21 @@ class ClassicalProEngine {
       stencil = mapToHectographPurple(stencil, this.hectographPurple);
     } else {
       stencil = makeTransparentBackground(stencil);
+    }
+
+    // 8.5. Background separation mode (additive — only when backgroundMode != 'keep')
+    if (s.backgroundMode !== 'keep' && s.backgroundMask) {
+      const inkMask = new Uint8ClampedArray(workW * workH);
+      for (let i = 0, p = 0; i < stencil.data.length; i += 4, p++) {
+        inkMask[p] = stencil.data[i + 3] > 10 ? 255 : 0;
+      }
+      const adjusted = applyBackgroundMode(inkMask, s.backgroundMask, workW, workH, s.backgroundMode, s.backgroundFadeOpacity);
+      const od = stencil.data;
+      for (let i = 0, p = 0; i < od.length; i += 4, p++) {
+        od[i + 3] = adjusted[p];
+        if (adjusted[p]) { od[i] = od[i+1] = od[i+2] = 0; }
+        else { od[i] = od[i+1] = od[i+2] = 255; }
+      }
     }
 
     this.ctx.putImageData(stencil, 0, 0);

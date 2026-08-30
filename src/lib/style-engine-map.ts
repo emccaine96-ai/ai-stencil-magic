@@ -7,7 +7,7 @@
 export type StencilStyle = "hatching" | "solid" | "dotwork" | "hybrid";
 
 export interface ClassicalProConfig {
-  mode: "xdog" | "dither";
+  mode: "xdog" | "dither" | "multiscale";
   skin_smoothness: number;
   detail_radius: number;
   edge_sensitivity: number;
