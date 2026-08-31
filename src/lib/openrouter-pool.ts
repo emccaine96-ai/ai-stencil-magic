@@ -93,9 +93,8 @@ export async function callOpenRouterWithRetry(
     try {
       // Add fallback models via extra_body when using "auto"
       const body: Record<string, unknown> = {
-        model: request.model ?? "auto",
-        messages: request.messages,
         ...request,
+        model: request.model ?? "auto",
       };
 
       // Inject fallback array only for "auto" model routing
