@@ -6,7 +6,7 @@
  */
 import { integralImage } from './integral-image.js';
 
-export function adaptiveThreshold(imageData, blockSize) {
+export function adaptiveThreshold(imageData, blockSize, biasPct = 0.15) {
   if (blockSize % 2 === 0) blockSize += 1;
   const { width, height, data } = imageData;
   const out = new ImageData(width, height);
@@ -33,7 +33,10 @@ export function adaptiveThreshold(imageData, blockSize) {
 
       const mean = sum / area;
       const idx = (y * width + x) * 4;
-      const v = data[idx] < mean - 5 ? 0 : 255;
+      // Bradley's adaptive threshold: pixel is ink when below biasPct of local mean.
+      // Fixed offset (-5) was too aggressive in high-mean regions (solid blobs)
+      // and not adaptive to local contrast. Relative bias scales correctly.
+      const v = data[idx] < mean * (1 - biasPct) ? 0 : 255;
       o[idx] = o[idx + 1] = o[idx + 2] = v;
       o[idx + 3] = 255;
     }
