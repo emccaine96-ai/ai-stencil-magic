@@ -172,6 +172,7 @@ function CreatePage() {
   } | null>(null);
   // SVG export state
   const [svgExporting, setSvgExporting] = useState(false);
+  const [useAdvancedPipeline, setUseAdvancedPipeline] = useState(false);
 
   // Load self-hosted fonts on mount (Font Squirrel system)
   useEffect(() => {
@@ -336,6 +337,7 @@ function CreatePage() {
           style,
           intensity,
           purpleTint: true,
+          useAdvancedPipeline,
         });
         const purpleResult = await normalizeToPurpleInk(result.dataUrl);
         setStencil(purpleResult);
@@ -685,6 +687,15 @@ function CreatePage() {
               <p className="text-[11px] text-muted-foreground">
                 Classical Pro uses the same style + shading density as above. Runs locally — no API key, no credits.
               </p>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useAdvancedPipeline}
+                  onChange={(e) => setUseAdvancedPipeline(e.target.checked)}
+                  className="accent-primary"
+                />
+                <span>Advanced multi-scale pipeline (experimental)</span>
+              </label>
             </div>
           ) : null}
           {provider === "hybrid" ? (
