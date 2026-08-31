@@ -42,7 +42,8 @@ function runMultiscaleEdgeStage(imageData, options) {
   const classified = classifyEdges(
     lowEdges.magnitude, midEdges.magnitude, highEdges.magnitude,
     w, h,
-    { primaryPct: 0.9, formPct: 0.75, texturePct: 0.5 },
+    lowEdges.direction,
+    { primaryPct: 0.97, formPct: 0.93, texturePct: 0.85 },
   );
 
   const lw = {

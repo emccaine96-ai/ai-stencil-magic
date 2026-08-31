@@ -104,9 +104,10 @@ export async function runUpgradePipeline(
     const lowEdges = sobel(bands.low, w, h);
     const midEdges = sobel(bands.mid, w, h);
     const highEdges = sobel(bands.high, w, h);
+    const fullEdges = sobel(gray, w, h);
     classified = classifyEdges(
       lowEdges.magnitude, midEdges.magnitude, highEdges.magnitude,
-      w, h, options.edgeThresholds,
+      w, h, fullEdges.direction, options.edgeThresholds,
     );
     cache.set('edges', classified, edgeParams);
   }
