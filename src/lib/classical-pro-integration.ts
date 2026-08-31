@@ -10,7 +10,6 @@ import { ClassicalProEngine } from "./classical-pro-engine.js";
 import { STYLE_TO_CLASSICAL, scaleByIntensity, type StencilStyle } from "./style-engine-map";
 // @ts-ignore — advanced orchestrator (wired as multiscale-advanced mode)
 import { runUpgradePipeline } from "./classical-engine/index";
-import { segmentRegions } from "./classical-engine/region-segmenter";
 // @ts-ignore — region processing (per-pixel param fields from segmentation masks)
 import { buildRegionParamField, type FocusRegion } from "./classical-engine/region-processing";
 // @ts-ignore — preset serialization
@@ -22,8 +21,6 @@ export interface ClassicalProOptions {
   purpleTint?: boolean;
   // Advanced: use the full orchestrator pipeline (multiscale-advanced mode)
   useAdvancedPipeline?: boolean;
-  // Advanced: optional region segmentation (MediaPipe, async)
-  useRegionSegmentation?: boolean;
 }
 
 export interface ClassicalProResult {
@@ -98,23 +95,6 @@ export async function processClassicalPro(
     };
   }
 
-  // Optional region segmentation (MediaPipe, async — gracefully degrades)
-  let regionMask: Uint8Array | null = null;
-  if (options.useRegionSegmentation) {
-    try {
-      const segCanvas = document.createElement("canvas");
-      segCanvas.width = img.naturalWidth || img.width;
-      segCanvas.height = img.naturalHeight || img.height;
-      const segCtx = segCanvas.getContext("2d")!;
-      segCtx.drawImage(img, 0, 0);
-      const bitmap = await createImageBitmap(segCanvas);
-      regionMask = await segmentRegions(bitmap);
-    } catch {
-      // MediaPipe not available — proceed without region segmentation
-      regionMask = null;
-    }
-  }
-
   const dataUrl: string = engine.processImage(img, {
     useClahe: scaled.clahe,
     shadingMode: scaled.shadingMode ?? scaled.mode,
@@ -125,7 +105,6 @@ export async function processClassicalPro(
     line_weight: scaled.line_weight,
     useStructureTensor: scaled.useStructureTensor ?? false,
     outputPurple: options.purpleTint ?? false,
-    backgroundMask: regionMask,
   });
 
   // Read intermediate data from the engine instance (for InkStylePanel)
