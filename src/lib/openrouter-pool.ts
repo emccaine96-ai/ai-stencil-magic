@@ -2,18 +2,19 @@
  * OpenRouter AI model pool with intelligent fallback routing.
  *
  * Connects to https://openrouter.ai/api/v1 using the OpenAI SDK pattern.
- * Models route through a free-tier fallback array if the primary \"auto\" model
+ * Models route through a free-tier fallback array if the primary "auto" model
  * is unavailable. Includes retry logic for 429 rate limit errors.
  *
  * Free-tier models:
- *  - deepseek/deepseek-r1:free          (Deep reasoning, complex logic)\n *  - meta-llama/llama-3.3-70b:free      (General purpose, fast)
+ *  - deepseek/deepseek-r1:free          (Deep reasoning, complex logic)
+ *  - meta-llama/llama-3.3-70b:free      (General purpose, fast)
  *  - qwen/qwen-2.5-coder-32b:free       (Code specialist)
  */
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 /**
- * Free-tier fallback models. OpenRouter \"auto\" mode will intelligently
+ * Free-tier fallback models. OpenRouter "auto" mode will intelligently
  * route requests through these if the primary model is overloaded.
  */
 export const FALLBACK_MODELS = [
@@ -66,7 +67,7 @@ export interface OpenRouterError {
  * Call OpenRouter chat completion API with automatic retry on 429 errors.
  *
  * @param apiKey - OpenRouter API key
- * @param request - Chat completion request (model defaults to \"auto\")
+ * @param request - Chat completion request (model defaults to "auto")
  * @param options - Retry configuration
  * @returns OpenRouter response
  * @throws Error if all retries fail
