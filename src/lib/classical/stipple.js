@@ -1,9 +1,79 @@
 /**
- * Stochastic (blue-noise-style) stippling.
- * Uses the shared DeterministicRNG instead of an inline ad-hoc generator.
- * Extracted from ClassicalProEngine for modularity.
+ * True blue-noise stippling via Poisson-disk sampling (Bridson's algorithm),
+ * density-modulated by local darkness.
+ *
+ * Replaces the previous grid-jitter approximation, which read as a faint
+ * regular grid under scrutiny — real blue noise has no periodicity and no
+ * clumping. Uses the shared DeterministicRNG so output stays deterministic
+ * (same input dimensions = same dot pattern).
  */
 import { createImageRNG } from './deterministic-rng.js';
+
+/**
+ * Bridson's Poisson-disk sampling. Generates points with a minimum distance
+ * apart and no visible periodicity — the core blue-noise property.
+ * Active-list removal uses swap-and-pop (O(1)) instead of splice (O(n)) —
+ * pure performance optimization, does not change the point distribution.
+ * A point-count safety cap prevents runaway generation time on very large
+ * canvases; well above what any real image needs, so it never visibly
+ * triggers in normal use.
+ */
+function poissonDiskPoints(width, height, minDist, rng, maxAttempts = 30) {
+  const cellSize = minDist / Math.SQRT2;
+  const gridW = Math.max(1, Math.ceil(width / cellSize));
+  const gridH = Math.max(1, Math.ceil(height / cellSize));
+  const grid = new Array(gridW * gridH).fill(null);
+  const points = [];
+  const active = [];
+  const maxPoints = 400000; // safety cap — normal images stay far below this
+
+  const gridIndex = (x, y) => Math.floor(y / cellSize) * gridW + Math.floor(x / cellSize);
+  const fits = (x, y) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return false;
+    const gx = Math.floor(x / cellSize), gy = Math.floor(y / cellSize);
+    for (let j = Math.max(0, gy - 2); j <= Math.min(gridH - 1, gy + 2); j++) {
+      for (let i = Math.max(0, gx - 2); i <= Math.min(gridW - 1, gx + 2); i++) {
+        const p = grid[j * gridW + i];
+        if (p && (p[0] - x) ** 2 + (p[1] - y) ** 2 < minDist * minDist) return false;
+      }
+    }
+    return true;
+  };
+
+  const first = [rng.next() * width, rng.next() * height];
+  points.push(first);
+  active.push(first);
+  grid[gridIndex(first[0], first[1])] = first;
+
+  while (active.length && points.length < maxPoints) {
+    const idx = Math.floor(rng.next() * active.length);
+    const [cx, cy] = active[idx];
+    let placed = false;
+    for (let a = 0; a < maxAttempts; a++) {
+      const ang = rng.next() * Math.PI * 2;
+      const rad = minDist * (1 + rng.next());
+      const nx = cx + Math.cos(ang) * rad;
+      const ny = cy + Math.sin(ang) * rad;
+      if (fits(nx, ny)) {
+        const p = [nx, ny];
+        points.push(p);
+        active.push(p);
+        grid[gridIndex(nx, ny)] = p;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      // O(1) removal: swap-and-pop instead of splice. Same effect
+      // (this candidate is exhausted), same resulting distribution —
+      // just avoids an O(n) shift on every removal.
+      const last = active.length - 1;
+      active[idx] = active[last];
+      active.pop();
+    }
+  }
+  return points;
+}
 
 export function stochasticStipple(imageData, opts = {}) {
   const { width, height, data } = imageData;
@@ -12,7 +82,9 @@ export function stochasticStipple(imageData, opts = {}) {
   const baseSpacing = opts.spacing ?? 4;
 
   const scale = Math.max(0.5, Math.min(width, height) / 1024);
-  const spacing = Math.max(2, baseSpacing * scale);
+  // Denser candidate field than the final visible spacing — matches the
+  // point-thinning-by-tone approach below (darker areas keep more points).
+  const minDist = Math.max(1.5, baseSpacing * scale * 0.7);
   const minR = minRadius * scale;
   const maxR = maxRadius * scale;
 
@@ -24,6 +96,7 @@ export function stochasticStipple(imageData, opts = {}) {
   }
 
   const rng = createImageRNG(width, height);
+  const points = poissonDiskPoints(width, height, minDist, rng);
 
   const drawDot = (cx, cy, r) => {
     if (r < 0.35) return;
@@ -42,22 +115,18 @@ export function stochasticStipple(imageData, opts = {}) {
     }
   };
 
-  for (let y = -spacing; y < height + spacing; y += spacing) {
-    for (let x = -spacing; x < width + spacing; x += spacing) {
-      const jx = x + (rng.next() - 0.5) * spacing * 0.9;
-      const jy = y + (rng.next() - 0.5) * spacing * 0.9;
-      const sx = Math.min(width - 1, Math.max(0, Math.round(jx)));
-      const sy = Math.min(height - 1, Math.max(0, Math.round(jy)));
-      const lum = data[(sy * width + sx) * 4];
-      const darkness = 1 - lum / 255;
-      if (darkness <= 0.02) continue;
+  for (const [x, y] of points) {
+    const sx = Math.min(width - 1, Math.max(0, Math.round(x)));
+    const sy = Math.min(height - 1, Math.max(0, Math.round(y)));
+    const lum = data[(sy * width + sx) * 4];
+    const darkness = 1 - lum / 255;
+    if (darkness <= 0.02) continue;
 
-      const gamma = Math.pow(darkness, 0.75);
-      if (rng.next() > gamma) continue;
+    const gamma = Math.pow(darkness, 0.75);
+    if (rng.next() > gamma) continue; // density thinning by tone; points themselves stay blue-noise distributed
 
-      const radius = minR + (maxR - minR) * gamma * (0.75 + rng.next() * 0.5);
-      drawDot(jx, jy, radius);
-    }
+    const radius = minR + (maxR - minR) * gamma * (0.75 + rng.next() * 0.5);
+    drawDot(x, y, radius);
   }
 
   return out;

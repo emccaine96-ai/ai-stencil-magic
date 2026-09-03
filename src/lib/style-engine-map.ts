@@ -37,7 +37,7 @@ export const STYLE_TO_CLASSICAL: Record<StencilStyle, ClassicalProConfig> = {
     clahe: true,
     bilateral: true,
     morphology: true,
-    enhancedCleanup: { minPx: 5, closeRadius: 1 },
+    enhancedCleanup: { minPx: 4, closeRadius: 1 },
   },
   solid: {
     mode: "xdog",
@@ -75,7 +75,7 @@ export const STYLE_TO_CLASSICAL: Record<StencilStyle, ClassicalProConfig> = {
     clahe: true,
     bilateral: true,
     morphology: true,
-    enhancedCleanup: { minPx: 4, closeRadius: 1 },
+    enhancedCleanup: { minPx: 3, closeRadius: 1 },
   },
 };
 
@@ -101,6 +101,16 @@ export interface AdvancedPipelineConfig {
   toneLevels: number;
   minRegionPx: number;
   useOtsu: boolean;
+  // Optional form-following hatch overlay for the Advanced orchestrator only.
+  // null = no hatch layer composited (solid, dotwork placeholder).
+  hatching?: {
+    baseAngle: number;
+    followForm: boolean;
+    minSpacingPx: number;
+    maxSpacingPx: number;
+    lineWidthPx: number;
+    crosshatch: boolean;
+  } | null;
 }
 
 // Starting-point values, not final artistic tuning — verify visually against
@@ -118,6 +128,7 @@ export const STYLE_TO_ADVANCED: Record<StencilStyle, AdvancedPipelineConfig> = {
     toneLevels: 6,
     minRegionPx: 12,
     useOtsu: false,
+    hatching: { baseAngle: Math.PI / 4, followForm: true, minSpacingPx: 3, maxSpacingPx: 12, lineWidthPx: 1, crosshatch: false },
   },
   solid: {
     bandSigmas: { low: 10, mid: 4, high: 1.5 },
@@ -142,6 +153,7 @@ export const STYLE_TO_ADVANCED: Record<StencilStyle, AdvancedPipelineConfig> = {
     toneLevels: 4,
     minRegionPx: 25,
     useOtsu: false,
+    hatching: { baseAngle: Math.PI / 4, followForm: true, minSpacingPx: 4, maxSpacingPx: 14, lineWidthPx: 1, crosshatch: false },
   },
 };
 
@@ -166,5 +178,6 @@ export function scaleAdvancedByIntensity(
     toneLevels: Math.round(lerp(Math.max(3, base.toneLevels - 1), base.toneLevels + 1)),
     minRegionPx: Math.round(lerp(base.minRegionPx * 1.3, base.minRegionPx * 0.75)),
     useOtsu: base.useOtsu,
+    hatching: base.hatching ?? null,
   };
 }

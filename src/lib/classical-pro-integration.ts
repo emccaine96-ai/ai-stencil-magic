@@ -82,6 +82,7 @@ export async function processClassicalPro(
       toneLevels: advConfig.toneLevels,
       minRegionPx: advConfig.minRegionPx,
       useOtsu: advConfig.useOtsu,
+      hatching: advConfig.hatching ?? null,
     });
     // Render result to data URL
     const outCanvas = document.createElement("canvas");
