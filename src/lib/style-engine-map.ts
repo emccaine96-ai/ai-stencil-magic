@@ -19,6 +19,7 @@ export interface ClassicalProConfig {
   bilateral: boolean;
   morphology: boolean;
   enhancedCleanup?: { minPx: number; closeRadius: number };
+  useFormHatching?: boolean;
 }
 
 /**
@@ -38,6 +39,10 @@ export const STYLE_TO_CLASSICAL: Record<StencilStyle, ClassicalProConfig> = {
     bilateral: true,
     morphology: true,
     enhancedCleanup: { minPx: 4, closeRadius: 1 },
+    // Fix 3, approved 2026-09-02: real form-following directional hatching,
+    // verified before/after against a live render. Effective shadingMode
+    // here is "xdog" (no override below), which is what the gate now allows.
+    useFormHatching: true,
   },
   solid: {
     mode: "xdog",

@@ -197,32 +197,6 @@ class ClassicalProEngine {
       }
     }
 
-    // 4.7. Optional form-aware hatching (additive — only when useFormHatching is true)
-    if (s.useFormHatching && s.shadingMode === 'multiscale') {
-      const _gray = new Float32Array(workW * workH);
-      for (let i = 0, p = 0; i < img.data.length; i += 4, p++) _gray[p] = img.data[i];
-      const lowEdges = sobel(_gray, workW, workH);
-      const gxField = new Float32Array(workW * workH);
-      const gyField = new Float32Array(workW * workH);
-      for (let i = 0; i < workW * workH; i++) {
-        gxField[i] = Math.cos(lowEdges.direction[i]) * lowEdges.magnitude[i];
-        gyField[i] = Math.sin(lowEdges.direction[i]) * lowEdges.magnitude[i];
-      }
-      const orientation = structureTensorOrientation(gxField, gyField, workW, workH);
-      const hatchLayer = renderHatchLayer(_gray, orientation, workW, workH, {
-        baseAngle: Math.PI / 4,
-        followForm: true,
-        minSpacingPx: 3,
-        maxSpacingPx: 12,
-        lineWidthPx: 1,
-        crosshatch: false,
-      });
-      const od = stencil.data;
-      for (let i = 0, p = 0; i < od.length; i += 4, p++) {
-        if (hatchLayer[p]) { od[i] = od[i+1] = od[i+2] = 0; od[i+3] = 255; }
-      }
-    }
-
     // 5. Structure Tensor flow modulation
     if (s.useStructureTensor) {
       const tensor = computeStructureTensor(img, s.tensorRadius);
@@ -245,10 +219,23 @@ class ClassicalProEngine {
     // small isolated regions by design, and component-pruning would delete
     // legitimate dots rather than noise. Morphological closing (gap-bridging)
     // is safe to keep for dither since it doesn't delete area.
+    //
+    // CRITICAL FIX 2026-09-03: ink detection here was reading the ALPHA
+    // channel (stencil.data[i+3]), but alpha is NOT the ink signal anywhere
+    // else in this pipeline. Every other stage — adaptiveThreshold,
+    // combineEdgeAndDither, applyFlowModulation, removeSmallBlobs,
+    // dilateErode, mapToHectographPurple, makeTransparentBackground — reads
+    // RGB darkness (data[i] < 128) as the universal ink signal and leaves
+    // alpha at 255 until step 8's final color mapping sets it for real. For
+    // the 'xdog' and 'dither' branches (Hatching/Solid/Hybrid — the only
+    // styles enhancedCleanup is configured for), alpha was uniformly 255
+    // everywhere, so this code misread the ENTIRE image as one giant ink
+    // blob and painted it solid black on every render. Reading RGB instead
+    // (matching the convention used everywhere else) fixes it.
     if (s.useEnhancedCleanup) {
       const inkMask = new Uint8ClampedArray(workW * workH);
       for (let i = 0, p = 0; i < stencil.data.length; i += 4, p++) {
-        inkMask[p] = stencil.data[i + 3] > 10 ? 255 : 0;
+        inkMask[p] = stencil.data[i] < 128 ? 255 : 0;
       }
       const isDither = s.shadingMode === 'dither';
       const specksRemoved = isDither
@@ -258,8 +245,46 @@ class ClassicalProEngine {
       const closed = morphClose(specksRemoved, workW, workH, closeRadius);
       const od = stencil.data;
       for (let i = 0, p = 0; i < od.length; i += 4, p++) {
-        od[i + 3] = closed[p] ? 255 : 0;
-        if (closed[p]) { od[i] = od[i+1] = od[i+2] = 0; }
+        if (closed[p]) {
+          od[i] = od[i + 1] = od[i + 2] = 0;
+          od[i + 3] = 255;
+        } else {
+          od[i] = od[i + 1] = od[i + 2] = 255;
+          od[i + 3] = 255;
+        }
+      }
+    }
+
+    // 6.6. Optional form-aware hatching (additive — only when useFormHatching is true).
+    // Relocated here (was originally 4.7, before the cleanup stages) — hatch
+    // strokes are a deliberate final artistic layer, not noise. Running them
+    // before step 6's unconditional removeSmallBlobs / step 6.5's opt-in
+    // enhanced speck removal caused those cleanup passes to prune every hatch
+    // stroke as a "speck," making this feature a silent no-op whenever any
+    // cleanup was active — which it always is for styles that use hatching
+    // (enhancedCleanup is set for the hatching style). Fixed 2026-09-02.
+    if (s.useFormHatching && (s.shadingMode === 'multiscale' || s.shadingMode === 'xdog')) {
+      const _gray = new Float32Array(workW * workH);
+      for (let i = 0, p = 0; i < img.data.length; i += 4, p++) _gray[p] = img.data[i];
+      const lowEdges = sobel(_gray, workW, workH);
+      const gxField = new Float32Array(workW * workH);
+      const gyField = new Float32Array(workW * workH);
+      for (let i = 0; i < workW * workH; i++) {
+        gxField[i] = Math.cos(lowEdges.direction[i]) * lowEdges.magnitude[i];
+        gyField[i] = Math.sin(lowEdges.direction[i]) * lowEdges.magnitude[i];
+      }
+      const orientation = structureTensorOrientation(gxField, gyField, workW, workH);
+      const hatchLayer = renderHatchLayer(_gray, orientation, workW, workH, {
+        baseAngle: Math.PI / 4,
+        followForm: true,
+        minSpacingPx: 3,
+        maxSpacingPx: 12,
+        lineWidthPx: 1,
+        crosshatch: false,
+      });
+      const od = stencil.data;
+      for (let i = 0, p = 0; i < od.length; i += 4, p++) {
+        if (hatchLayer[p]) { od[i] = od[i+1] = od[i+2] = 0; od[i+3] = 255; }
       }
     }
 
