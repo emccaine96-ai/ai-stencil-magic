@@ -55,15 +55,60 @@ const OR_KEY_STORAGE = "stencilmagic.openrouter.key";
 const PROVIDER_STORAGE = "stencilmagic.provider"; // 'openrouter' | 'gemini'
 const OR_MODEL_STORAGE = "stencilmagic.openrouter.model";
 type Provider = "openrouter" | "gemini" | "classical" | "hybrid";
-const STYLE_PROMPTS: Record<Style, string> = {
-  hatching:
-    "Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable.",
-  solid:
-    "Clean bold solid line work, no shading fills. Use varying line weights only. Closed clean contours. Highlights pure white.",
-  dotwork:
-    "Dotwork stencil: clean solid CONTOUR LINES define every shape, with stippling DOTS filling the interior tones. Shadows = very dense small dots; dark mids = medium density; mids = sparse; lights = very few; highlights = pure white. Contour lines must be present and crisp — this is NOT pure dots, it is line work + dot shading.",
-  hybrid:
-    "Combine bold solid CONTOUR LINES with CROSSHATCHING in dark areas and STIPPLING dots in mid-to-light areas. All three techniques visible in the same image.",
+const STYLE_PROMPT_BLOCKS: Record<Style, string> = {
+  hatching: `STYLE: HATCHING
+Pure pen-and-ink crosshatching — visible straight line strokes only, NEVER dots, NEVER solid fills.
+- For portraits: apply 3D face-mesh aware crosshatching that follows facial surface curvature (cheek, jawline, brow ridge, nose bridge). Eyes, lips and teeth crisply defined.
+- For flowers / objects: delicate parallel hatching radiating along petal curvature, soft pencil-like graduations from saturated purple in shadow folds to faint outline on outer petals.
+
+TONAL LAYERING (5 tiers, hatch density/direction only):
+1. Deep shadows — densest mark-making, 3 overlaid hatch directions.
+2. Dark mid-tones — heavy mark-making, 2 hatch directions.
+3. Mid-tones — medium single-direction hatching.
+4. Light mid-tones — sparse parallel strokes.
+5. Highlights — pure white paper, no marks.
+
+HATCH GEOMETRY: primary 45°, secondary 135°, tertiary 90°. ~3px line spacing. Lines must be crisp, straight and clearly readable. Absolutely no dots or stipple marks anywhere.`,
+
+  solid: `STYLE: SOLID
+Clean bold solid line work only. NO shading fills, NO cross-hatching, NO parallel hatching, NO dots or stippling of any kind, anywhere in the image. Depth is expressed ONLY through line-weight variation on closed, clean contours.
+- For portraits: bold varying-weight contour lines define every facial feature and structural edge — heavier or doubled lines at deep-shadow boundaries (jawline undercut, brow ridge, nostril, ear canal), lighter single lines for subtle contours. No interior mark-making inside any contour.
+- For flowers / objects: bold single-weight outline per petal/leaf/edge boundary; heavier line weight only where forms overlap or a deep fold occurs.
+
+LINE-WEIGHT LAYERING (5 tiers, weight only — no interior marks of any kind):
+1. Deep shadows — thickest line, doubled/tripled where contours overlap.
+2. Dark mid-tones — thick single contour line.
+3. Mid-tones — medium-weight contour line.
+4. Light areas — thin, delicate contour line.
+5. Highlights — no line at all, pure white paper.`,
+
+  dotwork: `STYLE: DOTWORK
+Clean solid CONTOUR LINES define every shape. ALL interior shading is stippling DOTS only — NEVER hatch lines or parallel strokes anywhere in the image.
+- For portraits: crisp solid contour lines outline every facial feature and boundary; all tonal depth inside those contours comes entirely from dot density, never from line strokes.
+- For flowers / objects: bold contour per shape; interior shading is dot density only.
+
+DOT DENSITY LAYERING (5 tiers, density only — no hatch lines):
+1. Deep shadows — dots nearly touching, maximum density.
+2. Dark mid-tones — medium-dense dots with visible white space between each dot.
+3. Mid-tones — evenly spaced sparse dots.
+4. Light mid-tones — very few, widely scattered dots.
+5. Highlights — pure white, zero dots.
+
+DOT GEOMETRY: dots ~1-2px diameter, circular, cleanly separated — never smudged together into a line or hatch mark. Contour lines are present and crisp; this is NOT pure dots, it is line work + dot shading, but the shading itself is 100% dots.`,
+
+  hybrid: `STYLE: HYBRID
+Combine bold solid CONTOUR LINES on every shape boundary with CROSSHATCHING confined to the darkest shadow areas and STIPPLING dots carrying the mid-to-light tones — all three techniques visible together, each confined to its own tonal range so they don't blend into mud.
+- For portraits: bold contour lines on every feature edge; crosshatching only in the deepest shadow pockets (eye sockets, under-jaw, nostril shadow); dot shading carries the mid-tones and light transitions.
+- For flowers / objects: bold outline per petal/leaf; hatching only in the deepest fold shadows; dots for the mid-tone gradation toward the highlight.
+
+TONAL LAYERING (5 tiers — technique changes by tier, this is the point of Hybrid):
+1. Deep shadows — 2-3 overlaid hatch directions (45°/135°/90°).
+2. Dark mid-tones — single-direction hatching, transitioning to dense dots at the tier's edge.
+3. Mid-tones — dense-to-medium dot stippling, no hatch lines.
+4. Light mid-tones — sparse, widely-spaced dots.
+5. Highlights — pure white paper, no marks.
+
+Contour line weight follows the same logic as Solid: heavier at deep-shadow boundaries, thin at light edges.`,
 };
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -1129,7 +1174,25 @@ function CreatePage() {
 function buildPrompt(o: { style: Style; intensity: number; customPrompt?: string }) {
   // Bake the proven "May 27" defaults into the prompt so first-shot output is
   // gallery-grade without the user needing to touch sliders.
-  const base = `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.\n\nHARD RULES:\n- Output a single image on PURE WHITE background.\n- All ink is the EXACT color #A855F7 (neon purple). No gray, no black, no other colors.\n- Crystal-clear closed contour line work, tattoo-stencil ready.\n- Preserve the subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly.\n- For portraits: apply 3D face-mesh aware crosshatching that follows facial surface curvature (cheek, jawline, brow ridge, nose bridge). Eyes, lips and teeth crisply defined.\n- For flowers / objects: delicate parallel hatching radiating along petal curvature, soft pencil-like graduations from saturated purple in shadow folds to faint outline on outer petals.\n\nTONAL LAYERING (5 tiers via Otsu multi-level thresholding):\n1. Deep shadows — densest mark-making, 3 overlaid hatch directions.\n2. Dark mid-tones — heavy mark-making, 2 hatch directions.\n3. Mid-tones — medium single-direction hatching.\n4. Light mid-tones — sparse parallel strokes.\n5. Highlights — pure white paper.\n\nHATCH GEOMETRY: primary 45°, secondary 135°, tertiary 90°. ~3px line spacing.\n\nSTYLE: ${o.style.toUpperCase()}\n${STYLE_PROMPTS[o.style]}\n\nOverall shading density: ${Math.round(o.intensity * 100)}%.\nNo text, no watermarks, no signatures, no frame, no background scenery.`;
+  //
+  // FIXED 2026-09-03: this used to share ONE hatch-specific base (crosshatching,
+  // hatch-direction tonal tiers, hatch geometry) across ALL 4 styles, with only a
+  // one-line style-specific addendum appended at the end. For Solid ("no shading
+  // fills") and Dotwork ("NOT pure dots") that addendum directly contradicted the
+  // 6+ hatch-specific instructions immediately above it in the same prompt. Now
+  // each style gets ONE fully self-consistent block (own portrait/object guidance,
+  // own tonal-layering logic, own geometry) — nothing in a style's block conflicts
+  // with anything else in that same block. Only the header below (background,
+  // ink color, identity preservation, no-text) is genuinely universal and shared.
+  const header = `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.
+
+HARD RULES:
+- Output a single image on PURE WHITE background.
+- All ink is the EXACT color #A855F7 (neon purple). No gray, no black, no other colors.
+- Crystal-clear closed contour line work, tattoo-stencil ready.
+- Preserve the subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly.
+- No text, no watermarks, no signatures, no frame, no background scenery.`;
+  const base = `${header}\n\n${STYLE_PROMPT_BLOCKS[o.style]}\n\nOverall shading density: ${Math.round(o.intensity * 100)}%.`;
   const extra = o.customPrompt?.trim();
   if (!extra) return base;
   return `${base}\n\nADDITIONAL ARTIST INSTRUCTIONS (apply on top of everything above; do not violate the hard rules, ink color, white background, or tonal-layering rules above):\n${extra}`;
