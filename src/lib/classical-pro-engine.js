@@ -169,21 +169,8 @@ class ClassicalProEngine {
       stencil = applyXDoG(img, s.detail_radius, s.edge_sensitivity, s.shadow_block);
     }
 
-    // 4.5. Store intermediate data for InkStylePanel (additive — only read if needed)
     this.lastWidth = workW;
     this.lastHeight = workH;
-    if (s.shadingMode === 'multiscale') {
-      // For multiscale mode, store the intermediate tone data
-      const _gray = new Float32Array(workW * workH);
-      for (let i = 0, p = 0; i < img.data.length; i += 4, p++) _gray[p] = img.data[i];
-      this.lastToneIdx = quantizeTones(_gray, s.toneLevels ?? 5);
-      this.lastToneGray = _gray;
-      // Extract primary lines from stencil (before color mapping)
-      this.lastPrimaryLines = new Uint8ClampedArray(workW * workH);
-      for (let i = 0, p = 0; i < stencil.data.length; i += 4, p++) {
-        this.lastPrimaryLines[p] = stencil.data[i + 3] > 10 ? 255 : 0;
-      }
-    }
 
     // 4.6. Optional Otsu threshold (additive — only when useOtsu is true)
     if (s.useOtsu) {
@@ -291,6 +278,27 @@ class ClassicalProEngine {
     // 7. Line weight
     if (s.line_weight !== 0) {
       stencil = dilateErode(stencil, s.line_weight);
+    }
+
+    // 7.5. Store intermediate data for InkStylePanel (additive — only read if
+    // opened; the panel is collapsed by default and does nothing unless a
+    // user explicitly interacts with it). Previously gated behind
+    // shadingMode === 'multiscale', which none of the 4 selectable styles
+    // ever use — meaning this data was always null and InkStylePanel could
+    // never appear for any style. Now runs unconditionally, and reads RGB
+    // darkness (matching the convention fixed in step 6.5 above) instead of
+    // alpha. Captured here (after cleanup/hatching/line-weight, before the
+    // final color mapping) so it reflects the actual final line art the
+    // user sees, not a rougher pre-cleanup intermediate. Fixed 2026-09-03.
+    {
+      const _gray = new Float32Array(workW * workH);
+      for (let i = 0, p = 0; i < img.data.length; i += 4, p++) _gray[p] = img.data[i];
+      this.lastToneIdx = quantizeTones(_gray, s.toneLevels ?? 5);
+      this.lastToneGray = _gray;
+      this.lastPrimaryLines = new Uint8ClampedArray(workW * workH);
+      for (let i = 0, p = 0; i < stencil.data.length; i += 4, p++) {
+        this.lastPrimaryLines[p] = stencil.data[i] < 128 ? 255 : 0;
+      }
     }
 
     // 8. Output color
