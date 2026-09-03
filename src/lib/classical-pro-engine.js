@@ -240,14 +240,22 @@ class ClassicalProEngine {
       stencil = morphology(stencil, s.closeKernel, 'close');
     }
 
-    // 6.5. Enhanced cleanup (additive — only when useEnhancedCleanup is true)
+    // 6.5. Enhanced cleanup (additive — only when useEnhancedCleanup is true).
+    // Speck removal is skipped for dither/stipple output — individual dots are
+    // small isolated regions by design, and component-pruning would delete
+    // legitimate dots rather than noise. Morphological closing (gap-bridging)
+    // is safe to keep for dither since it doesn't delete area.
     if (s.useEnhancedCleanup) {
       const inkMask = new Uint8ClampedArray(workW * workH);
       for (let i = 0, p = 0; i < stencil.data.length; i += 4, p++) {
         inkMask[p] = stencil.data[i + 3] > 10 ? 255 : 0;
       }
-      const cleaned = removeSmallInkSpecks(inkMask, workW, workH, s.enhancedCleanupMinPx);
-      const closed = morphClose(cleaned, workW, workH, s.enhancedCleanupCloseRadius);
+      const isDither = s.shadingMode === 'dither';
+      const specksRemoved = isDither
+        ? inkMask
+        : removeSmallInkSpecks(inkMask, workW, workH, s.enhancedCleanupMinPx);
+      const closeRadius = isDither ? Math.min(1, s.enhancedCleanupCloseRadius) : s.enhancedCleanupCloseRadius;
+      const closed = morphClose(specksRemoved, workW, workH, closeRadius);
       const od = stencil.data;
       for (let i = 0, p = 0; i < od.length; i += 4, p++) {
         od[i + 3] = closed[p] ? 255 : 0;

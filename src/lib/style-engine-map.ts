@@ -18,6 +18,7 @@ export interface ClassicalProConfig {
   clahe: boolean;
   bilateral: boolean;
   morphology: boolean;
+  enhancedCleanup?: { minPx: number; closeRadius: number };
 }
 
 /**
@@ -36,6 +37,7 @@ export const STYLE_TO_CLASSICAL: Record<StencilStyle, ClassicalProConfig> = {
     clahe: true,
     bilateral: true,
     morphology: true,
+    enhancedCleanup: { minPx: 5, closeRadius: 1 },
   },
   solid: {
     mode: "xdog",
@@ -47,6 +49,7 @@ export const STYLE_TO_CLASSICAL: Record<StencilStyle, ClassicalProConfig> = {
     clahe: true,
     bilateral: true,
     morphology: true,
+    enhancedCleanup: { minPx: 5, closeRadius: 1 },
   },
   dotwork: {
     mode: "dither",
@@ -72,6 +75,7 @@ export const STYLE_TO_CLASSICAL: Record<StencilStyle, ClassicalProConfig> = {
     clahe: true,
     bilateral: true,
     morphology: true,
+    enhancedCleanup: { minPx: 4, closeRadius: 1 },
   },
 };
 
@@ -87,5 +91,80 @@ export function scaleByIntensity(
     shadow_block: Math.round(config.shadow_block * (0.5 + intensity)),
     edge_sensitivity: Math.min(1.05, config.edge_sensitivity * (0.9 + intensity * 0.15)),
     detail_radius: config.detail_radius * (0.8 + intensity * 0.4),
+  };
+}
+
+export interface AdvancedPipelineConfig {
+  bandSigmas: { low: number; mid: number; high: number };
+  edgeThresholds: { primaryPct: number; formPct: number; texturePct: number };
+  lineWeight: { minWeight: number; maxWeight: number; contrast: number };
+  toneLevels: number;
+  minRegionPx: number;
+  useOtsu: boolean;
+}
+
+// Starting-point values, not final artistic tuning — verify visually against
+// real test images and adjust. Directionally: Solid should render bolder,
+// fewer, larger regions; Hatching should render thinner, more numerous
+// contour lines; Hybrid sits between the two. Dotwork uses the same values as
+// Hatching as a placeholder only — Advanced cannot render dot texture yet
+// (see Patch 2's UI-side dotwork guard), so this config is never actually
+// exercised for that style until a stipple stage is added separately.
+export const STYLE_TO_ADVANCED: Record<StencilStyle, AdvancedPipelineConfig> = {
+  hatching: {
+    bandSigmas: { low: 8, mid: 3, high: 1 },
+    edgeThresholds: { primaryPct: 0.97, formPct: 0.93, texturePct: 0.85 },
+    lineWeight: { minWeight: 0.6, maxWeight: 1.6, contrast: 0.6 },
+    toneLevels: 6,
+    minRegionPx: 12,
+    useOtsu: false,
+  },
+  solid: {
+    bandSigmas: { low: 10, mid: 4, high: 1.5 },
+    edgeThresholds: { primaryPct: 0.95, formPct: 0.9, texturePct: 0.82 },
+    lineWeight: { minWeight: 1.4, maxWeight: 3.2, contrast: 0.35 },
+    toneLevels: 3,
+    minRegionPx: 40,
+    useOtsu: false,
+  },
+  dotwork: {
+    bandSigmas: { low: 8, mid: 3, high: 1 },
+    edgeThresholds: { primaryPct: 0.97, formPct: 0.93, texturePct: 0.85 },
+    lineWeight: { minWeight: 0.6, maxWeight: 1.6, contrast: 0.6 },
+    toneLevels: 6,
+    minRegionPx: 12,
+    useOtsu: false,
+  },
+  hybrid: {
+    bandSigmas: { low: 9, mid: 3.5, high: 1.2 },
+    edgeThresholds: { primaryPct: 0.96, formPct: 0.91, texturePct: 0.83 },
+    lineWeight: { minWeight: 1.0, maxWeight: 2.4, contrast: 0.5 },
+    toneLevels: 4,
+    minRegionPx: 25,
+    useOtsu: false,
+  },
+};
+
+export function scaleAdvancedByIntensity(
+  base: AdvancedPipelineConfig,
+  intensity: number,
+): AdvancedPipelineConfig {
+  const t = Math.max(0, Math.min(1, intensity));
+  const lerp = (a: number, b: number) => a + (b - a) * t;
+  return {
+    bandSigmas: base.bandSigmas,
+    edgeThresholds: {
+      primaryPct: lerp(base.edgeThresholds.primaryPct + 0.02, base.edgeThresholds.primaryPct - 0.02),
+      formPct: lerp(base.edgeThresholds.formPct + 0.02, base.edgeThresholds.formPct - 0.02),
+      texturePct: lerp(base.edgeThresholds.texturePct + 0.04, base.edgeThresholds.texturePct - 0.04),
+    },
+    lineWeight: {
+      minWeight: base.lineWeight.minWeight,
+      maxWeight: lerp(base.lineWeight.maxWeight * 0.85, base.lineWeight.maxWeight * 1.15),
+      contrast: base.lineWeight.contrast,
+    },
+    toneLevels: Math.round(lerp(Math.max(3, base.toneLevels - 1), base.toneLevels + 1)),
+    minRegionPx: Math.round(lerp(base.minRegionPx * 1.3, base.minRegionPx * 0.75)),
+    useOtsu: base.useOtsu,
   };
 }

@@ -687,15 +687,23 @@ function CreatePage() {
               <p className="text-[11px] text-muted-foreground">
                 Classical Pro uses the same style + shading density as above. Runs locally — no API key, no credits.
               </p>
-              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+              <label
+                className={`flex items-center gap-2 text-xs cursor-pointer ${style === "dotwork" ? "text-muted-foreground/40 cursor-not-allowed" : "text-muted-foreground"}`}
+              >
                 <input
                   type="checkbox"
-                  checked={useAdvancedPipeline}
+                  checked={useAdvancedPipeline && style !== "dotwork"}
+                  disabled={style === "dotwork"}
                   onChange={(e) => setUseAdvancedPipeline(e.target.checked)}
                   className="accent-primary"
                 />
                 <span>Advanced multi-scale pipeline (experimental)</span>
               </label>
+              {style === "dotwork" && useAdvancedPipeline ? (
+                <p className="text-[10px] text-muted-foreground/70">
+                  Advanced doesn't support Dotwork yet — using the standard engine for this style.
+                </p>
+              ) : null}
             </div>
           ) : null}
           {provider === "hybrid" ? (
