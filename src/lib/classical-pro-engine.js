@@ -10,10 +10,8 @@
 
 import { toGrayscale } from './classical/grayscale.js';
 import { applyMultiScaleRetinex } from './classical/retinex.js';
-import { buildFrequencyBands } from './classical-engine/pyramid.js';
-import { sobel, classifyEdges } from './classical-engine/edges.js';
-import { renderLineLayer } from './classical-engine/line-weight.js';
-import { quantizeTones, mergeSmallRegions } from './classical-engine/tone-simplify.js';
+import { sobel } from './classical-engine/edges.js';
+import { quantizeTones } from './classical-engine/tone-simplify.js';
 import { otsuThreshold, applyThreshold } from './classical-engine/otsu.js';
 import { structureTensorOrientation, renderHatchLayer } from './classical-engine/hatching.js';
 import { removeSmallInkSpecks, morphClose } from './classical-engine/cleanup.js';
@@ -27,46 +25,6 @@ import { stochasticStipple, combineEdgeAndDither } from './classical/stipple.js'
 import { morphology, removeSmallBlobs, dilateErode } from './classical/morphology.js';
 import { computeStructureTensor, applyFlowModulation } from './classical/structure-tensor.js';
 import { mapToHectographPurple, makeTransparentBackground } from './classical/output.js';
-
-function runMultiscaleEdgeStage(imageData, options) {
-  const { width: w, height: h, data } = imageData;
-  const gray = new Float32Array(w * h);
-  for (let i = 0, p = 0; i < data.length; i += 4, p++) gray[p] = data[i];
-
-  const bandSigmas = { low: 8, mid: 3, high: 1 };
-  const bands = buildFrequencyBands(gray, w, h, bandSigmas);
-
-  const lowEdges = sobel(bands.low, w, h);
-  const midEdges = sobel(bands.mid, w, h);
-  const highEdges = sobel(bands.high, w, h);
-  const classified = classifyEdges(
-    lowEdges.magnitude, midEdges.magnitude, highEdges.magnitude,
-    w, h,
-    lowEdges.direction,
-    { primaryPct: 0.97, formPct: 0.93, texturePct: 0.85 },
-  );
-
-  const lw = {
-    minWeight: options.lineWeightMin ?? 0.8,
-    maxWeight: options.lineWeightMax ?? 2.5,
-    contrast: options.lineWeightContrast ?? 0.5,
-  };
-  const lineLayer = renderLineLayer(classified, w, h, lw);
-
-  const toneLevels = options.toneLevels ?? 5;
-  const minRegionPx = options.minRegionPx ?? 20;
-  const toneIdx = quantizeTones(gray, toneLevels);
-  mergeSmallRegions(toneIdx, w, h, minRegionPx);
-
-  const out = new ImageData(w, h);
-  const od = out.data;
-  for (let i = 0, p = 0; i < od.length; i += 4, p++) {
-    const ink = lineLayer[p] > 0;
-    od[i] = od[i + 1] = od[i + 2] = ink ? 0 : 255;
-    od[i + 3] = ink ? 255 : 0;
-  }
-  return out;
-}
 
 class ClassicalProEngine {
   constructor(canvasElement) {
@@ -149,15 +107,17 @@ class ClassicalProEngine {
 
     let stencil;
 
-    if (s.shadingMode === 'multiscale') {
-      stencil = runMultiscaleEdgeStage(img, {
-        lineWeightMin: s.lineWeightMin,
-        lineWeightMax: s.lineWeightMax,
-        lineWeightContrast: s.lineWeightContrast,
-        toneLevels: s.toneLevels,
-        minRegionPx: s.minRegionPx,
-      });
-    } else if (s.shadingMode === 'dither') {
+    // NOTE: 'multiscale' shadingMode duplicate stage removed 2026-09-04 —
+    // confirmed unreachable dead code (classical-engine-audit.md item 3).
+    // No style config anywhere ever sets shadingMode/mode to 'multiscale'
+    // (STYLE_TO_CLASSICAL only uses 'xdog'/'dither'); the equivalent,
+    // actively-maintained implementation lives in classical-engine/index.ts's
+    // runUpgradePipeline (the Advanced pipeline path, wired separately via
+    // useAdvancedPipeline in classical-pro-integration.ts). Keeping two
+    // independent copies of the same frequency-band/Sobel/line-weight logic
+    // alive was the exact "duplicate parallel implementation" pattern
+    // AGENTS.md warns about.
+    if (s.shadingMode === 'dither') {
       const contourLines = applyXDoG(img, Math.max(0.8, s.detail_radius), s.edge_sensitivity, Math.max(9, s.shadow_block));
       const stipple = stochasticStipple(img, {
         minRadius: 0.55,

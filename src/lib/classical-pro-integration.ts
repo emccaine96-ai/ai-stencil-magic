@@ -27,6 +27,13 @@ export interface ClassicalProOptions {
   purpleTint?: boolean;
   // Advanced: use the full orchestrator pipeline (multiscale-advanced mode)
   useAdvancedPipeline?: boolean;
+  // Multi-Scale Retinex illumination normalization (classical/retinex.js).
+  // Wired into classical-pro-engine.js already (gated behind s.useRetinex,
+  // default false there) but had no way to reach it from any config or the
+  // UI. Off by default here too -- opt-in for harshly-lit/backlit reference
+  // photos, per VISION.md's "optional, not default" rule. Standard engine
+  // path only; the Advanced orchestrator path doesn't have a Retinex stage.
+  useRetinex?: boolean;
 }
 
 export interface ClassicalProResult {
@@ -123,6 +130,7 @@ export async function processClassicalPro(
     enhancedCleanupCloseRadius: scaled.enhancedCleanup?.closeRadius ?? 1,
     useFormHatching: scaled.useFormHatching ?? false,
     minBlobArea: scaled.minBlobArea ?? 6,
+    useRetinex: options.useRetinex ?? false,
   });
 
   // Read intermediate data from the engine instance (for InkStylePanel)

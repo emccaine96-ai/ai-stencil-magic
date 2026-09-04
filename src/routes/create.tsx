@@ -218,6 +218,10 @@ function CreatePage() {
   // SVG export state
   const [svgExporting, setSvgExporting] = useState(false);
   const [useAdvancedPipeline, setUseAdvancedPipeline] = useState(false);
+  // Multi-Scale Retinex illumination normalization -- off by default (opt-in
+  // for harshly-lit/backlit reference photos), per VISION.md's "optional,
+  // not default" rule and the classical-engine-audit.md recommendation.
+  const [useRetinex, setUseRetinex] = useState(false);
 
   // Load self-hosted fonts on mount (Font Squirrel system)
   useEffect(() => {
@@ -384,6 +388,7 @@ function CreatePage() {
           intensity,
           purpleTint: true,
           useAdvancedPipeline,
+          useRetinex,
         });
         const purpleResult = await normalizeToPurpleInk(result.dataUrl);
         setStencil(purpleResult);
@@ -400,6 +405,7 @@ function CreatePage() {
           style,
           intensity,
           purpleTint: false,
+          useRetinex,
         });
         // Step 2: Send classical result to AI for refinement — WITH the
         // original photo included for identity/likeness grounding, since the
@@ -755,6 +761,15 @@ function CreatePage() {
                   Advanced doesn't support Dotwork yet — using the standard engine for this style.
                 </p>
               ) : null}
+              <label className="flex items-center gap-2 text-xs cursor-pointer text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={useRetinex}
+                  onChange={(e) => setUseRetinex(e.target.checked)}
+                  className="accent-primary"
+                />
+                <span>Fix harsh lighting (illumination normalization)</span>
+              </label>
             </div>
           ) : null}
           {provider === "hybrid" ? (
@@ -765,6 +780,15 @@ function CreatePage() {
               <p className="text-[10px] text-muted-foreground">
                 Uses 1 API call. Falls back to Classical Pro only if no key is set.
               </p>
+              <label className="flex items-center gap-2 text-xs cursor-pointer text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={useRetinex}
+                  onChange={(e) => setUseRetinex(e.target.checked)}
+                  className="accent-primary"
+                />
+                <span>Fix harsh lighting (illumination normalization)</span>
+              </label>
             </div>
           ) : null}
           {provider === "openrouter" && !orKey ? (
