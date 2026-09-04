@@ -20,6 +20,16 @@ export interface ClassicalProConfig {
   morphology: boolean;
   enhancedCleanup?: { minPx: number; closeRadius: number };
   useFormHatching?: boolean;
+  // FIXED 2026-09-04: step 6 in classical-pro-engine.js always ran
+  // removeSmallBlobs at a hardcoded 6px, before step 6.5's per-style
+  // enhancedCleanup.minPx (4/5/3) ever got a chance to matter — 6px is a
+  // superset of anything a smaller number would catch, so the Sep 3
+  // recalibration to 4/5/3px had zero effect (confirmed via direct
+  // before/after render diff). minBlobArea now lets a style match its own
+  // enhancedCleanup.minPx so the two passes agree. Omit to keep the
+  // original 6px default (dotwork, which has no enhancedCleanup pass of
+  // its own, is unaffected either way).
+  minBlobArea?: number;
 }
 
 /**
@@ -39,6 +49,7 @@ export const STYLE_TO_CLASSICAL: Record<StencilStyle, ClassicalProConfig> = {
     bilateral: true,
     morphology: true,
     enhancedCleanup: { minPx: 4, closeRadius: 1 },
+    minBlobArea: 4,
     // Fix 3, approved 2026-09-02: real form-following directional hatching,
     // verified before/after against a live render. Effective shadingMode
     // here is "xdog" (no override below), which is what the gate now allows.
@@ -55,6 +66,7 @@ export const STYLE_TO_CLASSICAL: Record<StencilStyle, ClassicalProConfig> = {
     bilateral: true,
     morphology: true,
     enhancedCleanup: { minPx: 5, closeRadius: 1 },
+    minBlobArea: 5,
   },
   dotwork: {
     mode: "dither",
@@ -81,6 +93,7 @@ export const STYLE_TO_CLASSICAL: Record<StencilStyle, ClassicalProConfig> = {
     bilateral: true,
     morphology: true,
     enhancedCleanup: { minPx: 3, closeRadius: 1 },
+    minBlobArea: 3,
   },
 };
 

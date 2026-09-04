@@ -122,6 +122,7 @@ export async function processClassicalPro(
     enhancedCleanupMinPx: scaled.enhancedCleanup?.minPx ?? 4,
     enhancedCleanupCloseRadius: scaled.enhancedCleanup?.closeRadius ?? 1,
     useFormHatching: scaled.useFormHatching ?? false,
+    minBlobArea: scaled.minBlobArea ?? 6,
   });
 
   // Read intermediate data from the engine instance (for InkStylePanel)

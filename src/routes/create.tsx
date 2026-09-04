@@ -376,6 +376,7 @@ function CreatePage() {
     setLoading(true);
     setError(null);
     setStencil(null);
+    setInkStyleData(null);
     try {
       if (provider === "classical") {
         const result = await processClassicalPro(photo, {
@@ -467,6 +468,11 @@ function CreatePage() {
         const purpleResult = await normalizeToPurpleInk(hybridDataUrl);
         setStencil(purpleResult);
         scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
+        // Hybrid genuinely has fresh Classical Pro intermediate data from its own
+        // pre-processing step above — surface it to the Ink Style Panel like the
+        // classical branch does, instead of leaving the panel hidden despite the
+        // data being available.
+        setInkStyleData(classicalResult.intermediate ?? null);
         setLoading(false);
         return;
       }
