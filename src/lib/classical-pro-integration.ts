@@ -20,6 +20,92 @@ import { runUpgradePipeline } from "./classical-engine/index";
 import { buildRegionParamField, type FocusRegion } from "./classical-engine/region-processing";
 // @ts-ignore — preset serialization
 import { serializePreset, loadPreset, type StencilPreset } from "./classical-engine/presets";
+import { segmentRegions, REGION } from "./classical-engine/region-segmenter";
+import type { BackgroundMode } from "./classical-engine/background";
+
+// Background modes exposed to users. 'simplify' is intentionally omitted:
+// applyBackgroundMode treats it as a no-op (it needs per-region param fields
+// that aren't wired into the standard engine path yet).
+export type UserBackgroundMode = Extract<BackgroundMode, "keep" | "remove" | "fade">;
+
+// Mirrors the working-resolution cap inside classical-pro-engine.js
+// (MAX_EDGE = 2400). The engine computes workW/workH internally and doesn't
+// expose them before step 8.5 needs the mask, so the segmentation mask is
+// resampled to the same dimensions here.
+const ENGINE_MAX_EDGE = 2400;
+
+function engineWorkingSize(srcW: number, srcH: number) {
+  const scale = Math.min(1, ENGINE_MAX_EDGE / Math.max(srcW, srcH));
+  return {
+    workW: Math.max(1, Math.round(srcW * scale)),
+    workH: Math.max(1, Math.round(srcH * scale)),
+  };
+}
+
+function resizeMaskNearest(
+  mask: Uint8Array, sw: number, sh: number, dw: number, dh: number,
+): Uint8Array {
+  if (sw === dw && sh === dh) return mask;
+  const out = new Uint8Array(dw * dh);
+  for (let y = 0; y < dh; y++) {
+    const sy = Math.min(sh - 1, Math.floor((y * sh) / dh));
+    for (let x = 0; x < dw; x++) {
+      const sx = Math.min(sw - 1, Math.floor((x * sw) / dw));
+      out[y * dw + x] = mask[sy * sw + sx];
+    }
+  }
+  return out;
+}
+
+/**
+ * Builds a background-only binary mask at the engine's working resolution.
+ * Returns null on any failure (MediaPipe unavailable, unexpected mask size),
+ * which makes the caller fall back to 'keep' — same graceful-degradation
+ * contract region-segmenter.ts documents for itself.
+ */
+async function buildBackgroundMask(
+  img: HTMLImageElement, workW: number, workH: number,
+): Promise<Uint8Array | null> {
+  try {
+    const segCanvas = document.createElement("canvas");
+    segCanvas.width = workW;
+    segCanvas.height = workH;
+    const segCtx = segCanvas.getContext("2d", { willReadFrequently: true });
+    if (!segCtx) return null;
+    segCtx.drawImage(img, 0, 0, workW, workH);
+
+    const categoryMask = await segmentRegions(segCanvas);
+    if (!categoryMask || categoryMask.length === 0) return null;
+
+    // MediaPipe may return the mask at its own model resolution rather than
+    // the input size — derive source dims from the returned length.
+    let sw = workW, sh = workH;
+    if (categoryMask.length !== workW * workH) {
+      const aspect = workW / workH;
+      sh = Math.round(Math.sqrt(categoryMask.length / aspect));
+      sw = sh > 0 ? Math.round(categoryMask.length / sh) : 0;
+      if (sw <= 0 || sh <= 0 || sw * sh !== categoryMask.length) {
+        const side = Math.round(Math.sqrt(categoryMask.length));
+        if (side * side !== categoryMask.length) return null;
+        sw = side; sh = side;
+      }
+    }
+
+    const bg = new Uint8Array(categoryMask.length);
+    let bgCount = 0;
+    for (let i = 0; i < categoryMask.length; i++) {
+      if (categoryMask[i] === REGION.BACKGROUND) { bg[i] = 1; bgCount++; }
+    }
+    // A fully-background or fully-foreground mask means segmentation didn't
+    // find a subject — don't wipe the whole stencil.
+    if (bgCount === 0 || bgCount === categoryMask.length) return null;
+
+    return resizeMaskNearest(bg, sw, sh, workW, workH);
+  } catch (e) {
+    console.warn("Background segmentation unavailable, keeping background:", e);
+    return null;
+  }
+}
 
 export interface ClassicalProOptions {
   style: StencilStyle;
@@ -34,7 +120,13 @@ export interface ClassicalProOptions {
   // photos, per VISION.md's "optional, not default" rule. Standard engine
   // path only; the Advanced orchestrator path doesn't have a Retinex stage.
   useRetinex?: boolean;
+  // Background separation (classical-engine/background.ts + engine step 8.5).
+  // Default 'keep' => fully inert. Standard engine path only; the Advanced
+  // orchestrator has no background stage.
+  backgroundMode?: UserBackgroundMode;
+  backgroundFadeOpacity?: number;
 }
+
 
 export interface ClassicalProResult {
   dataUrl: string;
