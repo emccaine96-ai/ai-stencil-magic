@@ -419,7 +419,21 @@ function CreatePage() {
         // nothing to stay faithful to.
         const { mimeType: cm, data: cB64 } = dataUrlToInline(classicalResult.dataUrl);
         const { mimeType: om, data: oB64 } = dataUrlToInline(photo);
-        const hybridPrompt = `Reference image 1 is the ORIGINAL PHOTO — preserve this subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly. Reference image 2 is a pre-processed structural line-art guide for the "${style}" style at ${Math.round(intensity * 100)}% shading density — use it as a structural guide for line placement, but the final result's likeness must match reference image 1, not deviate into generic features. Output a single clean tattoo stencil line drawing on pure white background, improving line quality and adding artistic detail while staying faithful to the original photo's actual identity. ${customPrompt || ""}`;
+        // FIXED 2026-09-05 (audit follow-up task 5): this used to be one
+        // generic sentence with zero style-specific technique reinforcement
+        // — the AI refinement step had nothing telling it "no shading fills"
+        // for Solid or "dots only, never hatch lines" for Dotwork, relying
+        // entirely on the classical reference image to carry style. Now
+        // folds in the same STYLE_PROMPT_BLOCKS[style] block buildPrompt()
+        // already gives the other 3 providers, so Hybrid gets identical
+        // textual technique reinforcement instead of relying on the
+        // reference image alone. buildPrompt() itself and the other 3
+        // providers are untouched — this only changes the hybrid branch.
+        const hybridPrompt = `Reference image 1 is the ORIGINAL PHOTO — preserve this subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly. Reference image 2 is a pre-processed structural line-art guide for the "${style}" style at ${Math.round(intensity * 100)}% shading density — use it as a structural guide for line placement, but the final result's likeness must match reference image 1, not deviate into generic features.
+
+${STYLE_PROMPT_BLOCKS[style]}
+
+Output a single clean tattoo stencil line drawing on pure white background, improving line quality and adding artistic detail while staying faithful to the original photo's actual identity, and strictly following the technique rules above for the "${style}" style. ${customPrompt || ""}`;
         let hybridDataUrl: string | null = null;
         // Try server-side first (OpenRouter). NOTE: passes both images via an
         // `images` array — generate-stencil.ts needs to read body.images
