@@ -5,6 +5,6 @@
 export {
   VaultProcreateEditor as StencilStudio,
   VaultProcreateEditor,
-  getDynamicSpacing,
 } from "./VaultProcreateEditor";
+
 export { default } from "./VaultProcreateEditor";
