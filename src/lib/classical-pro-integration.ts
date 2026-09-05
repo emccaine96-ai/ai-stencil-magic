@@ -167,11 +167,19 @@ export async function processClassicalPro(
   // silently render generic line output instead of dots. Fall through to the
   // standard engine below for that one style until a stipple stage is added.
   if (options.useAdvancedPipeline && options.style !== "dotwork") {
+    // Same MAX_EDGE=2400 downscale cap the standard engine already applies
+    // inside classical-pro-engine.js -- this path had no ceiling at all
+    // (advCanvas was sized directly to img.naturalWidth/naturalHeight), so a
+    // large phone photo (e.g. 4000x6000) could hang the tab or exhaust
+    // memory on mobile. Mirrors engineWorkingSize() above exactly.
+    const srcW = img.naturalWidth || img.width;
+    const srcH = img.naturalHeight || img.height;
+    const { workW: advW, workH: advH } = engineWorkingSize(srcW, srcH);
     const advCanvas = document.createElement("canvas");
-    advCanvas.width = img.naturalWidth || img.width;
-    advCanvas.height = img.naturalHeight || img.height;
+    advCanvas.width = advW;
+    advCanvas.height = advH;
     const advCtx = advCanvas.getContext("2d", { willReadFrequently: true })!;
-    advCtx.drawImage(img, 0, 0);
+    advCtx.drawImage(img, 0, 0, advW, advH);
     const imageData = advCtx.getImageData(0, 0, advCanvas.width, advCanvas.height);
     const advConfig = scaleAdvancedByIntensity(STYLE_TO_ADVANCED[options.style], options.intensity);
     const result = await runUpgradePipeline(imageData, {
