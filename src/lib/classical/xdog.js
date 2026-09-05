@@ -48,5 +48,10 @@ export function applyXDoG(imageData, detailRadius, edgeSensitivity, shadowBlock)
     o[i + 3] = 255;
   }
 
-  return adaptiveThreshold(out, shadowBlock);
+  // Hysteresis rescues weak-but-connected line continuation in soft/low-
+  // contrast regions (fixes broken/dashed lines); diagonal-bridging fixes
+  // the "made of dots" staircase look at zoom. Both scoped to this one
+  // call site -- see threshold.js's adaptiveThreshold for why every other
+  // caller (including the regression test suite) is unaffected.
+  return adaptiveThreshold(out, shadowBlock, 0.15, { hysteresis: true, bridgeDiagonals: true });
 }

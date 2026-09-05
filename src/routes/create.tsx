@@ -581,8 +581,12 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
       setTimeout(() => URL.revokeObjectURL(u), 1000);
       toast.success("SVG exported");
     } catch (e) {
-      // imagetracerjs not installed — graceful fallback
-      toast.error("SVG export requires imagetracerjs (not installed)");
+      // FIXED 2026-09-05: imagetracerjs IS installed (confirmed via direct
+      // import test) and this catch block can fire for other reasons (image
+      // load failure, canvas errors) -- the old message claimed a specific,
+      // now-incorrect cause. Generic message instead of a wrong diagnosis.
+      console.error('[create] SVG export failed', e);
+      toast.error("SVG export failed — please try again");
     } finally {
       setSvgExporting(false);
     }
