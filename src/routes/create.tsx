@@ -222,6 +222,10 @@ function CreatePage() {
   // for harshly-lit/backlit reference photos), per VISION.md's "optional,
   // not default" rule and the classical-engine-audit.md recommendation.
   const [useRetinex, setUseRetinex] = useState(false);
+  // Background separation -- 'keep' by default (fully inert), same
+  // optional/off-by-default treatment as Retinex above.
+  const [backgroundMode, setBackgroundMode] = useState<"keep" | "remove" | "fade">("keep");
+
 
   // Load self-hosted fonts on mount (Font Squirrel system)
   useEffect(() => {
