@@ -393,6 +393,7 @@ function CreatePage() {
           purpleTint: true,
           useAdvancedPipeline,
           useRetinex,
+          backgroundMode,
         });
         const purpleResult = await normalizeToPurpleInk(result.dataUrl);
         setStencil(purpleResult);
@@ -410,6 +411,7 @@ function CreatePage() {
           intensity,
           purpleTint: false,
           useRetinex,
+          backgroundMode,
         });
         // Step 2: Send classical result to AI for refinement — WITH the
         // original photo included for identity/likeness grounding, since the
@@ -774,6 +776,18 @@ function CreatePage() {
                 />
                 <span>Fix harsh lighting (illumination normalization)</span>
               </label>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Background:</span>
+                <select
+                  value={backgroundMode}
+                  onChange={(e) => setBackgroundMode(e.target.value as "keep" | "remove" | "fade")}
+                  className="bg-background border border-border rounded-lg px-2 py-1 text-xs"
+                >
+                  <option value="keep">Keep</option>
+                  <option value="remove">Remove</option>
+                  <option value="fade">Fade</option>
+                </select>
+              </label>
             </div>
           ) : null}
           {provider === "hybrid" ? (
@@ -792,6 +806,18 @@ function CreatePage() {
                   className="accent-primary"
                 />
                 <span>Fix harsh lighting (illumination normalization)</span>
+              </label>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Background:</span>
+                <select
+                  value={backgroundMode}
+                  onChange={(e) => setBackgroundMode(e.target.value as "keep" | "remove" | "fade")}
+                  className="bg-background border border-border rounded-lg px-2 py-1 text-xs"
+                >
+                  <option value="keep">Keep</option>
+                  <option value="remove">Remove</option>
+                  <option value="fade">Fade</option>
+                </select>
               </label>
             </div>
           ) : null}
