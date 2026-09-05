@@ -207,6 +207,20 @@ export async function processClassicalPro(
     };
   }
 
+  // Background separation (opt-in). Falls back to 'keep' when segmentation
+  // is unavailable, so generation never breaks on a MediaPipe failure.
+  const requestedBgMode = options.backgroundMode ?? "keep";
+  let bgMode: UserBackgroundMode = "keep";
+  let bgMask: Uint8Array | null = null;
+  if (requestedBgMode !== "keep") {
+    const { workW, workH } = engineWorkingSize(
+      img.naturalWidth || img.width,
+      img.naturalHeight || img.height,
+    );
+    bgMask = await buildBackgroundMask(img, workW, workH);
+    if (bgMask) bgMode = requestedBgMode;
+  }
+
   const dataUrl: string = engine.processImage(img, {
     useClahe: scaled.clahe,
     shadingMode: scaled.shadingMode ?? scaled.mode,
@@ -223,7 +237,11 @@ export async function processClassicalPro(
     useFormHatching: scaled.useFormHatching ?? false,
     minBlobArea: scaled.minBlobArea ?? 6,
     useRetinex: options.useRetinex ?? false,
+    backgroundMode: bgMode,
+    backgroundMask: bgMask,
+    backgroundFadeOpacity: options.backgroundFadeOpacity ?? 0.25,
   });
+
 
   // Read intermediate data from the engine instance (for InkStylePanel)
   let intermediate: ClassicalProResult["intermediate"] = null;
