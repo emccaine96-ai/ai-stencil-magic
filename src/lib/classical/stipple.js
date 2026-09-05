@@ -98,19 +98,52 @@ export function stochasticStipple(imageData, opts = {}) {
   const rng = createImageRNG(width, height);
   const points = poissonDiskPoints(width, height, minDist, rng);
 
+  // Supersampled, sub-pixel-precise circle rasterization. The dot radii this
+  // function actually receives are tiny (~0.4-2px after minRadius/maxRadius
+  // are scaled down for a typical portrait's working resolution) -- at that
+  // size, a single-sample point-in-circle test per pixel (the previous
+  // version: round the center to the nearest integer pixel, then test each
+  // candidate pixel's own center against the circle) produces visibly
+  // jagged, inconsistently-shaped blobs from dot to dot -- some render as a
+  // single pixel, some as an L-shape or diamond -- because it throws away
+  // the sub-pixel part of the dot's true position and only has one sample
+  // per pixel to decide a curved edge. This is the actual cause of dots
+  // reading as "fuzzy"/irregular rather than clean round dots.
+  // Fix: keep the float center (cx, cy) as-is (no upfront rounding), and for
+  // each candidate pixel, take a 3x3 grid of sub-samples and use a majority
+  // vote (>=5 of 9 covered) to decide ink/no-ink. This approximates true
+  // circular *area* coverage instead of a single point sample, giving much
+  // more consistent, round-looking dot shapes at small radii. Output stays
+  // strictly binary black/white -- no anti-aliased/gray edges -- since a
+  // real tattoo stencil needs clean, printable ink, not soft gradients.
+  const SS = 3;
+  const subStep = 1 / SS;
+  const subHalf = subStep / 2;
+  const majorityNeeded = Math.ceil((SS * SS) / 2);
   const drawDot = (cx, cy, r) => {
     if (r < 0.35) return;
-    const rInt = Math.ceil(r);
-    const cxi = Math.round(cx), cyi = Math.round(cy);
+    const rInt = Math.ceil(r) + 1;
+    const cxi = Math.floor(cx), cyi = Math.floor(cy);
     for (let dy = -rInt; dy <= rInt; dy++) {
       const ny = cyi + dy;
       if (ny < 0 || ny >= height) continue;
       for (let dx = -rInt; dx <= rInt; dx++) {
         const nx = cxi + dx;
         if (nx < 0 || nx >= width) continue;
-        if (dx * dx + dy * dy > r * r) continue;
-        const idx = (ny * width + nx) * 4;
-        o[idx] = o[idx + 1] = o[idx + 2] = 0;
+        let covered = 0;
+        for (let sy = 0; sy < SS; sy++) {
+          const py = ny + subHalf + sy * subStep;
+          const ddy = py - cy;
+          for (let sx = 0; sx < SS; sx++) {
+            const px = nx + subHalf + sx * subStep;
+            const ddx = px - cx;
+            if (ddx * ddx + ddy * ddy <= r * r) covered++;
+          }
+        }
+        if (covered >= majorityNeeded) {
+          const idx = (ny * width + nx) * 4;
+          o[idx] = o[idx + 1] = o[idx + 2] = 0;
+        }
       }
     }
   };
