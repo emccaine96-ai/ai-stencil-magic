@@ -105,6 +105,17 @@ class ClassicalProEngine {
     // 4. S-curve + gamma contrast
     img = applySCurveAndGamma(img, s.contrastStrength, s.gamma);
 
+    // Grayscale array shared by steps 4.6 (Otsu), 6.6 (form hatching), and
+    // 7.5 (InkStylePanel capture) below -- all three independently rebuilt
+    // an identical Float32Array of img.data[i] at stride 4 (same source,
+    // same values, since `img` is never reassigned between here and step
+    // 7.5). Computed once here instead; every reference below now reads
+    // this same array rather than rebuilding it. Pure perf refactor --
+    // values are byte-identical to what each site computed independently
+    // before this change.
+    const _sharedGray = new Float32Array(workW * workH);
+    for (let i = 0, p = 0; i < img.data.length; i += 4, p++) _sharedGray[p] = img.data[i];
+
     let stencil;
 
     // NOTE: 'multiscale' shadingMode duplicate stage removed 2026-09-04 —
@@ -134,10 +145,8 @@ class ClassicalProEngine {
 
     // 4.6. Optional Otsu threshold (additive — only when useOtsu is true)
     if (s.useOtsu) {
-      const _gray = new Float32Array(workW * workH);
-      for (let i = 0, p = 0; i < img.data.length; i += 4, p++) _gray[p] = img.data[i];
-      const t = otsuThreshold(_gray);
-      const otsuMask = applyThreshold(_gray, t);
+      const t = otsuThreshold(_sharedGray);
+      const otsuMask = applyThreshold(_sharedGray, t);
       const od = stencil.data;
       for (let i = 0, p = 0; i < od.length; i += 4, p++) {
         if (otsuMask[p] === 0) { od[i] = od[i+1] = od[i+2] = 0; od[i+3] = 255; }
@@ -211,9 +220,7 @@ class ClassicalProEngine {
     // cleanup was active — which it always is for styles that use hatching
     // (enhancedCleanup is set for the hatching style). Fixed 2026-09-02.
     if (s.useFormHatching && (s.shadingMode === 'multiscale' || s.shadingMode === 'xdog')) {
-      const _gray = new Float32Array(workW * workH);
-      for (let i = 0, p = 0; i < img.data.length; i += 4, p++) _gray[p] = img.data[i];
-      const lowEdges = sobel(_gray, workW, workH);
+      const lowEdges = sobel(_sharedGray, workW, workH);
       const gxField = new Float32Array(workW * workH);
       const gyField = new Float32Array(workW * workH);
       for (let i = 0; i < workW * workH; i++) {
@@ -221,7 +228,7 @@ class ClassicalProEngine {
         gyField[i] = Math.sin(lowEdges.direction[i]) * lowEdges.magnitude[i];
       }
       const orientation = structureTensorOrientation(gxField, gyField, workW, workH);
-      const hatchLayer = renderHatchLayer(_gray, orientation, workW, workH, {
+      const hatchLayer = renderHatchLayer(_sharedGray, orientation, workW, workH, {
         baseAngle: Math.PI / 4,
         followForm: true,
         minSpacingPx: 3,
@@ -251,10 +258,8 @@ class ClassicalProEngine {
     // final color mapping) so it reflects the actual final line art the
     // user sees, not a rougher pre-cleanup intermediate. Fixed 2026-09-03.
     {
-      const _gray = new Float32Array(workW * workH);
-      for (let i = 0, p = 0; i < img.data.length; i += 4, p++) _gray[p] = img.data[i];
-      this.lastToneIdx = quantizeTones(_gray, s.toneLevels ?? 5);
-      this.lastToneGray = _gray;
+      this.lastToneIdx = quantizeTones(_sharedGray, s.toneLevels ?? 5);
+      this.lastToneGray = _sharedGray;
       this.lastPrimaryLines = new Uint8ClampedArray(workW * workH);
       for (let i = 0, p = 0; i < stencil.data.length; i += 4, p++) {
         this.lastPrimaryLines[p] = stencil.data[i] < 128 ? 255 : 0;
