@@ -72,6 +72,19 @@ function poissonDiskPoints(width, height, minDist, rng, maxAttempts = 30) {
       active.pop();
     }
   }
+  // Audit Fix #4, confirmed 2026-09-06: previously, hitting the safety cap
+  // truncated generation wherever the random active-list walk happened to
+  // be -- not uniformly -- leaving some regions with zero stipple coverage
+  // and no signal anywhere that it happened. Dev-only warning; zero
+  // behavior change to the actual point set, zero production console noise.
+  if (points.length >= maxPoints && import.meta.env?.DEV) {
+    console.warn(
+      `[stipple] Hit maxPoints safety cap (${maxPoints}) before Poisson-disk ` +
+      `generation completed naturally on a ${width}x${height} canvas. Some ` +
+      `regions may have incomplete stipple coverage. Consider raising ` +
+      `maxPoints or increasing minDist for this resolution.`
+    );
+  }
   return points;
 }
 
