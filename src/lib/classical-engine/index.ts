@@ -55,6 +55,13 @@ export interface PipelineResult {
   tattooability: TattooabilityResult;
   width: number;
   height: number;
+  intermediate: {
+    primaryLines: Uint8ClampedArray;
+    toneIdx: Uint8Array;
+    toneGray: Float32Array;
+    width: number;
+    height: number;
+  };
 }
 
 /** Convert ImageData to Float32Array grayscale. */
@@ -65,6 +72,26 @@ function toGrayFloat(imageData: ImageData): Float32Array {
     gray[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
   }
   return gray;
+}
+
+/** Dilate a class map so form-hatch can sit beside 1px NMS ridges. */
+function dilateClassMask(classMap: Uint8Array, w: number, h: number, r: number): Uint8Array {
+  const out = new Uint8Array(w * h);
+  const r2 = r * r;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (classMap[y * w + x] === 0) continue;
+      const y0 = Math.max(0, y - r), y1 = Math.min(h - 1, y + r);
+      const x0 = Math.max(0, x - r), x1 = Math.min(w - 1, x + r);
+      for (let yy = y0; yy <= y1; yy++) {
+        for (let xx = x0; xx <= x1; xx++) {
+          const dy = yy - y, dx = xx - x;
+          if (dx * dx + dy * dy <= r2) out[yy * w + xx] = 1;
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -115,6 +142,9 @@ export async function runUpgradePipeline(
   // 4. Line weight rendering
   const lw = options.lineWeight ?? { minWeight: 0.8, maxWeight: 2.5, contrast: 0.5 };
   let lineLayer = renderLineLayer(classified, w, h, lw);
+  // Copy before steps 6–8 mutate lineLayer in place — InkStylePanel needs
+  // the primary contour layer, not the post-hatch composite.
+  const primaryLines = new Uint8ClampedArray(lineLayer);
 
   // 5. Tonal simplification
   const toneLevels = options.toneLevels ?? 5;
@@ -142,8 +172,17 @@ export async function runUpgradePipeline(
     }
     const orientation2 = structureTensorOrientation(gxField, gyField, w, h);
     const hatchLayer = renderHatchLayer(toneGray, orientation2, w, h, options.hatching);
-    // Composite hatch onto line layer
-    for (let i = 0; i < w * h; i++) if (hatchLayer[i]) lineLayer[i] = 255;
+    // Scope hatch to classified-relevant pixels (dilated). renderHatchLayer
+    // otherwise inks every pixel with quantized tone <= 0.92 — on a dark
+    // background or hair mass that's the whole frame, and step 8's morphClose
+    // then merges the 3px-spaced strokes into a solid. Measured on a uniform
+    // gray field: 0% (lineLayer) → 26.8% (unscoped hatch) → 39.3% (close).
+    // Bare classMap is a 1px NMS ridge already covered by lineLayer, so a
+    // strict classMap gate would make hatch a no-op; dilate by hatch spacing
+    // so form shading sits beside contours without flooding interiors.
+    const hatchRadius = Math.max(4, Math.round(options.hatching.maxSpacingPx));
+    const relevant = dilateClassMask(classified.classMap, w, h, hatchRadius);
+    for (let i = 0; i < w * h; i++) if (hatchLayer[i] && relevant[i]) lineLayer[i] = 255;
   }
 
   // 7. Optional Otsu threshold (additive — can be used instead of fixed threshold)
@@ -177,6 +216,7 @@ export async function runUpgradePipeline(
     tattooability,
     width: w,
     height: h,
+    intermediate: { primaryLines, toneIdx: mergedTones, toneGray, width: w, height: h },
   };
 }
 

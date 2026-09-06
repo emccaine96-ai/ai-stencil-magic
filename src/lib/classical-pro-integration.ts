@@ -211,7 +211,7 @@ export async function processClassicalPro(
       dataUrl: outCanvas.toDataURL("image/png"),
       presetName: `${options.style}-advanced`,
       processingTime: elapsed,
-      intermediate: null,
+      intermediate: result.intermediate,
     };
   }
 
