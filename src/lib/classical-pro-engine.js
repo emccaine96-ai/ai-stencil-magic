@@ -40,14 +40,22 @@ class ClassicalProEngine {
   }
 
   processImage(imageSource, settings = {}, preset = null) {
+    // Engine-audit-round-2, confirmed 2026-09-06: lineWeightMin/Max/Contrast
+    // and minRegionPx were dead defaults -- verified zero style in
+    // STYLE_TO_CLASSICAL ever set them (they only exist in the *separate*
+    // AdvancedPipelineConfig for the other, Advanced-pipeline engine), and
+    // a whole-file grep confirmed s.lineWeightMin/Max/Contrast and
+    // s.minRegionPx are never read anywhere in this file -- this engine's
+    // actual line rendering comes entirely from applyXDoG(detail_radius,
+    // edge_sensitivity, shadow_block), which takes no weight/contrast
+    // params, and speck removal uses enhancedCleanupMinPx instead. Removed
+    // rather than wired, per the audit's own "no live style depends on
+    // non-default values here" finding -- lower risk than inventing a new
+    // wiring path for values nothing has ever needed.
     const s = Object.assign({
       useClahe: true,
       useRetinex: false,
-      lineWeightMin: 0.8,
-      lineWeightMax: 2.5,
-      lineWeightContrast: 0.5,
       toneLevels: 5,
-      minRegionPx: 20,
       useOtsu: false,
       useFormHatching: false,
       useEnhancedCleanup: false,
