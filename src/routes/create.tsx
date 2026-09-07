@@ -27,6 +27,8 @@ import { injectSelfHostedFontFaces, preloadAllSelfHostedFonts } from "@/fonts/lo
 import { renderLetteringToImageData } from "@/fonts/text-to-stencil";
 import { toast } from "sonner";
 import { CustomPromptPanel } from "@/components/CustomPromptPanel";
+import { analyzePhoto, suggestTuning, type TuningSuggestion } from "@/lib/photo-analysis";
+import { PhotoAnalysisBanner } from "@/components/PhotoAnalysisBanner";
 
 export const Route = createFileRoute("/create")({
   head: () => ({
@@ -225,6 +227,17 @@ function CreatePage() {
   // Background separation -- 'keep' by default (fully inert), same
   // optional/off-by-default treatment as Retinex above.
   const [backgroundMode, setBackgroundMode] = useState<"keep" | "remove" | "fade">("keep");
+  // Local pre-tuning model: on-device suggestion for Detail/Retinex based on
+  // what's actually in the selected photo. Suggestion-only, always
+  // dismissible, never auto-applies. Smart Suggestions toggle (default on)
+  // lets the user skip this entirely -- when off, analyzePhoto() is never
+  // called, so the face-detector model never downloads either.
+  const [smartSuggestionsEnabled, setSmartSuggestionsEnabled] = useState(true);
+  const [photoSuggestion, setPhotoSuggestion] = useState<TuningSuggestion | null>(null);
+  // Guards against a race: if the user picks a second photo while the first
+  // photo's analysis is still running, a late-arriving result for the first
+  // photo must not get applied to the second.
+  const latestPhotoRef = useRef<string | null>(null);
 
 
   // Load self-hosted fonts on mount (Font Squirrel system)
@@ -367,7 +380,28 @@ function CreatePage() {
     setTattooability(null);
     setInkStyleData(null);
     setError(null);
-    setPhoto(await fileToDataUrl(file));
+    setPhotoSuggestion(null);
+    const dataUrl = await fileToDataUrl(file);
+    setPhoto(dataUrl);
+    latestPhotoRef.current = dataUrl;
+
+    if (smartSuggestionsEnabled) {
+      const img = new Image();
+      img.onload = async () => {
+        try {
+          const analysis = await analyzePhoto(img);
+          // Only apply if this is still the photo currently selected -- the
+          // user may have picked a different photo while this ran.
+          if (latestPhotoRef.current === dataUrl) {
+            setPhotoSuggestion(suggestTuning(analysis));
+          }
+        } catch (e) {
+          console.warn("Photo analysis failed:", e);
+        }
+      };
+      img.onerror = () => console.warn("Photo analysis: image failed to load for analysis");
+      img.src = dataUrl;
+    }
   }
 
   async function generate() {
@@ -789,7 +823,7 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
                 <input
                   type="checkbox"
                   checked={useRetinex}
-                  onChange={(e) => setUseRetinex(e.target.checked)}
+                  onChange={(e) => { setUseRetinex(e.target.checked); setPhotoSuggestion(null); }}
                   className="accent-primary"
                 />
                 <span>Fix harsh lighting (illumination normalization)</span>
@@ -820,7 +854,7 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
                 <input
                   type="checkbox"
                   checked={useRetinex}
-                  onChange={(e) => setUseRetinex(e.target.checked)}
+                  onChange={(e) => { setUseRetinex(e.target.checked); setPhotoSuggestion(null); }}
                   className="accent-primary"
                 />
                 <span>Fix harsh lighting (illumination normalization)</span>
@@ -880,6 +914,18 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
               </span>
             </div>
           ) : null}
+          <label className="mt-2 flex items-center gap-2 text-[11px] cursor-pointer text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={smartSuggestionsEnabled}
+              onChange={(e) => {
+                setSmartSuggestionsEnabled(e.target.checked);
+                if (!e.target.checked) setPhotoSuggestion(null);
+              }}
+              className="accent-primary"
+            />
+            <span>Smart Suggestions (on-device photo analysis for Detail/lighting tips)</span>
+          </label>
         </section>
 
         <section>
@@ -916,13 +962,26 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
               min={0}
               max={100}
               value={intensity * 100}
-              onChange={(e) => setIntensity(Number(e.target.value) / 100)}
+              onChange={(e) => { setIntensity(Number(e.target.value) / 100); setPhotoSuggestion(null); }}
               className="w-full mt-2 accent-primary"
             />
             <p className="text-xs text-muted-foreground mt-2">
               Controls the 5-tier tonal layering: shadows → dark mids → mids → light mids →
               highlights. Higher density = denser hatching/dots in darker tones.
             </p>
+            {photoSuggestion ? (
+              <div className="mt-3">
+                <PhotoAnalysisBanner
+                  suggestion={photoSuggestion}
+                  onApply={() => {
+                    setIntensity(photoSuggestion.intensity);
+                    setUseRetinex(photoSuggestion.useRetinex);
+                    setPhotoSuggestion(null);
+                  }}
+                  onDismiss={() => setPhotoSuggestion(null)}
+                />
+              </div>
+            ) : null}
           </div>
         </section>
 
