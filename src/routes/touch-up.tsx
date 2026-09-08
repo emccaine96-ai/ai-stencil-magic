@@ -19,6 +19,8 @@ import { INK_COLORS, tintInkMask } from "@/lib/touch-up/ink-lab";
 import { buildToneCurveLUT, CURVE_PRESETS } from "@/lib/touch-up/tone-curve";
 import { pixelsToInches, inchesToMm } from "@/lib/touch-up/print";
 import { enterTattooMode } from "@/lib/touch-up/tattoo-mode";
+import { listDocuments, bestExportUrl, type DocumentData } from "@/lib/localDB";
+import { saveStencil } from "@/lib/vault";
 
 export const Route = createFileRoute("/touch-up")({
   head: () => ({
