@@ -457,9 +457,19 @@ function TouchUpPage() {
           </label>
         </div>
 
-        <button onClick={downloadPNG} className="w-full rounded-full bg-gradient-primary text-primary-foreground py-3 font-bold shadow-glow flex items-center justify-center gap-2">
-          <Download size={16} /> Download PNG
-        </button>
+        <div className="space-y-2 pb-4">
+          <button onClick={downloadPNG} className="w-full rounded-full bg-gradient-primary text-primary-foreground py-3 font-bold shadow-glow flex items-center justify-center gap-2">
+            <Download size={16} /> Download PNG
+          </button>
+          <button
+            onClick={saveToVault}
+            disabled={saveState === "saving"}
+            className="w-full rounded-full border border-border hover:border-primary/50 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <Archive size={14} />
+            {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved to Vault" : saveState === "error" ? "Save failed — try again" : "Save to Vault"}
+          </button>
+        </div>
       </main>
     </div>
   );
