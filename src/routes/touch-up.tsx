@@ -13,6 +13,7 @@ import {
   Maximize,
   Printer,
   RotateCcw,
+  Archive,
 } from "lucide-react";
 import { TouchUpCanvasEngine } from "@/lib/touch-up/canvas-engine";
 import { INK_COLORS, tintInkMask } from "@/lib/touch-up/ink-lab";
