@@ -13,12 +13,15 @@ import {
   Maximize,
   Printer,
   RotateCcw,
+  Archive,
 } from "lucide-react";
 import { TouchUpCanvasEngine } from "@/lib/touch-up/canvas-engine";
 import { INK_COLORS, tintInkMask } from "@/lib/touch-up/ink-lab";
 import { buildToneCurveLUT, CURVE_PRESETS } from "@/lib/touch-up/tone-curve";
 import { pixelsToInches, inchesToMm } from "@/lib/touch-up/print";
 import { enterTattooMode } from "@/lib/touch-up/tattoo-mode";
+import { listDocuments, bestExportUrl, type DocumentData } from "@/lib/localDB";
+import { saveStencil } from "@/lib/vault";
 
 export const Route = createFileRoute("/touch-up")({
   head: () => ({
@@ -53,21 +56,73 @@ function TouchUpPage() {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
+  const [recent, setRecent] = useState<DocumentData[]>([]);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   // Hand-off from create.tsx (same sessionStorage pattern the app already
-  // uses for the Vault -> editor hand-off in create.tsx).
+  // uses for the Vault -> editor hand-off in create.tsx). The handed-off
+  // stencil is re-stashed under a "current" key so a reload of this page
+  // keeps working on the same image instead of dead-ending.
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem("primalprint.touchup.load");
       if (raw) {
         sessionStorage.removeItem("primalprint.touchup.load");
         const parsed = JSON.parse(raw) as { stencil?: string };
-        if (parsed.stencil) setSourceStencil(parsed.stencil);
+        if (parsed.stencil) {
+          setSourceStencil(parsed.stencil);
+          try { sessionStorage.setItem("primalprint.touchup.current", parsed.stencil); } catch { /* quota */ }
+          return;
+        }
       }
+      const current = sessionStorage.getItem("primalprint.touchup.current");
+      if (current) setSourceStencil(current);
     } catch {
       /* ignore */
     }
   }, []);
+
+  // Entry paths when the page is opened directly (header link) with no
+  // hand-off: pick a saved stencil from the Vault, or upload a file.
+  useEffect(() => {
+    if (sourceStencil) return;
+    let alive = true;
+    listDocuments()
+      .then((docs) => { if (alive) setRecent(docs.slice(0, 12)); })
+      .catch(() => { /* empty vault / storage unavailable */ });
+    return () => { alive = false; };
+  }, [sourceStencil]);
+
+  function loadStencil(dataUrl: string) {
+    setSourceStencil(dataUrl);
+    try { sessionStorage.setItem("primalprint.touchup.current", dataUrl); } catch { /* quota */ }
+  }
+
+  function onUpload(file: File | undefined) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { if (typeof reader.result === "string") loadStencil(reader.result); };
+    reader.readAsDataURL(file);
+  }
+
+  async function saveToVault() {
+    const edit = editCanvasRef.current;
+    if (!edit) return;
+    setSaveState("saving");
+    try {
+      await saveStencil({
+        stencil: edit.toDataURL("image/png"),
+        photo: null,
+        style: "touch-up",
+        meta: { source: "touch-up-studio" },
+      });
+      setSaveState("saved");
+      setTimeout(() => setSaveState("idle"), 2500);
+    } catch {
+      setSaveState("error");
+      setTimeout(() => setSaveState("idle"), 2500);
+    }
+  }
 
   useEffect(() => {
     if (!sourceStencil) return;
@@ -210,13 +265,52 @@ function TouchUpPage() {
 
   if (!sourceStencil) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center gap-4 p-6 text-center">
-        <p className="text-muted-foreground text-sm max-w-xs">
-          No stencil to touch up yet. Generate one first, then open it here.
+      <div className="min-h-screen bg-background text-foreground flex flex-col items-center gap-5 p-6">
+        <div className="w-full max-w-md flex items-center justify-between">
+          <Link to="/create" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+            <ChevronLeft size={18} /> Back
+          </Link>
+          <span className="font-script text-lg">Touch-Up Studio</span>
+          <span className="w-10" />
+        </div>
+        <p className="text-muted-foreground text-sm max-w-xs text-center">
+          Pick a saved stencil, upload an image, or generate a new one to start touching up.
         </p>
-        <Link to="/create" className="rounded-full bg-gradient-primary text-primary-foreground px-4 py-2 text-sm font-bold">
-          Go to Generator
-        </Link>
+        <div className="w-full max-w-md space-y-3">
+          <label className="block w-full rounded-full bg-gradient-primary text-primary-foreground px-4 py-3 text-sm font-bold text-center cursor-pointer">
+            Upload an image
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => onUpload(e.target.files?.[0])}
+            />
+          </label>
+          <Link to="/create" className="block w-full rounded-full border border-border hover:border-primary/50 px-4 py-3 text-sm font-semibold text-center text-muted-foreground hover:text-foreground transition">
+            Go to Generator
+          </Link>
+        </div>
+        {recent.length ? (
+          <div className="w-full max-w-md space-y-2">
+            <div className="text-sm font-semibold">From your Vault</div>
+            <div className="grid grid-cols-3 gap-2">
+              {recent.map((doc) => {
+                const url = bestExportUrl(doc);
+                if (!url) return null;
+                return (
+                  <button
+                    key={doc.id}
+                    onClick={() => loadStencil(url)}
+                    className="rounded-xl overflow-hidden border border-border hover:border-primary bg-white aspect-square"
+                    title={doc.name}
+                  >
+                    <img src={doc.thumbnail || url} alt={doc.name} className="h-full w-full object-contain" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -364,9 +458,19 @@ function TouchUpPage() {
           </label>
         </div>
 
-        <button onClick={downloadPNG} className="w-full rounded-full bg-gradient-primary text-primary-foreground py-3 font-bold shadow-glow flex items-center justify-center gap-2">
-          <Download size={16} /> Download PNG
-        </button>
+        <div className="space-y-2 pb-4">
+          <button onClick={downloadPNG} className="w-full rounded-full bg-gradient-primary text-primary-foreground py-3 font-bold shadow-glow flex items-center justify-center gap-2">
+            <Download size={16} /> Download PNG
+          </button>
+          <button
+            onClick={saveToVault}
+            disabled={saveState === "saving"}
+            className="w-full rounded-full border border-border hover:border-primary/50 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <Archive size={14} />
+            {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved to Vault" : saveState === "error" ? "Save failed — try again" : "Save to Vault"}
+          </button>
+        </div>
       </main>
     </div>
   );
