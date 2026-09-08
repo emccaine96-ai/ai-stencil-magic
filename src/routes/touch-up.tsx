@@ -264,13 +264,52 @@ function TouchUpPage() {
 
   if (!sourceStencil) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center gap-4 p-6 text-center">
-        <p className="text-muted-foreground text-sm max-w-xs">
-          No stencil to touch up yet. Generate one first, then open it here.
+      <div className="min-h-screen bg-background text-foreground flex flex-col items-center gap-5 p-6">
+        <div className="w-full max-w-md flex items-center justify-between">
+          <Link to="/create" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+            <ChevronLeft size={18} /> Back
+          </Link>
+          <span className="font-script text-lg">Touch-Up Studio</span>
+          <span className="w-10" />
+        </div>
+        <p className="text-muted-foreground text-sm max-w-xs text-center">
+          Pick a saved stencil, upload an image, or generate a new one to start touching up.
         </p>
-        <Link to="/create" className="rounded-full bg-gradient-primary text-primary-foreground px-4 py-2 text-sm font-bold">
-          Go to Generator
-        </Link>
+        <div className="w-full max-w-md space-y-3">
+          <label className="block w-full rounded-full bg-gradient-primary text-primary-foreground px-4 py-3 text-sm font-bold text-center cursor-pointer">
+            Upload an image
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => onUpload(e.target.files?.[0])}
+            />
+          </label>
+          <Link to="/create" className="block w-full rounded-full border border-border hover:border-primary/50 px-4 py-3 text-sm font-semibold text-center text-muted-foreground hover:text-foreground transition">
+            Go to Generator
+          </Link>
+        </div>
+        {recent.length ? (
+          <div className="w-full max-w-md space-y-2">
+            <div className="text-sm font-semibold">From your Vault</div>
+            <div className="grid grid-cols-3 gap-2">
+              {recent.map((doc) => {
+                const url = bestExportUrl(doc);
+                if (!url) return null;
+                return (
+                  <button
+                    key={doc.id}
+                    onClick={() => loadStencil(url)}
+                    className="rounded-xl overflow-hidden border border-border hover:border-primary bg-white aspect-square"
+                    title={doc.name}
+                  >
+                    <img src={doc.thumbnail || url} alt={doc.name} className="h-full w-full object-contain" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
