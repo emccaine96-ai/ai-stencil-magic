@@ -44,4 +44,17 @@ export const CURVE_PRESETS: Record<string, CurveNode[]> = {
   standard: [{ x: 0, y: 0 }, { x: 127, y: 127 }, { x: 255, y: 255 }],
   soft: [{ x: 0, y: 20 }, { x: 127, y: 130 }, { x: 255, y: 235 }],
   highContrast: [{ x: 0, y: 0 }, { x: 96, y: 60 }, { x: 160, y: 195 }, { x: 255, y: 255 }],
+  // Binarization-oriented preset: pushes shadows toward pure black and
+  // highlights toward pure white with a steep midtone transition, without
+  // being a literal hard step function (that would alias badly on real
+  // photos) — near-binary output while staying a smooth curve.
+  stencilPunch: [{ x: 0, y: 0 }, { x: 60, y: 8 }, { x: 128, y: 128 }, { x: 195, y: 247 }, { x: 255, y: 255 }],
 };
+
+/** Apply a precomputed LUT to ink density (alpha). RGB and transparent bg untouched. */
+export function applyLutToAlpha(src: ImageData, lut: Uint8Array): ImageData {
+  const out = new ImageData(new Uint8ClampedArray(src.data), src.width, src.height);
+  const d = out.data;
+  for (let i = 3; i < d.length; i += 4) d[i] = lut[d[i]];
+  return out;
+}

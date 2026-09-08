@@ -22,6 +22,7 @@ import { buildRegionParamField, type FocusRegion } from "./classical-engine/regi
 import { serializePreset, loadPreset, type StencilPreset } from "./classical-engine/presets";
 import { segmentRegions, REGION } from "./classical-engine/region-segmenter";
 import type { BackgroundMode } from "./classical-engine/background";
+import { resizeMask, type ExclusionMask } from "./touch-up/smart-erase";
 
 // Background modes exposed to users. 'simplify' is intentionally omitted:
 // applyBackgroundMode treats it as a no-op (it needs per-region param fields
@@ -125,6 +126,10 @@ export interface ClassicalProOptions {
   // orchestrator has no background stage.
   backgroundMode?: UserBackgroundMode;
   backgroundFadeOpacity?: number;
+  // User-painted Smart Erase exclusion. Photo/stencil-resolution mask;
+  // resized to the engine's working size at the same point backgroundMode's
+  // mask is. Standard + Advanced paths both consume it.
+  exclusionMask?: ExclusionMask;
 }
 
 
@@ -182,6 +187,9 @@ export async function processClassicalPro(
     advCtx.drawImage(img, 0, 0, advW, advH);
     const imageData = advCtx.getImageData(0, 0, advCanvas.width, advCanvas.height);
     const advConfig = scaleAdvancedByIntensity(STYLE_TO_ADVANCED[options.style], options.intensity);
+    const advExclusion = options.exclusionMask
+      ? resizeMask(options.exclusionMask, advW, advH).data
+      : undefined;
     const result = await runUpgradePipeline(imageData, {
       bandSigmas: advConfig.bandSigmas,
       edgeThresholds: advConfig.edgeThresholds,
@@ -190,6 +198,7 @@ export async function processClassicalPro(
       minRegionPx: advConfig.minRegionPx,
       useOtsu: advConfig.useOtsu,
       hatching: advConfig.hatching ?? null,
+      exclusionMask: advExclusion,
     });
     // Render result to data URL
     const outCanvas = document.createElement("canvas");
@@ -220,11 +229,11 @@ export async function processClassicalPro(
   const requestedBgMode = options.backgroundMode ?? "keep";
   let bgMode: UserBackgroundMode = "keep";
   let bgMask: Uint8Array | null = null;
+  const { workW, workH } = engineWorkingSize(
+    img.naturalWidth || img.width,
+    img.naturalHeight || img.height,
+  );
   if (requestedBgMode !== "keep") {
-    const { workW, workH } = engineWorkingSize(
-      img.naturalWidth || img.width,
-      img.naturalHeight || img.height,
-    );
     bgMask = await buildBackgroundMask(img, workW, workH);
     if (bgMask) bgMode = requestedBgMode;
   }
@@ -248,6 +257,9 @@ export async function processClassicalPro(
     backgroundMode: bgMode,
     backgroundMask: bgMask,
     backgroundFadeOpacity: options.backgroundFadeOpacity ?? 0.25,
+    exclusionMask: options.exclusionMask
+      ? resizeMask(options.exclusionMask, workW, workH).data
+      : null,
   });
 
 

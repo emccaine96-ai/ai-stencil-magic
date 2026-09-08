@@ -41,6 +41,9 @@ export interface PipelineOptions {
   // Background
   backgroundMode?: BackgroundMode;
   fadeOpacity?: number;
+  // User-painted Smart Erase exclusion (1 = drop ink). Same shape as a
+  // backgroundMode mask — applied after rendering, before cleanup.
+  exclusionMask?: Uint8Array;
   // Cleanup
   minSpeckPx?: number;
   closeRadius?: number;
@@ -193,6 +196,17 @@ export async function runUpgradePipeline(
   } else if (options.threshold !== undefined) {
     const threshMask = applyThreshold(gray, options.threshold);
     for (let i = 0; i < w * h; i++) if (threshMask[i] === 0) lineLayer[i] = 255;
+  }
+
+  // Smart Erase exclusion — after all edge/hatch/stipple rendering, before
+  // final cleanup so speck removal can still prune mask-boundary artifacts.
+  // Same zero-out pattern applyBackgroundMode uses; this pipeline's
+  // backgroundMode stage (step 9) is currently a comment-only placeholder
+  // and is not invented here.
+  if (options.exclusionMask && options.exclusionMask.length === w * h) {
+    for (let i = 0; i < w * h; i++) {
+      if (options.exclusionMask[i]) lineLayer[i] = 0;
+    }
   }
 
   // 8. Cleanup

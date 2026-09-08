@@ -64,6 +64,7 @@ class ClassicalProEngine {
       backgroundMode: 'keep',
       backgroundFadeOpacity: 0.25,
       backgroundMask: null,
+      exclusionMask: null,
       shadingMode: 'xdog',
       skin_smoothness: 50,
       detail_radius: 1.0,
@@ -293,6 +294,19 @@ class ClassicalProEngine {
         od[i + 3] = adjusted[p];
         if (adjusted[p]) { od[i] = od[i+1] = od[i+2] = 0; }
         else { od[i] = od[i+1] = od[i+2] = 255; }
+      }
+    }
+
+    // 8.6. User-painted Smart Erase exclusion — same "zero it out" pattern
+    // backgroundMode already uses, at the same application point. Never
+    // touches RGB of remaining ink; excluded pixels become alpha 0 so
+    // transparent PNG / overlay / Tattoo Mode stay valid.
+    if (s.exclusionMask) {
+      const od = stencil.data;
+      const ex = s.exclusionMask;
+      const n = Math.min(ex.length, (od.length / 4) | 0);
+      for (let p = 0; p < n; p++) {
+        if (ex[p]) od[p * 4 + 3] = 0;
       }
     }
 

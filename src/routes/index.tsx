@@ -38,6 +38,9 @@ function Header() {
           <Link to="/vault" className="py-2 text-primary font-semibold" onClick={() => setOpen(false)}>
             My Stencils / Library
           </Link>
+          <Link to="/touch-up" className="py-2 text-primary font-semibold" onClick={() => setOpen(false)}>
+            Touch-Up Studio
+          </Link>
           <Link to="/help" className="py-2 text-primary font-semibold" onClick={() => setOpen(false)}>
             Help & Instructions
           </Link>

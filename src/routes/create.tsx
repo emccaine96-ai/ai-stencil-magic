@@ -30,6 +30,10 @@ import { toast } from "sonner";
 import { CustomPromptPanel } from "@/components/CustomPromptPanel";
 import { analyzePhoto, suggestTuning, type TuningSuggestion } from "@/lib/photo-analysis";
 import { PhotoAnalysisBanner } from "@/components/PhotoAnalysisBanner";
+import {
+  TOUCHUP_LOAD_KEY,
+  type TouchUpGenConfig,
+} from "@/lib/touch-up/session";
 
 export const Route = createFileRoute("/create")({
   head: () => ({
@@ -196,6 +200,7 @@ function CreatePage() {
   const [pos, setPos] = useState(50);
   const fileRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const lastGenRef = useRef<TouchUpGenConfig | null>(null);
 
   // API keys
   const [apiKey, setApiKey] = useState("");
@@ -420,6 +425,14 @@ function CreatePage() {
     setError(null);
     setStencil(null);
     setInkStyleData(null);
+    lastGenRef.current = {
+      engine: provider,
+      style,
+      intensity,
+      useRetinex,
+      backgroundMode,
+      useAdvancedPipeline,
+    };
     try {
       if (provider === "classical") {
         const result = await processClassicalPro(photo, {
@@ -1144,7 +1157,14 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
               <button
                 onClick={() => {
                   try {
-                    sessionStorage.setItem("primalprint.touchup.load", JSON.stringify({ stencil }));
+                    sessionStorage.setItem(
+                      TOUCHUP_LOAD_KEY,
+                      JSON.stringify({
+                        stencil,
+                        photo,
+                        config: lastGenRef.current,
+                      }),
+                    );
                   } catch {
                     /* ignore */
                   }

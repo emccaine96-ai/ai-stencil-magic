@@ -30,6 +30,11 @@ export function hexToRgb(hex: string): { r: number; g: number; b: number } {
   return { r: parseInt(v.slice(0, 2), 16), g: parseInt(v.slice(2, 4), 16), b: parseInt(v.slice(4, 6), 16) };
 }
 
+export function rgbToHex(r: number, g: number, b: number): string {
+  const h = (n: number) => Math.max(0, Math.min(255, n | 0)).toString(16).padStart(2, "0");
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
+
 export function tintInkMask(mask: ImageData, hex: string): ImageData {
   const out = new ImageData(new Uint8ClampedArray(mask.data), mask.width, mask.height);
   const { r, g, b } = hexToRgb(hex);
@@ -38,4 +43,14 @@ export function tintInkMask(mask: ImageData, hex: string): ImageData {
     out.data[i] = r; out.data[i + 1] = g; out.data[i + 2] = b; // alpha untouched
   }
   return out;
+}
+
+/** Sample ink RGB at a pixel. Returns null on transparent/background pixels. */
+export function sampleInkHex(data: ImageData, x: number, y: number): string | null {
+  const px = Math.round(x);
+  const py = Math.round(y);
+  if (px < 0 || py < 0 || px >= data.width || py >= data.height) return null;
+  const i = (py * data.width + px) * 4;
+  if (data.data[i + 3] === 0) return null;
+  return rgbToHex(data.data[i], data.data[i + 1], data.data[i + 2]);
 }
