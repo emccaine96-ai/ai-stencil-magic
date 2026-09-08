@@ -55,21 +55,73 @@ function TouchUpPage() {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
+  const [recent, setRecent] = useState<DocumentData[]>([]);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   // Hand-off from create.tsx (same sessionStorage pattern the app already
-  // uses for the Vault -> editor hand-off in create.tsx).
+  // uses for the Vault -> editor hand-off in create.tsx). The handed-off
+  // stencil is re-stashed under a "current" key so a reload of this page
+  // keeps working on the same image instead of dead-ending.
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem("primalprint.touchup.load");
       if (raw) {
         sessionStorage.removeItem("primalprint.touchup.load");
         const parsed = JSON.parse(raw) as { stencil?: string };
-        if (parsed.stencil) setSourceStencil(parsed.stencil);
+        if (parsed.stencil) {
+          setSourceStencil(parsed.stencil);
+          try { sessionStorage.setItem("primalprint.touchup.current", parsed.stencil); } catch { /* quota */ }
+          return;
+        }
       }
+      const current = sessionStorage.getItem("primalprint.touchup.current");
+      if (current) setSourceStencil(current);
     } catch {
       /* ignore */
     }
   }, []);
+
+  // Entry paths when the page is opened directly (header link) with no
+  // hand-off: pick a saved stencil from the Vault, or upload a file.
+  useEffect(() => {
+    if (sourceStencil) return;
+    let alive = true;
+    listDocuments()
+      .then((docs) => { if (alive) setRecent(docs.slice(0, 12)); })
+      .catch(() => { /* empty vault / storage unavailable */ });
+    return () => { alive = false; };
+  }, [sourceStencil]);
+
+  function loadStencil(dataUrl: string) {
+    setSourceStencil(dataUrl);
+    try { sessionStorage.setItem("primalprint.touchup.current", dataUrl); } catch { /* quota */ }
+  }
+
+  function onUpload(file: File | undefined) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { if (typeof reader.result === "string") loadStencil(reader.result); };
+    reader.readAsDataURL(file);
+  }
+
+  async function saveToVault() {
+    const edit = editCanvasRef.current;
+    if (!edit) return;
+    setSaveState("saving");
+    try {
+      await saveStencil({
+        stencil: edit.toDataURL("image/png"),
+        photo: null,
+        style: "touch-up",
+        meta: { source: "touch-up-studio" },
+      });
+      setSaveState("saved");
+      setTimeout(() => setSaveState("idle"), 2500);
+    } catch {
+      setSaveState("error");
+      setTimeout(() => setSaveState("idle"), 2500);
+    }
+  }
 
   useEffect(() => {
     if (!sourceStencil) return;
