@@ -17,6 +17,7 @@ import { Route as HelpRouteImport } from './routes/help'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as PluginsRouteImport } from './routes/plugins'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as TouchUpRouteImport } from './routes/touch-up'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as Char91DotmcpChar93ListToolsRouteImport } from './routes/[.mcp]/list-tools'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
@@ -66,6 +67,11 @@ const PluginsRoute = PluginsRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TouchUpRoute = TouchUpRouteImport.update({
+  id: '/touch-up',
+  path: '/touch-up',
   getParentRoute: () => rootRouteImport,
 } as any)
 const VaultRoute = VaultRouteImport.update({
@@ -131,6 +137,7 @@ export interface FileRoutesByFullPath {
   '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
   '/settings': typeof SettingsRoute
+  '/touch-up': typeof TouchUpRoute
   '/vault': typeof VaultRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
@@ -151,6 +158,7 @@ export interface FileRoutesByTo {
   '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
   '/settings': typeof SettingsRoute
+  '/touch-up': typeof TouchUpRoute
   '/vault': typeof VaultRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
@@ -172,6 +180,7 @@ export interface FileRoutesById {
   '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
   '/settings': typeof SettingsRoute
+  '/touch-up': typeof TouchUpRoute
   '/vault': typeof VaultRoute
   '/.mcp/list-tools': typeof Char91DotmcpChar93ListToolsRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
@@ -194,6 +203,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/plugins'
     | '/settings'
+    | '/touch-up'
     | '/vault'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
@@ -214,6 +224,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/plugins'
     | '/settings'
+    | '/touch-up'
     | '/vault'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
@@ -234,6 +245,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/plugins'
     | '/settings'
+    | '/touch-up'
     | '/vault'
     | '/.mcp/list-tools'
     | '/.well-known/oauth-protected-resource'
@@ -255,6 +267,7 @@ export interface RootRouteChildren {
   McpRoute: typeof McpRoute
   PluginsRoute: typeof PluginsRoute
   SettingsRoute: typeof SettingsRoute
+  TouchUpRoute: typeof TouchUpRoute
   VaultRoute: typeof VaultRoute
   Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
@@ -322,6 +335,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/touch-up': {
+      id: '/touch-up'
+      path: '/touch-up'
+      fullPath: '/touch-up'
+      preLoaderRoute: typeof TouchUpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/vault': {
@@ -417,6 +437,7 @@ const rootRouteChildren: RootRouteChildren = {
   McpRoute: McpRoute,
   PluginsRoute: PluginsRoute,
   SettingsRoute: SettingsRoute,
+  TouchUpRoute: TouchUpRoute,
   VaultRoute: VaultRoute,
   Char91DotmcpChar93ListToolsRoute: Char91DotmcpChar93ListToolsRoute,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:

@@ -55,6 +55,9 @@ export class TouchUpCanvasEngine {
     this.editCtx.putImageData(this.redoStack.pop()!, 0, 0);
   }
 
+  canUndo(): boolean { return this.history.length > 0; }
+  canRedo(): boolean { return this.redoStack.length > 0; }
+
   /**
    * Remove Fill: tap a point, flood-fill the connected ink region under it
    * (by alpha>0, matching this app's ink=opaque/background=alpha-0

@@ -11,6 +11,7 @@ import {
   Sparkles,
   Archive,
   Zap,
+  Paintbrush,
 } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
 import { saveStencil } from "@/lib/vault";
@@ -698,6 +699,14 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
               <Archive size={14} />
               <span className="hidden sm:inline">Vault</span>
             </Link>
+            <Link
+              to="/touch-up"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              aria-label="Touch-Up Studio"
+            >
+              <Paintbrush size={14} />
+              <span className="hidden sm:inline">Touch-Up</span>
+            </Link>
             <MasterSuite
               photo={photo}
               stencilUrl={stencil}
@@ -1131,6 +1140,19 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
                 ) : (
                   <>Export as SVG (vector)</>
                 )}
+              </button>
+              <button
+                onClick={() => {
+                  try {
+                    sessionStorage.setItem("primalprint.touchup.load", JSON.stringify({ stencil }));
+                  } catch {
+                    /* ignore */
+                  }
+                  navigate({ to: "/touch-up" });
+                }}
+                className="w-full rounded-full border border-border hover:border-primary/50 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition flex items-center justify-center gap-2"
+              >
+                <Paintbrush size={14} /> Open in Touch-Up Studio
               </button>
             </div>
 
