@@ -31,9 +31,9 @@ import { CustomPromptPanel } from "@/components/CustomPromptPanel";
 import { analyzePhoto, suggestTuning, type TuningSuggestion } from "@/lib/photo-analysis";
 import { PhotoAnalysisBanner } from "@/components/PhotoAnalysisBanner";
 import {
-  TOUCHUP_LOAD_KEY,
   type TouchUpGenConfig,
 } from "@/lib/touch-up/session";
+import { writeHandoff } from "@/lib/touch-up/handoff";
 
 export const Route = createFileRoute("/create")({
   head: () => ({
@@ -1155,20 +1155,19 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
                 )}
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
+                  if (!stencil) return;
                   try {
-                    sessionStorage.setItem(
-                      TOUCHUP_LOAD_KEY,
-                      JSON.stringify({
-                        stencil,
-                        photo,
-                        config: lastGenRef.current,
-                      }),
-                    );
-                  } catch {
-                    /* ignore */
+                    await writeHandoff({
+                      stencil,
+                      photo,
+                      config: lastGenRef.current ?? undefined,
+                    });
+                    navigate({ to: "/touch-up" });
+                  } catch (e) {
+                    console.error("[create] touch-up handoff failed", e);
+                    toast.error("Couldn't open Touch-Up Studio — please try again");
                   }
-                  navigate({ to: "/touch-up" });
                 }}
                 className="w-full rounded-full border border-border hover:border-primary/50 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition flex items-center justify-center gap-2"
               >
