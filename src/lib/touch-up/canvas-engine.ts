@@ -162,3 +162,12 @@ export class TouchUpCanvasEngine {
 //   engine.strokeAt(e.offsetX, e.offsetY, lastX, lastY, currentConfig, pressure);
 //   lastX = e.offsetX; lastY = e.offsetY;
 // });
+
+function hexToRgbTriplet(hex: string): string {
+  const v = hex.replace("#", "");
+  const n = v.length === 3 ? v.split("").map((c) => c + c).join("") : v;
+  const r = parseInt(n.slice(0, 2), 16) || 0;
+  const g = parseInt(n.slice(2, 4), 16) || 0;
+  const b = parseInt(n.slice(4, 6), 16) || 0;
+  return `${r},${g},${b}`;
+}
