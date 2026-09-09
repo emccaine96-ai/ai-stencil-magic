@@ -24,19 +24,70 @@ export class TouchUpCanvasEngine {
     if (this.history.length > 50) this.history.shift(); // cap memory
   }
 
-  strokeAt(x: number, y: number, lastX: number, lastY: number, cfg: StrokeConfig, pressure = 1) {
+  strokeAt(
+    x: number,
+    y: number,
+    lastX: number,
+    lastY: number,
+    cfg: StrokeConfig,
+    pressure = 1,
+    inkHex = "#000000",
+  ) {
     const ctx = this.editCtx;
     const size = cfg.size * pressure;
     const opacity = cfg.opacity * pressure;
+
+    // Lighten / Darken are localized tone-curve brushes: a soft Gaussian-like
+    // falloff stamp so density fades in instead of leaving a hard-edged line.
+    if (cfg.mode === "lighten" || cfg.mode === "darken") {
+      this.softStamps(x, y, lastX, lastY, size, opacity, cfg.mode, inkHex);
+      return;
+    }
+
     ctx.save();
     ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.lineWidth = size; ctx.globalAlpha = opacity;
-    switch (cfg.mode) {
-      case "erase":   ctx.globalCompositeOperation = "destination-out"; ctx.strokeStyle = "black"; break;
-      case "lighten": ctx.globalCompositeOperation = "destination-out"; ctx.strokeStyle = "black"; break; // reduces stencil density non-destructively -- operates on the edit layer's own alpha, never on base
-      case "darken":  ctx.globalCompositeOperation = "source-over"; ctx.strokeStyle = "black"; break;     // adds density to the edit layer
-      default:        ctx.globalCompositeOperation = "source-over"; ctx.strokeStyle = "black"; break;     // brush
+    if (cfg.mode === "erase") {
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.strokeStyle = "black";
+    } else {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = inkHex; // brush paints in the active ink color
     }
     ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(x, y); ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Soft radial stamps along the segment — localized weights mask. */
+  private softStamps(
+    x: number,
+    y: number,
+    lastX: number,
+    lastY: number,
+    size: number,
+    opacity: number,
+    mode: "lighten" | "darken",
+    inkHex: string,
+  ) {
+    const ctx = this.editCtx;
+    const r = Math.max(1, size / 2);
+    const dist = Math.hypot(x - lastX, y - lastY);
+    const steps = Math.max(1, Math.ceil(dist / Math.max(1, r * 0.35)));
+    ctx.save();
+    ctx.globalCompositeOperation = mode === "lighten" ? "destination-out" : "source-over";
+    for (let s = 0; s <= steps; s++) {
+      const t = steps === 0 ? 0 : s / steps;
+      const cx = lastX + (x - lastX) * t;
+      const cy = lastY + (y - lastY) * t;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      const color = mode === "lighten" ? "0,0,0" : hexToRgbTriplet(inkHex);
+      g.addColorStop(0, `rgba(${color},${Math.min(1, opacity * 0.5)})`);
+      g.addColorStop(0.6, `rgba(${color},${Math.min(1, opacity * 0.22)})`);
+      g.addColorStop(1, `rgba(${color},0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -111,3 +162,12 @@ export class TouchUpCanvasEngine {
 //   engine.strokeAt(e.offsetX, e.offsetY, lastX, lastY, currentConfig, pressure);
 //   lastX = e.offsetX; lastY = e.offsetY;
 // });
+
+function hexToRgbTriplet(hex: string): string {
+  const v = hex.replace("#", "");
+  const n = v.length === 3 ? v.split("").map((c) => c + c).join("") : v;
+  const r = parseInt(n.slice(0, 2), 16) || 0;
+  const g = parseInt(n.slice(2, 4), 16) || 0;
+  const b = parseInt(n.slice(4, 6), 16) || 0;
+  return `${r},${g},${b}`;
+}
