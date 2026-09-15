@@ -109,6 +109,10 @@ export class TouchUpCanvasEngine {
   canUndo(): boolean { return this.history.length > 0; }
   canRedo(): boolean { return this.redoStack.length > 0; }
 
+  discardLastStroke() {
+    if (this.history.length) this.history.pop();
+  }
+
   /**
    * Remove Fill: tap a point, flood-fill the connected ink region under it
    * (by alpha>0, matching this app's ink=opaque/background=alpha-0

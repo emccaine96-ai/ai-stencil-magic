@@ -81,18 +81,12 @@ export function CurveEditor({ nodes, onChange, className }: Props) {
     <svg
       ref={svgRef}
       viewBox={`-8 -8 ${R + 16} ${R + 16}`}
-      className={className ?? "w-full aspect-square touch-none rounded-xl bg-black/40"}
+      className={className ?? "w-full aspect-[2.2/1] touch-none rounded-xl bg-black/40"}
       onPointerDown={onDown}
       onPointerMove={onMove}
       onPointerUp={onUp}
       onPointerCancel={onUp}
     >
-      {[0, 64, 128, 192, 255].map((g) => (
-        <g key={g} className="text-white/10">
-          <line x1={g} y1={0} x2={g} y2={R} stroke="currentColor" strokeWidth={1} />
-          <line x1={0} y1={g} x2={R} y2={g} stroke="currentColor" strokeWidth={1} />
-        </g>
-      ))}
       <line x1={0} y1={R} x2={R} y2={0} stroke="currentColor" strokeWidth={1} className="text-white/10" />
       <polyline fill="none" stroke="currentColor" strokeWidth={4} points={path} className="text-primary" strokeLinecap="round" />
       {nodes.map((n, i) => (
