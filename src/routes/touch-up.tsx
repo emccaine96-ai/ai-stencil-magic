@@ -134,6 +134,8 @@ function TouchUpPage() {
   const pinchRef = useRef<{ dist: number; scale: number } | null>(null);
   const panLastRef = useRef<{ x: number; y: number } | null>(null);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const curveBaseRef = useRef<ImageData | null>(null);
+  const curvePreviewRaf = useRef<number | null>(null);
 
   const [tool, setTool] = useState<Tool>("brush");
   const [size, setSize] = useState(25);
@@ -519,17 +521,51 @@ function TouchUpPage() {
     persistAutosave();
   }
 
-  function applyCurve(nodes: CurveNode[]) {
+  function openCurvesPanel() {
     const edit = editCanvasRef.current;
     const engine = engineRef.current;
     if (!edit || !engine) return;
-    const ctx = edit.getContext("2d")!;
     engine.beginStroke();
-    const cur = ctx.getImageData(0, 0, edit.width, edit.height);
-    ctx.putImageData(applyLutToAlpha(cur, buildToneCurveLUT(nodes)), 0, 0);
+    curveBaseRef.current = edit.getContext("2d")!.getImageData(0, 0, edit.width, edit.height);
+    setPanel("curves");
+  }
+
+  function previewCurve(nodes: CurveNode[]) {
+    if (curvePreviewRaf.current) cancelAnimationFrame(curvePreviewRaf.current);
+    curvePreviewRaf.current = requestAnimationFrame(() => {
+      const edit = editCanvasRef.current;
+      const base = curveBaseRef.current;
+      if (!edit || !base) return;
+      const lut = buildToneCurveLUT(nodes);
+      const preview = applyLutToAlpha(
+        new ImageData(new Uint8ClampedArray(base.data), base.width, base.height),
+        lut,
+      );
+      edit.getContext("2d")!.putImageData(preview, 0, 0);
+    });
+  }
+
+  function handleCurveNodesChange(nodes: CurveNode[]) {
+    setCurveNodes(nodes);
+    previewCurve(nodes);
+  }
+
+  function applyCurve() {
+    curveBaseRef.current = null;
     refreshHistoryButtons();
     persistAutosave();
     toast.success("Tone curve applied");
+    setPanel(null);
+  }
+
+  function cancelCurvesPanel() {
+    const edit = editCanvasRef.current;
+    if (edit && curveBaseRef.current) {
+      edit.getContext("2d")!.putImageData(curveBaseRef.current, 0, 0);
+    }
+    curveBaseRef.current = null;
+    engineRef.current?.discardLastStroke();
+    setPanel(null);
   }
 
   function exportCanvas(mirrored: boolean): HTMLCanvasElement {
@@ -866,7 +902,7 @@ function TouchUpPage() {
             </button>
           ))}
           <button
-            onClick={() => setPanel(panel === "curves" ? null : "curves")}
+            onClick={() => (panel === "curves" ? cancelCurvesPanel() : openCurvesPanel())}
             className={`flex flex-col items-center gap-1 py-1.5 rounded-2xl text-[9px] font-semibold transition ${panel === "curves" ? "bg-gradient-primary text-primary-foreground" : "text-white/70 hover:text-white"}`}
           >
             <Spline size={17} /> Curves
@@ -884,18 +920,20 @@ function TouchUpPage() {
 
       {/* ---------------- bottom sheets ---------------- */}
       {panel === "curves" ? (
-        <Sheet title="Tone curve" onClose={() => setPanel(null)}>
-          <p className="text-[11px] text-white/50">
-            Drag any point to bend the curve. Tap empty grid space to add a point, double-tap a middle point to remove
-            it. Highlights sit top-right, shadows bottom-left.
-          </p>
-          <CurveEditor nodes={curveNodes} onChange={setCurveNodes} className="w-full max-w-[240px] mx-auto aspect-square touch-none rounded-xl bg-black/50" />
-          <div className="grid grid-cols-4 gap-2">
+        <div className="absolute inset-x-0 bottom-24 z-20 mx-auto w-[90%] max-w-sm rounded-2xl bg-black/40 backdrop-blur-md p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-white/80">Tone curve</span>
+            <button onClick={cancelCurvesPanel} className="text-white/50 hover:text-white" aria-label="Cancel">
+              <X size={14} />
+            </button>
+          </div>
+          <CurveEditor nodes={curveNodes} onChange={handleCurveNodesChange} className="w-full aspect-[2.2/1] touch-none rounded-xl bg-black/40" />
+          <div className="grid grid-cols-4 gap-1.5">
             {(Object.keys(CURVE_PRESETS) as Array<keyof typeof CURVE_PRESETS>).map((k) => (
               <button
                 key={k}
-                onClick={() => setCurveNodes(CURVE_PRESETS[k])}
-                className="rounded-xl border border-white/15 py-2 text-[10px] font-semibold hover:border-primary"
+                onClick={() => { setCurveNodes(CURVE_PRESETS[k]); previewCurve(CURVE_PRESETS[k]); }}
+                className="rounded-lg border border-white/15 py-1.5 text-[9px] font-semibold hover:border-primary"
               >
                 {CURVE_LABELS[k] ?? k}
               </button>
@@ -903,19 +941,19 @@ function TouchUpPage() {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={() => setCurveNodes(CURVE_PRESETS.standard)}
+              onClick={() => { setCurveNodes(CURVE_PRESETS.standard); previewCurve(CURVE_PRESETS.standard); }}
               className="rounded-xl border border-white/15 py-2 text-xs font-semibold hover:border-primary"
             >
               Reset curve
             </button>
             <button
-              onClick={() => applyCurve(curveNodes)}
+              onClick={applyCurve}
               className="rounded-xl bg-gradient-primary text-primary-foreground py-2 text-xs font-bold"
             >
               Apply to stencil
             </button>
           </div>
-        </Sheet>
+        </div>
       ) : null}
 
       {panel === "color" ? (
