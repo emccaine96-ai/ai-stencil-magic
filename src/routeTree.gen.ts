@@ -16,6 +16,7 @@ import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as PluginsRouteImport } from './routes/plugins'
+import { Route as RetouchRouteImport } from './routes/retouch'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TouchUpRouteImport } from './routes/touch-up'
 import { Route as VaultRouteImport } from './routes/vault'
@@ -62,6 +63,11 @@ const McpRoute = McpRouteImport.update({
 const PluginsRoute = PluginsRouteImport.update({
   id: '/plugins',
   path: '/plugins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RetouchRoute = RetouchRouteImport.update({
+  id: '/retouch',
+  path: '/retouch',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -136,6 +142,7 @@ export interface FileRoutesByFullPath {
   '/help': typeof HelpRoute
   '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
+  '/retouch': typeof RetouchRoute
   '/settings': typeof SettingsRoute
   '/touch-up': typeof TouchUpRoute
   '/vault': typeof VaultRoute
@@ -157,6 +164,7 @@ export interface FileRoutesByTo {
   '/help': typeof HelpRoute
   '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
+  '/retouch': typeof RetouchRoute
   '/settings': typeof SettingsRoute
   '/touch-up': typeof TouchUpRoute
   '/vault': typeof VaultRoute
@@ -179,6 +187,7 @@ export interface FileRoutesById {
   '/help': typeof HelpRoute
   '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
+  '/retouch': typeof RetouchRoute
   '/settings': typeof SettingsRoute
   '/touch-up': typeof TouchUpRoute
   '/vault': typeof VaultRoute
@@ -202,6 +211,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/mcp'
     | '/plugins'
+    | '/retouch'
     | '/settings'
     | '/touch-up'
     | '/vault'
@@ -223,6 +233,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/mcp'
     | '/plugins'
+    | '/retouch'
     | '/settings'
     | '/touch-up'
     | '/vault'
@@ -244,6 +255,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/mcp'
     | '/plugins'
+    | '/retouch'
     | '/settings'
     | '/touch-up'
     | '/vault'
@@ -266,6 +278,7 @@ export interface RootRouteChildren {
   HelpRoute: typeof HelpRoute
   McpRoute: typeof McpRoute
   PluginsRoute: typeof PluginsRoute
+  RetouchRoute: typeof RetouchRoute
   SettingsRoute: typeof SettingsRoute
   TouchUpRoute: typeof TouchUpRoute
   VaultRoute: typeof VaultRoute
@@ -328,6 +341,13 @@ declare module '@tanstack/react-router' {
       path: '/plugins'
       fullPath: '/plugins'
       preLoaderRoute: typeof PluginsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/retouch': {
+      id: '/retouch'
+      path: '/retouch'
+      fullPath: '/retouch'
+      preLoaderRoute: typeof RetouchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -436,6 +456,7 @@ const rootRouteChildren: RootRouteChildren = {
   HelpRoute: HelpRoute,
   McpRoute: McpRoute,
   PluginsRoute: PluginsRoute,
+  RetouchRoute: RetouchRoute,
   SettingsRoute: SettingsRoute,
   TouchUpRoute: TouchUpRoute,
   VaultRoute: VaultRoute,
