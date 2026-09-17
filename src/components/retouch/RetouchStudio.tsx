@@ -12,14 +12,15 @@
  *  - src/lib/touch-up/handoff.ts  — takeHandoff() / writeCurrent() / readCurrent()
  *  - src/lib/touch-up/session.ts  — TouchUpPayload type
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { takeHandoff, writeCurrent } from "@/lib/touch-up/handoff";
 import type { TouchUpPayload } from "@/lib/touch-up/session";
+import { RetouchCanvas } from "./RetouchCanvas";
 
 export type RetouchMode = "retouch" | "tattoo";
 
 export function RetouchStudio() {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Canvas mount point lives in RetouchCanvas (Phase 2).
   const [mode, setMode] = useState<RetouchMode>("retouch");
   const [payload, setPayload] = useState<TouchUpPayload | null>(null);
 
@@ -65,7 +66,7 @@ export function RetouchStudio() {
 
       {/* Canvas mount point — full-bleed surface for later phases */}
       <div className="relative flex-1">
-        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+        <RetouchCanvas payload={payload} />
         {!payload && (
           <div className="absolute inset-0 flex items-center justify-center text-sm opacity-60">
             No stencil handed off yet.
