@@ -6,9 +6,9 @@
  *            already used by src/routes/touch-up.tsx.
  *  - Center: undo / redo / trash pill, wired to the canvas via
  *            RetouchCanvasHandle (owned by RetouchStudio, passed down as props).
- *  - Right:  print / ink-color / layers placeholders (later phases: print,
- *            layer-adjust, and Tattoo Mode's filmstrip — console.log stubs,
- *            not wired yet), plus a separate purple commit (check) placeholder.
+ *  - Right:  print / ink-color / layers, plus a separate purple commit (check)
+ *            button. Print, ink-color and commit are wired (see RetouchStudio);
+ *            layers is still a console.log stub until Tattoo Mode is built.
  *
  * Trash confirm: uses the existing shadcn AlertDialog primitive
  * (src/components/ui/alert-dialog.tsx, already installed — no new
@@ -36,21 +36,33 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-/** Project-wide purple ink convention (matches RetouchCanvas's DEFAULT_INK). */
-const INK_HEX = "#A855F7";
-
 export interface RetouchTopBarProps {
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
   onReset: () => void;
+  /** Live selected ink color — drives the dot in the right pill. */
+  inkHex: string;
+  onInkColor: () => void;
+  onPrint: () => void;
+  onCommit: () => void;
 }
 
 const chip =
   "h-9 w-9 grid place-items-center rounded-full text-white/80 hover:text-white transition disabled:opacity-30";
 
-export function RetouchTopBar({ canUndo, canRedo, onUndo, onRedo, onReset }: RetouchTopBarProps) {
+export function RetouchTopBar({
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  onReset,
+  inkHex,
+  onInkColor,
+  onPrint,
+  onCommit,
+}: RetouchTopBarProps) {
   return (
     <>
       {/* Left — close */}
@@ -95,18 +107,18 @@ export function RetouchTopBar({ canUndo, canRedo, onUndo, onRedo, onReset }: Ret
       <div className="absolute top-3 right-3 flex items-center gap-2">
         <div className="flex items-center gap-1 rounded-full bg-black/60 backdrop-blur px-2 py-1">
           <button
-            onClick={() => console.log("[RetouchTopBar] print — placeholder, wired in a later phase")}
+            onClick={onPrint}
             className={chip}
             aria-label="Print"
           >
             <Printer size={17} />
           </button>
           <button
-            onClick={() => console.log("[RetouchTopBar] ink color — placeholder, wired in a later phase")}
+            onClick={onInkColor}
             className="h-9 w-9 grid place-items-center rounded-full"
             aria-label="Ink color"
           >
-            <span className="h-5 w-5 rounded-full border-2 border-white/70" style={{ backgroundColor: INK_HEX }} />
+            <span className="h-5 w-5 rounded-full border-2 border-white/70" style={{ backgroundColor: inkHex }} />
           </button>
           <button
             onClick={() => console.log("[RetouchTopBar] layers — placeholder, wired in a later phase")}
@@ -117,7 +129,7 @@ export function RetouchTopBar({ canUndo, canRedo, onUndo, onRedo, onReset }: Ret
           </button>
         </div>
         <button
-          onClick={() => console.log("[RetouchTopBar] commit — placeholder, wired in a later phase")}
+          onClick={onCommit}
           className="h-9 w-9 grid place-items-center rounded-full bg-gradient-primary text-primary-foreground"
           aria-label="Commit"
         >

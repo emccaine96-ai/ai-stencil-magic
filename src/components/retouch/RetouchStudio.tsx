@@ -28,10 +28,12 @@ import { takeHandoff, writeCurrent } from "@/lib/touch-up/handoff";
 import type { TouchUpPayload } from "@/lib/touch-up/session";
 import { buildToneCurveLUT, CURVE_PRESETS, type CurveNode } from "@/lib/touch-up/tone-curve";
 import { CurveEditor } from "@/components/touch-up/CurveEditor";
-import { RetouchCanvas, type RetouchCanvasHandle, type RetouchTool } from "./RetouchCanvas";
+import { RetouchCanvas, DEFAULT_INK, type RetouchCanvasHandle, type RetouchTool } from "./RetouchCanvas";
 import { RetouchTopBar } from "./RetouchTopBar";
 import { ToolRow } from "./ToolRow";
 import { SizeOpacityPill, DEFAULT_SIZE, DEFAULT_OPACITY } from "./SizeOpacityPill";
+import { InkColorSheet } from "./InkColorSheet";
+import { ExportSheet } from "./ExportSheet";
 
 export type RetouchMode = "retouch" | "tattoo";
 
@@ -52,7 +54,8 @@ export function RetouchStudio() {
   const [tool, setToolState] = useState<RetouchTool>("brush");
   const [size, setSize] = useState(DEFAULT_SIZE);
   const [opacity, setOpacity] = useState(DEFAULT_OPACITY);
-  const [panel, setPanel] = useState<null | "curves">(null);
+  const [panel, setPanel] = useState<null | "curves" | "color" | "export">(null);
+  const [inkHex, setInkHex] = useState(DEFAULT_INK);
   const [curveNodes, setCurveNodes] = useState<CurveNode[]>(CURVE_PRESETS.standard);
   const [showCompare, setShowCompare] = useState(false);
 
@@ -70,6 +73,7 @@ export function RetouchStudio() {
       if (pending) {
         await writeCurrent(pending);
         setPayload(pending);
+        if (pending.inkColor && /^#[0-9a-fA-F]{6}$/.test(pending.inkColor)) setInkHex(pending.inkColor);
       }
     })();
     return () => {
@@ -106,6 +110,17 @@ export function RetouchStudio() {
     canvasRef.current?.previewCurveLut(buildToneCurveLUT(nodes));
   }
 
+  function pickInkColor(hex: string) {
+    // Recolors existing ink (one undoable step) and sets the color for new strokes.
+    canvasRef.current?.applyInkColor(hex);
+    setInkHex(hex);
+  }
+
+  function toggleSheet(which: "color" | "export") {
+    if (panel === "curves") canvasRef.current?.commitCurve();
+    setPanel((cur) => (cur === which ? null : which));
+  }
+
   function applyCurve() {
     canvasRef.current?.commitCurve();
     setPanel(null);
@@ -139,6 +154,7 @@ export function RetouchStudio() {
           tool={tool}
           size={size}
           opacity={opacity}
+          inkHex={inkHex}
           onHistoryChange={refreshHistoryButtons}
         />
         {!payload && (
@@ -160,6 +176,10 @@ export function RetouchStudio() {
           onUndo={() => canvasRef.current?.undo()}
           onRedo={() => canvasRef.current?.redo()}
           onReset={() => canvasRef.current?.resetToOriginal()}
+          inkHex={inkHex}
+          onInkColor={() => toggleSheet("color")}
+          onPrint={() => toggleSheet("export")}
+          onCommit={() => toggleSheet("export")}
         />
 
         <SizeOpacityPill size={size} opacity={opacity} onSizeChange={setSize} onOpacityChange={setOpacity} />
@@ -219,6 +239,18 @@ export function RetouchStudio() {
               </button>
             </div>
           </div>
+        ) : null}
+
+        {panel === "color" ? (
+          <InkColorSheet inkHex={inkHex} onPick={pickInkColor} onClose={() => setPanel(null)} />
+        ) : null}
+
+        {panel === "export" ? (
+          <ExportSheet
+            getCanvas={() => canvasRef.current?.getEditedCanvas() ?? null}
+            photo={payload?.photo ?? null}
+            onClose={() => setPanel(null)}
+          />
         ) : null}
       </div>
     </div>

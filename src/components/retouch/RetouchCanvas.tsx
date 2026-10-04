@@ -38,6 +38,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { TouchUpCanvasEngine, type StrokeConfig } from "@/lib/touch-up/canvas-engine";
 import { applyLutToAlpha } from "@/lib/touch-up/tone-curve";
+import { tintInkMask } from "@/lib/touch-up/ink-lab";
 import type { TouchUpPayload } from "@/lib/touch-up/session";
 
 /** The five drawing tools. Curves is handled as a separate panel, exactly
@@ -71,6 +72,10 @@ export interface RetouchCanvasHandle {
   previewCurveLut: (lut: Uint8Array) => void;
   commitCurve: () => void;
   cancelCurve: () => void;
+  /** Recolors existing ink (alpha untouched) as one undoable step — mirrors touch-up.tsx's applyInkColor(). */
+  applyInkColor: (hex: string) => void;
+  /** Flattened copy of the edited stencil for save/export/print. Null until a stencil has loaded. */
+  getEditedCanvas: () => HTMLCanvasElement | null;
 }
 
 export const RetouchCanvas = forwardRef<RetouchCanvasHandle, RetouchCanvasProps>(
@@ -272,6 +277,22 @@ export const RetouchCanvas = forwardRef<RetouchCanvasHandle, RetouchCanvasProps>
           }
           curveBaseRef.current = null;
           engineRef.current?.discardLastStroke();
+        },
+        applyInkColor: (hex: string) => {
+          const engine = engineRef.current;
+          const canvas = canvasRef.current;
+          if (!engine || !canvas) return;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+          engine.beginStroke();
+          const cur = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          ctx.putImageData(tintInkMask(cur, hex), 0, 0);
+          onHistoryChange?.();
+        },
+        getEditedCanvas: () => {
+          const canvas = canvasRef.current;
+          if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
+          return canvas;
         },
       }),
       [onHistoryChange],
