@@ -7,8 +7,8 @@
  *  - Center: undo / redo / trash pill, wired to the canvas via
  *            RetouchCanvasHandle (owned by RetouchStudio, passed down as props).
  *  - Right:  print / ink-color / layers, plus a separate purple commit (check)
- *            button. Print, ink-color and commit are wired (see RetouchStudio);
- *            layers is still a console.log stub until Tattoo Mode is built.
+ *            button. All four are wired (see RetouchStudio); layers toggles the
+ *            Tattoo Mode filmstrip.
  *
  * Trash confirm: uses the existing shadcn AlertDialog primitive
  * (src/components/ui/alert-dialog.tsx, already installed — no new
@@ -47,6 +47,9 @@ export interface RetouchTopBarProps {
   onInkColor: () => void;
   onPrint: () => void;
   onCommit: () => void;
+  /** Opens the layer filmstrip (Tattoo Mode). */
+  onLayers: () => void;
+  layersOpen: boolean;
 }
 
 const chip =
@@ -62,6 +65,8 @@ export function RetouchTopBar({
   onInkColor,
   onPrint,
   onCommit,
+  onLayers,
+  layersOpen,
 }: RetouchTopBarProps) {
   return (
     <>
@@ -121,8 +126,8 @@ export function RetouchTopBar({
             <span className="h-5 w-5 rounded-full border-2 border-white/70" style={{ backgroundColor: inkHex }} />
           </button>
           <button
-            onClick={() => console.log("[RetouchTopBar] layers — placeholder, wired in a later phase")}
-            className={chip}
+            onClick={onLayers}
+            className={layersOpen ? `${chip} text-primary` : chip}
             aria-label="Layers"
           >
             <Layers size={17} />

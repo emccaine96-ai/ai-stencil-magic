@@ -34,8 +34,32 @@ import { ToolRow } from "./ToolRow";
 import { SizeOpacityPill, DEFAULT_SIZE, DEFAULT_OPACITY } from "./SizeOpacityPill";
 import { InkColorSheet } from "./InkColorSheet";
 import { ExportSheet } from "./ExportSheet";
+import { LayerFilmstrip } from "./LayerFilmstrip";
+import { LayerAdjustPanel } from "./LayerAdjustPanel";
+import { TattooStage } from "./TattooStage";
+import {
+  addImageLayer,
+  createStack,
+  getLayer,
+  removeLayer,
+  resetLook,
+  setActive,
+  setLocked,
+  setVisible,
+  updateLook,
+  updateTransform,
+  type LayerLook,
+  type LayerTransform,
+  type TattooStack,
+} from "@/lib/retouch/layer-state";
 
 export type RetouchMode = "retouch" | "tattoo";
+
+/** Longest edge, in px, a reference photo is downscaled to. Bounds memory on huge phone photos. */
+const REFERENCE_MAX_EDGE = 2048;
+
+/** Stand-in used while not in Tattoo Mode; TattooStage with fill=true ignores it. */
+const EMPTY_STACK: TattooStack = createStack(1, 1);
 
 const CURVE_LABELS: Record<string, string> = {
   standard: "Standard",
@@ -54,7 +78,13 @@ export function RetouchStudio() {
   const [tool, setToolState] = useState<RetouchTool>("brush");
   const [size, setSize] = useState(DEFAULT_SIZE);
   const [opacity, setOpacity] = useState(DEFAULT_OPACITY);
-  const [panel, setPanel] = useState<null | "curves" | "color" | "export">(null);
+  const [panel, setPanel] = useState<null | "curves" | "color" | "export" | "layer">(null);
+  // Tattoo Mode only. null until the stencil's pixel size is known; Retouch Mode never reads it.
+  const [stack, setStack] = useState<TattooStack | null>(null);
+  const [stageBox, setStageBox] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const [filmstripOpen, setFilmstripOpen] = useState(true);
+  const stageHostRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [inkHex, setInkHex] = useState(DEFAULT_INK);
   const [curveNodes, setCurveNodes] = useState<CurveNode[]>(CURVE_PRESETS.standard);
   const [showCompare, setShowCompare] = useState(false);
@@ -110,13 +140,89 @@ export function RetouchStudio() {
     canvasRef.current?.previewCurveLut(buildToneCurveLUT(nodes));
   }
 
+  // Tattoo Mode: build the stack once the stencil's pixel size is known (the
+  // artboard = the stencil). Reads the same payload.stencil RetouchCanvas loads,
+  // so no engine code is touched. Retouch Mode never creates a stack.
+  useEffect(() => {
+    if (mode !== "tattoo" || stack || !payload?.stencil) return;
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (!cancelled && img.naturalWidth > 0 && img.naturalHeight > 0) {
+        setStack(createStack(img.naturalWidth, img.naturalHeight));
+      }
+    };
+    img.src = payload.stencil;
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, stack, payload]);
+
+  // Track the mount area so the artboard can be fitted inside it at its true aspect ratio.
+  useEffect(() => {
+    const el = stageHostRef.current;
+    if (!el || mode !== "tattoo") return;
+    const measure = () => setStageBox({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mode, stack]);
+
+  // Free object URLs we created for reference layers when the studio unmounts.
+  const objectUrlsRef = useRef<string[]>([]);
+  useEffect(
+    () => () => {
+      objectUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+      objectUrlsRef.current = [];
+    },
+    [],
+  );
+
+  /** Decode a picked image, downscale to REFERENCE_MAX_EDGE, and add it as a reference layer. */
+  async function addReferenceFromFile(file: File) {
+    if (!stack || !file.type.startsWith("image/")) return;
+    try {
+      const bmp = await createImageBitmap(file);
+      const k = Math.min(1, REFERENCE_MAX_EDGE / Math.max(bmp.width, bmp.height));
+      const w = Math.max(1, Math.round(bmp.width * k));
+      const h = Math.max(1, Math.round(bmp.height * k));
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      c.getContext("2d")?.drawImage(bmp, 0, 0, w, h);
+      bmp.close?.();
+      const blob: Blob | null = await new Promise((res) => c.toBlob(res, "image/jpeg", 0.9));
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      objectUrlsRef.current.push(url);
+      setStack((cur) =>
+        cur ? addImageLayer(cur, { kind: "reference", name: file.name.replace(/\.[^.]+$/, "") || "Reference", src: url, width: w, height: h }) : cur,
+      );
+    } catch {
+      /* unreadable file: leave the stack unchanged */
+    }
+  }
+
+  const activeLayer = stack ? getLayer(stack, stack.activeId) : undefined;
+  const stageDisplayWidth =
+    stack && stageBox.w > 0 && stageBox.h > 0
+      ? Math.min(stageBox.w, (stageBox.h * stack.artboard.width) / stack.artboard.height)
+      : 0;
+
+  const inTattoo = mode === "tattoo" && !!stack && stageDisplayWidth > 0;
+  // Retouch Mode (or Tattoo Mode before the stack/measurements exist) uses a
+  // placeholder single-layer stack and fill=true, which renders no reference layers.
+  const stageStack: TattooStack = inTattoo && stack ? stack : EMPTY_STACK;
+  const stageWidth = inTattoo ? stageDisplayWidth : 0;
+
   function pickInkColor(hex: string) {
     // Recolors existing ink (one undoable step) and sets the color for new strokes.
     canvasRef.current?.applyInkColor(hex);
     setInkHex(hex);
   }
 
-  function toggleSheet(which: "color" | "export") {
+  function toggleSheet(which: "color" | "export" | "layer") {
     if (panel === "curves") canvasRef.current?.commitCurve();
     setPanel((cur) => (cur === which ? null : which));
   }
@@ -147,22 +253,54 @@ export function RetouchStudio() {
       </div>
 
       {/* Canvas mount point */}
-      <div className="relative flex-1">
-        <RetouchCanvas
-          ref={canvasRef}
-          payload={payload}
-          tool={tool}
-          size={size}
-          opacity={opacity}
-          inkHex={inkHex}
-          onHistoryChange={refreshHistoryButtons}
-        />
+      <div className="relative flex-1" ref={stageHostRef}>
+        {/*
+          RetouchCanvas is rendered at ONE fixed position in the tree in both
+          modes (TattooStage is always the parent; only its props change), so
+          switching modes never unmounts it. Unmounting would discard the
+          TouchUpCanvasEngine and the whole undo history. In Retouch Mode the
+          stage is absolutely positioned to fill the mount exactly like before.
+        */}
+        <div
+          className={inTattoo ? "absolute inset-0 flex items-center justify-center" : "absolute inset-0"}
+          data-mode={mode}
+        >
+          <TattooStage
+            stack={stageStack}
+            displayWidth={stageWidth}
+            fill={!inTattoo}
+            overlay={
+              inTattoo && showCompare && payload?.stencil ? (
+                <img
+                  src={payload.stencil}
+                  alt="Original stencil"
+                  className="absolute inset-0 h-full w-full object-fill pointer-events-none"
+                />
+              ) : null
+            }
+          >
+            <RetouchCanvas
+              ref={canvasRef}
+              payload={payload}
+              tool={tool}
+              size={size}
+              opacity={opacity}
+              inkHex={inkHex}
+              onHistoryChange={refreshHistoryButtons}
+              className={
+                inTattoo
+                  ? "absolute inset-0 h-full w-full touch-none"
+                  : "absolute inset-0 h-full w-full bg-white touch-none"
+              }
+            />
+          </TattooStage>
+        </div>
         {!payload && (
           <div className="absolute inset-0 flex items-center justify-center text-sm opacity-60 pointer-events-none">
             No stencil handed off yet.
           </div>
         )}
-        {showCompare && payload?.stencil ? (
+        {showCompare && payload?.stencil && !inTattoo ? (
           <img
             src={payload.stencil}
             alt="Original stencil"
@@ -180,6 +318,12 @@ export function RetouchStudio() {
           onInkColor={() => toggleSheet("color")}
           onPrint={() => toggleSheet("export")}
           onCommit={() => toggleSheet("export")}
+          onLayers={() => {
+            // The filmstrip only exists in Tattoo Mode; tapping Layers from Retouch Mode switches over.
+            if (mode !== "tattoo") setMode("tattoo");
+            else setFilmstripOpen((v) => !v);
+          }}
+          layersOpen={mode === "tattoo" && filmstripOpen}
         />
 
         <SizeOpacityPill size={size} opacity={opacity} onSizeChange={setSize} onOpacityChange={setOpacity} />
@@ -239,6 +383,55 @@ export function RetouchStudio() {
               </button>
             </div>
           </div>
+        ) : null}
+
+        {inTattoo && stack && filmstripOpen ? (
+          <LayerFilmstrip
+            stack={stack}
+            stencilThumb={payload?.stencil ?? null}
+            onSelect={(id) => {
+              // Tapping the already-active layer opens its adjust sheet; otherwise just select it.
+              if (id === stack.activeId) setPanel((cur) => (cur === "layer" ? null : "layer"));
+              else setStack((cur) => (cur ? setActive(cur, id) : cur));
+            }}
+            onToggleVisible={(id) => {
+              const l = getLayer(stack, id);
+              if (l) setStack((cur) => (cur ? setVisible(cur, id, !l.visible) : cur));
+            }}
+            onAdd={() => fileInputRef.current?.click()}
+          />
+        ) : null}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) void addReferenceFromFile(f);
+          }}
+        />
+
+        {inTattoo && stack && panel === "layer" && activeLayer ? (
+          <LayerAdjustPanel
+            layer={activeLayer}
+            onLook={(patch: Partial<LayerLook>) => setStack((cur) => (cur ? updateLook(cur, activeLayer.id, patch) : cur))}
+            onTransform={(patch: Partial<LayerTransform>) =>
+              setStack((cur) => (cur ? updateTransform(cur, activeLayer.id, patch) : cur))
+            }
+            onResetLook={() => setStack((cur) => (cur ? resetLook(cur, activeLayer.id) : cur))}
+            onToggleLock={() => setStack((cur) => (cur ? setLocked(cur, activeLayer.id, !activeLayer.locked) : cur))}
+            onRemove={
+              activeLayer.kind === "stencil"
+                ? undefined
+                : () => {
+                    setStack((cur) => (cur ? removeLayer(cur, activeLayer.id) : cur));
+                    setPanel(null);
+                  }
+            }
+            onClose={() => setPanel(null)}
+          />
         ) : null}
 
         {panel === "color" ? (

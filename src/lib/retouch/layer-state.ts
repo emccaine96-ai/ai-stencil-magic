@@ -204,9 +204,26 @@ export function updateLook(stack: TattooStack, id: string, patch: Partial<LayerL
   return mapLayer(stack, id, (l) => ({ ...l, look: sanitizeLook(patch, l.look) }));
 }
 
-/** Locked layers refuse placement changes. The stencil can be moved too (that is the point). */
+/**
+ * Locked layers refuse placement changes. The stencil may be moved and scaled
+ * (that is the point) but NEVER rotated: RetouchCanvas maps pointer -> pixel
+ * through getBoundingClientRect(), which is exact under translate/scale but
+ * returns the axis-aligned bounding box of a rotated element. Measured: on a
+ * rotated stencil a stroke lands 33-129 px from the cursor. Rotation belongs on
+ * the reference/guide layers (rotate the photo to match the limb), so it is
+ * stripped from stencil patches here instead of relying on the UI to hide it.
+ */
 export function updateTransform(stack: TattooStack, id: string, patch: Partial<LayerTransform>): TattooStack {
-  return mapLayer(stack, id, (l) => (l.locked ? l : { ...l, transform: sanitizeTransform(patch, l.transform) }));
+  return mapLayer(stack, id, (l) => {
+    if (l.locked) return l;
+    const safe = l.kind === "stencil" ? { ...patch, rotation: 0 } : patch;
+    return { ...l, transform: sanitizeTransform(safe, l.transform) };
+  });
+}
+
+/** Whether the panel should offer rotation for this layer (false for the stencil). */
+export function canRotate(layer: TattooLayer): boolean {
+  return layer.kind !== "stencil";
 }
 
 export function resetLook(stack: TattooStack, id: string): TattooStack {
@@ -270,6 +287,7 @@ export function validateStack(stack: TattooStack): string[] {
   const ids = new Set(stack.layers.map((l) => l.id));
   if (ids.size !== stack.layers.length) errs.push("duplicate layer ids");
   for (const l of stack.layers) {
+    if (l.kind === "stencil" && l.transform.rotation !== 0) errs.push("stencil layer is rotated (breaks brush mapping)");
     if (l.kind !== "stencil" && !l.src) errs.push(`${l.name}: image layer has no src`);
     if (l.look.opacity < 0 || l.look.opacity > 1) errs.push(`${l.name}: opacity out of range`);
   }
