@@ -58,6 +58,16 @@ export type RetouchMode = "retouch" | "tattoo";
 /** Longest edge, in px, a reference photo is downscaled to. Bounds memory on huge phone photos. */
 const REFERENCE_MAX_EDGE = 2048;
 
+/** One-line cue shown under the top bar for each tool. */
+const TOOL_HINTS: Record<RetouchTool | "curves", string> = {
+  brush: "Paint to add ink",
+  erase: "Paint to erase ink",
+  lighten: "Paint to lighten shading",
+  darken: "Paint to deepen shading",
+  "remove-fill": "Tap a filled area to clear it",
+  curves: "Drag the curve to reshape tone",
+};
+
 /** Stand-in used while not in Tattoo Mode; TattooStage with fill=true ignores it. */
 const EMPTY_STACK: TattooStack = createStack(1, 1);
 
@@ -325,6 +335,15 @@ export function RetouchStudio() {
           }}
           layersOpen={mode === "tattoo" && filmstripOpen}
         />
+
+        {/* Tool hint: a one-line cue under the top bar that follows the active tool. */}
+        <div
+          className="pointer-events-none absolute left-1/2 top-16 -translate-x-1/2 rounded-full bg-black/70 px-3 py-1 text-[10px] text-white/80 backdrop-blur"
+          role="status"
+          aria-live="polite"
+        >
+          {panel === "curves" ? TOOL_HINTS.curves : TOOL_HINTS[tool]}
+        </div>
 
         <SizeOpacityPill size={size} opacity={opacity} onSizeChange={setSize} onOpacityChange={setOpacity} />
 

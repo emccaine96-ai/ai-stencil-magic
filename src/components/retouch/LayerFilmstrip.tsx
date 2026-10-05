@@ -63,6 +63,11 @@ export function LayerFilmstrip({ stack, stencilThumb, onSelect, onToggleVisible,
                   <Lock size={9} className="absolute bottom-0.5 right-0.5 text-white drop-shadow" aria-label="Locked" />
                 ) : null}
               </button>
+              <span
+                className={`max-w-[44px] truncate text-[9px] font-semibold ${active ? "text-white" : "text-white/60"}`}
+              >
+                {layer.name}
+              </span>
               <button
                 onClick={() => onToggleVisible(layer.id)}
                 className="text-white/60 hover:text-white"
