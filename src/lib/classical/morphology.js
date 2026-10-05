@@ -145,3 +145,34 @@ export function dilateErode(imageData, amount) {
   }
   return out;
 }
+
+/**
+ * Square-window dilation of a 0/1 mask, separable (two 1-D passes) so cost is O(r)
+ * per pixel, not O(r^2). Used to scope hatching to the neighbourhood of line ink.
+ */
+export function dilateSquare(mask, width, height, radius) {
+  const tmp = new Uint8Array(width * height);
+  const out = new Uint8Array(width * height);
+  const FAR = 1 << 30; // sentinel for "no set pixel on this side" (Int32Array cannot hold Infinity)
+  const nextSet = new Int32Array(Math.max(width, height));
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    let next = FAR;
+    for (let x = width - 1; x >= 0; x--) { if (mask[row + x]) next = x; nextSet[x] = next; }
+    let last = -FAR;
+    for (let x = 0; x < width; x++) {
+      if (mask[row + x]) last = x;
+      tmp[row + x] = (x - last <= radius || nextSet[x] - x <= radius) ? 1 : 0;
+    }
+  }
+  for (let x = 0; x < width; x++) {
+    let next = FAR;
+    for (let y = height - 1; y >= 0; y--) { if (tmp[y * width + x]) next = y; nextSet[y] = next; }
+    let last = -FAR;
+    for (let y = 0; y < height; y++) {
+      if (tmp[y * width + x]) last = y;
+      out[y * width + x] = (y - last <= radius || nextSet[y] - y <= radius) ? 1 : 0;
+    }
+  }
+  return out;
+}

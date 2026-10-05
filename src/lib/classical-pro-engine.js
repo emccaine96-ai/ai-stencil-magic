@@ -22,7 +22,7 @@ import { applyCLAHE } from './classical/clahe.js';
 import { bilateralApprox, fastBlur } from './classical/smoothing.js';
 import { applySCurveAndGamma, applyXDoG } from './classical/xdog.js';
 import { stochasticStipple, combineEdgeAndDither } from './classical/stipple.js';
-import { morphology, removeSmallBlobs, dilateErode } from './classical/morphology.js';
+import { morphology, removeSmallBlobs, dilateErode, dilateSquare } from './classical/morphology.js';
 import { computeStructureTensor, applyFlowModulation } from './classical/structure-tensor.js';
 import { mapToHectographPurple, makeTransparentBackground } from './classical/output.js';
 
@@ -246,8 +246,14 @@ class ClassicalProEngine {
         crosshatch: false,
       });
       const od = stencil.data;
+      // Scope hatch to within one hatch spacing of detected line ink, mirroring
+      // classical-engine/index.ts. renderHatchLayer inks every pixel below its tone
+      // cutoff, which on a dark backdrop is the whole frame.
+      const seed = new Uint8Array(workW * workH);
+      for (let i = 0, p = 0; i < od.length; i += 4, p++) seed[p] = od[i] < 128 ? 1 : 0;
+      const relevant = dilateSquare(seed, workW, workH, 12);
       for (let i = 0, p = 0; i < od.length; i += 4, p++) {
-        if (hatchLayer[p]) { od[i] = od[i+1] = od[i+2] = 0; od[i+3] = 255; }
+        if (hatchLayer[p] && relevant[p]) { od[i] = od[i+1] = od[i+2] = 0; od[i+3] = 255; }
       }
     }
 

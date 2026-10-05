@@ -8,6 +8,7 @@
  * (same input dimensions = same dot pattern).
  */
 import { createImageRNG } from './deterministic-rng.js';
+import { detectDarkBackdrop, inkDarkness } from './backdrop.js';
 
 /**
  * Bridson's Poisson-disk sampling. Generates points with a minimum distance
@@ -108,6 +109,8 @@ export function stochasticStipple(imageData, opts = {}) {
     o[i + 3] = 255;
   }
 
+  // Dark photo backdrops carry no subject tone; keep them paper (null on normal light-background art).
+  const backdrop = detectDarkBackdrop(data);
   const rng = createImageRNG(width, height);
   const points = poissonDiskPoints(width, height, minDist, rng);
 
@@ -165,7 +168,7 @@ export function stochasticStipple(imageData, opts = {}) {
     const sx = Math.min(width - 1, Math.max(0, Math.round(x)));
     const sy = Math.min(height - 1, Math.max(0, Math.round(y)));
     const lum = data[(sy * width + sx) * 4];
-    const darkness = 1 - lum / 255;
+    const darkness = inkDarkness(lum, backdrop);
     if (darkness <= 0.02) continue;
 
     const gamma = Math.pow(darkness, 0.75);
