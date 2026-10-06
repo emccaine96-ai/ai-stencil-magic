@@ -19,6 +19,7 @@ import { applyBackgroundMode } from './classical-engine/background.js';
 import { PipelineCache, hashParams } from './classical-engine/pipeline-types.js';
 import { integralImage } from './classical/integral-image.js';
 import { applyCLAHE } from './classical/clahe.js';
+import { detectDarkBackdrop } from './classical/backdrop.js';
 import { bilateralApprox, fastBlur } from './classical/smoothing.js';
 import { applySCurveAndGamma, applyXDoG } from './classical/xdog.js';
 import { stochasticStipple, combineEdgeAndDither } from './classical/stipple.js';
@@ -105,7 +106,13 @@ class ClassicalProEngine {
 
     // 2. CLAHE
     if (s.useClahe) {
-      img = applyCLAHE(img, 8, 2.0);
+      // CLAHE equalises each tile on its own, so on a near-black photo backdrop it
+      // stretches sensor noise into mid-gray texture and the tone-driven dither styles
+      // (dotwork, hybrid) then dot the empty backdrop. Skip it for those styles only when
+      // a dark backdrop is detected (null on normal photos => unchanged). Line styles keep
+      // CLAHE: solid depends on it for edge pull-out (skipping lost 14pts of edge recall).
+      const skipForBackdrop = s.shadingMode === 'dither' && detectDarkBackdrop(img.data);
+      if (!skipForBackdrop) img = applyCLAHE(img, 8, 2.0);
     }
 
     // 3. Bilateral smoothing
