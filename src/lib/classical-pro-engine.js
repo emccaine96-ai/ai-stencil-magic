@@ -13,7 +13,8 @@ import { applyMultiScaleRetinex } from './classical/retinex.js';
 import { sobel } from './classical-engine/edges.js';
 import { quantizeTones } from './classical-engine/tone-simplify.js';
 import { otsuThreshold, applyThreshold } from './classical-engine/otsu.js';
-import { structureTensorOrientation, renderHatchLayer } from './classical-engine/hatching.js';
+import { structureTensorOrientation } from './classical-engine/hatching.js';
+import { streamlineHatch } from './classical-engine/streamline-hatch.js';
 import { removeSmallInkSpecks, morphClose } from './classical-engine/cleanup.js';
 import { applyBackgroundMode } from './classical-engine/background.js';
 import { PipelineCache, hashParams } from './classical-engine/pipeline-types.js';
@@ -244,13 +245,12 @@ class ClassicalProEngine {
         gyField[i] = Math.sin(lowEdges.direction[i]) * lowEdges.magnitude[i];
       }
       const orientation = structureTensorOrientation(gxField, gyField, workW, workH);
-      const hatchLayer = renderHatchLayer(_sharedGray, orientation, workW, workH, {
-        baseAngle: Math.PI / 4,
-        followForm: true,
-        minSpacingPx: 3,
-        maxSpacingPx: 12,
-        lineWidthPx: 1,
-        crosshatch: false,
+      // Streamline tracer instead of renderHatchLayer's per-pixel stripe test: that test
+      // fragments (median stroke 1 px, ~94% of components under 12 px); traced strokes are
+      // connected by construction and follow the form. See streamline-hatch.ts.
+      const hatchLayer = streamlineHatch(_sharedGray, orientation, workW, workH, {
+        minSp: 3,
+        maxSp: 12,
       });
       const od = stencil.data;
       // Scope hatch to within one hatch spacing of detected line ink, mirroring
