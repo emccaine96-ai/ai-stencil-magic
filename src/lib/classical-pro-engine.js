@@ -250,16 +250,21 @@ class ClassicalProEngine {
       // fragments (median stroke 1 px, ~94% of components under 12 px); traced strokes are
       // connected by construction and follow the form. See streamline-hatch.ts.
       const hatchLayer = streamlineHatch(_sharedGray, orientation, workW, workH, {
-        minSp: 3,
-        maxSp: 12,
+        minSp: 2,
+        maxSp: 7,
+        maxLen: 140,
       });
       const od = stencil.data;
-      // Scope hatch to within one hatch spacing of detected line ink, mirroring
-      // classical-engine/index.ts. renderHatchLayer inks every pixel below its tone
-      // cutoff, which on a dark backdrop is the whole frame.
+      // On a dark photo backdrop the hatch would flood the whole frame, so there it stays
+      // scoped to within 12 px of detected line ink (mirrors classical-engine/index.ts). On
+      // normal-background photos the backdrop detector returns null and the hatch is only
+      // limited by tone, so cheeks, petals and other interiors get shaded too (scoping to
+      // edges left them empty: reference-stencil recall 0.26 -> 0.32 with interior fill).
       const seed = new Uint8Array(workW * workH);
       for (let i = 0, p = 0; i < od.length; i += 4, p++) seed[p] = od[i] < 128 ? 1 : 0;
-      const relevant = dilateSquare(seed, workW, workH, 12);
+      const relevant = detectDarkBackdrop(img.data)
+        ? dilateSquare(seed, workW, workH, 12)
+        : new Uint8Array(workW * workH).fill(1);
       for (let i = 0, p = 0; i < od.length; i += 4, p++) {
         if (hatchLayer[p] && relevant[p]) { od[i] = od[i+1] = od[i+2] = 0; od[i+3] = 255; }
       }
