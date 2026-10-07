@@ -151,6 +151,7 @@ class ClassicalProEngine {
         minRadius: 0.55,
         maxRadius: 2.4,
         spacing: Math.max(2, Math.round(s.detail_radius * 2.5)),
+        edgeWeight: 0.4,
       });
       stencil = combineEdgeAndDither(contourLines, stipple);
     } else {
