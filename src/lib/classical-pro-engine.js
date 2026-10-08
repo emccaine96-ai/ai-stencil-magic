@@ -249,10 +249,16 @@ class ClassicalProEngine {
       // Streamline tracer instead of renderHatchLayer's per-pixel stripe test: that test
       // fragments (median stroke 1 px, ~94% of components under 12 px); traced strokes are
       // connected by construction and follow the form. See streamline-hatch.ts.
+      // Stroke width and spacing are sized together to match the reference stencil's pencil
+      // hatching (measured on the baby reference: 2-3 px strokes, 4-8 px gaps at ~1024 px):
+      // 3 px strokes, 6-14 px spacing => 2.5 px / 5.8 px on the four reference pairs.
+      // A 1 px stroke at 2-7 px spacing is too fine to tattoo; thickening with a dilate
+      // instead (line_weight 1) merges neighbouring strokes and doubles the ink.
       const hatchLayer = streamlineHatch(_sharedGray, orientation, workW, workH, {
-        minSp: 2,
-        maxSp: 7,
+        minSp: 6,
+        maxSp: 14,
         maxLen: 140,
+        strokeWidth: 3,
       });
       const od = stencil.data;
       // On a dark photo backdrop the hatch would flood the whole frame, so there it stays

@@ -24,19 +24,32 @@ export interface StreamlineParams {
   toneCut: number;     // 0..1; do not hatch lighter than this
   sepFrac: number;     // stroke separation as a fraction of local spacing
   minLen: number;      // drop strokes shorter than this, px
+  strokeWidth: number; // drawn stroke width, px (1 = centerline only). Spacing is measured on the centerline.
 }
 
 export const DEFAULT_STREAMLINE: StreamlineParams = {
-  minSp: 3, maxSp: 12, step: 0.7, maxLen: 90, toneCut: 0.92, sepFrac: 0.5, minLen: 8,
+  minSp: 3, maxSp: 12, step: 0.7, maxLen: 90, toneCut: 0.92, sepFrac: 0.5, minLen: 8, strokeWidth: 1,
 };
 
 export function streamlineHatch(
   tone: Float32Array, ori: Float32Array, w: number, h: number,
   params: Partial<StreamlineParams> = {},
 ): Uint8ClampedArray {
-  const { minSp, maxSp, step, maxLen, toneCut, sepFrac, minLen } = { ...DEFAULT_STREAMLINE, ...params };
+  const { minSp, maxSp, step, maxLen, toneCut, sepFrac, minLen, strokeWidth } = { ...DEFAULT_STREAMLINE, ...params };
   const n = w * h;
   const out = new Uint8ClampedArray(n);
+  // `out` stays the 1 px centerline (it is the occupancy map the separation test reads, so spacing
+  // is unaffected by stroke width). A wider stroke is stamped into `thick`, returned instead.
+  const thick = strokeWidth > 1 ? new Uint8ClampedArray(n) : null;
+  const rad = (strokeWidth - 1) / 2;
+  const stampDisk = (xi: number, yi: number) => {
+    const R = Math.ceil(rad), r2 = rad * rad + 0.25;
+    for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) {
+      if (i * i + j * j > r2) continue;
+      const xx = xi + i, yy = yi + j;
+      if (xx >= 0 && yy >= 0 && xx < w && yy < h) thick![yy * w + xx] = 255;
+    }
+  };
   const cx = new Float32Array(n), cy = new Float32Array(n);
   for (let i = 0; i < n; i++) { cx[i] = Math.cos(ori[i]); cy[i] = Math.sin(ori[i]); }
 
@@ -111,16 +124,16 @@ export function streamlineHatch(
     for (let k = 0; k < pts.length; k++) {
       const [x, y] = pts[k];
       const xi = Math.round(x), yi = Math.round(y);
-      if (xi >= 0 && yi >= 0 && xi < w && yi < h) out[yi * w + xi] = 255;
+      if (xi >= 0 && yi >= 0 && xi < w && yi < h) { out[yi * w + xi] = 255; if (thick) stampDisk(xi, yi); }
       if (k > 0) { // bridge consecutive samples so the stroke is 8-connected
         const [x0, y0] = pts[k - 1];
         const m = Math.ceil(Math.max(Math.abs(x - x0), Math.abs(y - y0)) * 2);
         for (let t = 0; t <= m; t++) {
           const xx = Math.round(x0 + (x - x0) * t / m), yy = Math.round(y0 + (y - y0) * t / m);
-          if (xx >= 0 && yy >= 0 && xx < w && yy < h) out[yy * w + xx] = 255;
+          if (xx >= 0 && yy >= 0 && xx < w && yy < h) { out[yy * w + xx] = 255; if (thick) stampDisk(xx, yy); }
         }
       }
     }
   }
-  return out;
+  return thick ?? out;
 }
