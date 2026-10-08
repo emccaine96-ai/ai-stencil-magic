@@ -8,6 +8,7 @@
  */
 
 import { gaussianBlur } from './pyramid';
+// @ts-expect-error Shared browser ESM RNG has no declaration file in this TS-only project.
 import { createImageRNG } from '../classical/deterministic-rng.js';
 
 // Iterative, coherence-weighted flow-vector smoothing pass (Edge Tangent
