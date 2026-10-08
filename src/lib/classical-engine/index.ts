@@ -163,9 +163,6 @@ export async function runUpgradePipeline(
   // 6. Optional hatching
   if (options.hatching) {
     const lowEdges = sobel(bands.low, w, h);
-    const orientation = structureTensorOrientation(
-      lowEdges.direction, new Float32Array(w * h), w, h,
-    );
     // Approximate gx/gy from sobel direction
     const gxField = new Float32Array(w * h);
     const gyField = new Float32Array(w * h);
