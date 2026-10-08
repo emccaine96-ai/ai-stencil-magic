@@ -89,7 +89,8 @@ export function applyFlowModulation(edges, tensorData, strength) {
       let value = data[idx] * mod;
 
       if (coherence > COHERENCE_GATE) {
-        const dx = Math.cos(angle), dy = Math.sin(angle);
+        const tangent = angle + Math.PI / 2;
+        const dx = Math.cos(tangent), dy = Math.sin(tangent);
         let sum = data[idx], count = 1;
         for (let s = 1; s <= TANGENT_SAMPLES; s++) {
           const p1x = Math.round(x + dx * s), p1y = Math.round(y + dy * s);
