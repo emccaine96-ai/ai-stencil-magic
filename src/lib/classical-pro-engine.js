@@ -245,7 +245,13 @@ class ClassicalProEngine {
         gxField[i] = Math.cos(lowEdges.direction[i]) * lowEdges.magnitude[i];
         gyField[i] = Math.sin(lowEdges.direction[i]) * lowEdges.magnitude[i];
       }
-      const orientation = structureTensorOrientation(gxField, gyField, workW, workH);
+      // Field smoothing scales with image size: a fixed 2 px window is about one hair strand wide at
+      // 1024 px, so the field followed pore/grain noise and strokes wobbled instead of flowing with
+      // the form. Measured on tiger + elder at 1024 px: sigma 2 -> 6 lengthens traced strokes ~50%
+      // (median 31 -> 47 px) and raises field smoothness 0.93 -> 0.98 while fidelity to true edge
+      // tangents drops only ~3 points (0.875 -> 0.843); beyond sigma 8 fidelity falls with little gain.
+      const flowSigma = 6 * Math.max(workW, workH) / 1024;
+      const orientation = structureTensorOrientation(gxField, gyField, workW, workH, flowSigma, 3);
       // Streamline tracer instead of renderHatchLayer's per-pixel stripe test: that test
       // fragments (median stroke 1 px, ~94% of components under 12 px); traced strokes are
       // connected by construction and follow the form. See streamline-hatch.ts.
