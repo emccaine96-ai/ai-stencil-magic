@@ -23,6 +23,7 @@ import { serializePreset, loadPreset, type StencilPreset } from "./classical-eng
 import { segmentRegions, REGION } from "./classical-engine/region-segmenter";
 import type { BackgroundMode } from "./classical-engine/background";
 import { resizeMask, type ExclusionMask } from "./touch-up/smart-erase";
+import { runV2 } from "./classical-v2/pipeline";
 
 // Background modes exposed to users. 'simplify' is intentionally omitted:
 // applyBackgroundMode treats it as a no-op (it needs per-region param fields
@@ -130,6 +131,11 @@ export interface ClassicalProOptions {
   // resized to the engine's working size at the same point backgroundMode's
   // mask is. Standard + Advanced paths both consume it.
   exclusionMask?: ExclusionMask;
+  // classical-v2 pencil-style engine (src/lib/classical-v2). Default OFF so every
+  // existing path is byte-for-byte unchanged until explicitly enabled. Applies to
+  // hatching / solid / hybrid; dotwork still uses the standard engine (no stipple
+  // stage in v2 yet), same as the Advanced pipeline guard below.
+  useV2Engine?: boolean;
 }
 
 
@@ -166,6 +172,52 @@ export async function processClassicalPro(
 
   const canvas = document.createElement("canvas");
   const engine = new ClassicalProEngine(canvas);
+
+  // classical-v2 (opt-in): tone prep -> XDoG + flow-following hatch -> fragment cleanup.
+  // Same MAX_EDGE downscale cap as the other paths; same ClassicalProResult shape.
+  if (options.useV2Engine && options.style !== "dotwork") {
+    const srcW = img.naturalWidth || img.width;
+    const srcH = img.naturalHeight || img.height;
+    const { workW: vW, workH: vH } = engineWorkingSize(srcW, srcH);
+    const vCanvas = document.createElement("canvas");
+    vCanvas.width = vW;
+    vCanvas.height = vH;
+    const vCtx = vCanvas.getContext("2d", { willReadFrequently: true })!;
+    vCtx.drawImage(img, 0, 0, vW, vH);
+    const vData = vCtx.getImageData(0, 0, vW, vH);
+    const v2 = runV2(vData.data, vW, vH, { style: options.style });
+    const vEx = options.exclusionMask ? resizeMask(options.exclusionMask, vW, vH).data : null;
+
+    const outCanvas = document.createElement("canvas");
+    outCanvas.width = vW;
+    outCanvas.height = vH;
+    const outCtx = outCanvas.getContext("2d")!;
+    const outImg = outCtx.createImageData(vW, vH);
+    // Soft ink -> alpha, so anti-aliased strokes stay anti-aliased (not a 1-bit mask).
+    const purple = options.purpleTint ?? true;
+    const [cr, cg, cb] = purple ? [168, 85, 247] : [0, 0, 0];
+    const primary = new Uint8ClampedArray(vW * vH);
+    for (let i = 0, p = 0; p < vW * vH; i += 4, p++) {
+      const a = vEx && vEx[p] ? 0 : v2.ink[p];
+      outImg.data[i] = cr;
+      outImg.data[i + 1] = cg;
+      outImg.data[i + 2] = cb;
+      outImg.data[i + 3] = Math.round(Math.min(1, Math.max(0, a)) * 255);
+      primary[p] = a > 0.5 ? 255 : 0;
+    }
+    outCtx.putImageData(outImg, 0, 0);
+    // Intermediate for InkStylePanel: same fields the standard engine exposes.
+    const toneGray = new Float32Array(vW * vH);
+    for (let i = 0, p = 0; p < vW * vH; i += 4, p++) {
+      toneGray[p] = 0.299 * vData.data[i] + 0.587 * vData.data[i + 1] + 0.114 * vData.data[i + 2];
+    }
+    return {
+      dataUrl: outCanvas.toDataURL("image/png"),
+      presetName: `${options.style}-v2`,
+      processingTime: Math.round(performance.now() - t0),
+      intermediate: { primaryLines: primary, toneIdx: new Uint8Array(vW * vH), toneGray, width: vW, height: vH },
+    };
+  }
 
   // Advanced pipeline mode: use the full orchestrator (classical-engine/index.ts).
   // Dotwork is excluded — runUpgradePipeline has no stipple stage, so it would

@@ -230,6 +230,8 @@ function CreatePage() {
   // for harshly-lit/backlit reference photos), per VISION.md's "optional,
   // not default" rule and the classical-engine-audit.md recommendation.
   const [useRetinex, setUseRetinex] = useState(false);
+  // classical-v2 pencil-style engine (opt-in, default off). Applies to Classical provider only.
+  const [useV2Engine, setUseV2Engine] = useState(false);
   // Background separation -- 'keep' by default (fully inert), same
   // optional/off-by-default treatment as Retinex above.
   const [backgroundMode, setBackgroundMode] = useState<"keep" | "remove" | "fade">("keep");
@@ -442,8 +444,12 @@ function CreatePage() {
           useAdvancedPipeline,
           useRetinex,
           backgroundMode,
+          useV2Engine,
         });
-        const purpleResult = await normalizeToPurpleInk(result.dataUrl);
+        // v2 already emits correctly-coloured soft (anti-aliased) ink; the 1-bit
+        // normaliser would snap every faint stroke to full strength, so skip it there.
+        const usedV2 = useV2Engine && style !== "dotwork";
+        const purpleResult = usedV2 ? result.dataUrl : await normalizeToPurpleInk(result.dataUrl);
         setStencil(purpleResult);
         scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
         // Store intermediate data for InkStylePanel (if available from the engine)
@@ -839,6 +845,23 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
               {style === "dotwork" && useAdvancedPipeline ? (
                 <p className="text-[10px] text-muted-foreground/70">
                   Advanced doesn't support Dotwork yet — using the standard engine for this style.
+                </p>
+              ) : null}
+              <label
+                className={`flex items-center gap-2 text-xs cursor-pointer ${style === "dotwork" ? "text-muted-foreground/40 cursor-not-allowed" : "text-muted-foreground"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={useV2Engine && style !== "dotwork"}
+                  disabled={style === "dotwork"}
+                  onChange={(e) => setUseV2Engine(e.target.checked)}
+                  className="accent-primary"
+                />
+                <span>Pencil-style engine v2 (new, soft anti-aliased strokes)</span>
+              </label>
+              {style === "dotwork" && useV2Engine ? (
+                <p className="text-[10px] text-muted-foreground/70">
+                  Engine v2 doesn't support Dotwork yet — using the standard engine for this style.
                 </p>
               ) : null}
               <label className="flex items-center gap-2 text-xs cursor-pointer text-muted-foreground">
