@@ -25,6 +25,8 @@ export interface V2Options {
 }
 
 export interface V2Result {
+  ladder: keyof typeof HATCH_LADDERS; // ladder actually used (knobs shift relative to this)
+  darkKeyed: boolean;                 // photo was treated as dark-keyed
   ink: Float32Array;   // soft, 0..1
   lines: Float32Array;
   hatch: Float32Array;
@@ -74,32 +76,75 @@ function gradients(a: Float32Array, w: number, h: number) {
   return { gx, gy };
 }
 
-function pickLadder(tone: Float32Array, requested: V2Options["ladder"]): keyof typeof HATCH_LADDERS {
+/**
+ * Choose the hatch tone ladder from the tone map alone (no presets, no face detection).
+ *  - dark-keyed photos (low mean)            -> darkPhoto
+ *  - soft, mid-tone-heavy photos (portraits) -> portrait / softLight
+ *  - everything else                         -> default
+ * Thresholds come from the 4 reference photos (tiger, hibiscus, elder, baby), which separate
+ * cleanly on mid-tone share and mean gradient. Small sample: treat as a starting point and
+ * re-check when more reference photos are added.
+ */
+function pickLadder(tone: Float32Array, requested: V2Options["ladder"], w: number, h: number): keyof typeof HATCH_LADDERS {
   if (requested && requested !== "auto") return requested;
-  let mean = 0; for (let i = 0; i < tone.length; i++) mean += tone[i];
-  mean /= tone.length;
-  return mean < 0.4 ? "darkPhoto" : "default";
+  const n = tone.length;
+  let mean = 0, mid = 0;
+  for (let i = 0; i < n; i++) {
+    const v = tone[i];
+    mean += v;
+    if (v > 0.35 && v < 0.7) mid++;
+  }
+  mean /= n;
+  if (mean < 0.4) return "darkPhoto";
+  let grad = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      grad += Math.abs(tone[i + 1] - tone[i - 1]) + Math.abs(tone[i + w] - tone[i - w]);
+    }
+  }
+  grad /= n;
+  const midShare = mid / n;
+  if (midShare > 0.38 && grad < 0.11) return midShare > 0.47 ? "softLight" : "portrait";
+  return "default";
 }
 
-export function runV2(rgba: Uint8ClampedArray, w: number, h: number, opts: V2Options = {}): V2Result {
+/**
+ * Photo-dependent, knob-independent work (tone prep + flow field + ladder choice).
+ * The flow field is ~55% of total cost and never changes when a tuning knob moves,
+ * so callers that re-render on knob changes should prepare once and renderV2 many times.
+ */
+export interface V2Prepared {
+  w: number;
+  h: number;
+  tone: Float32Array;
+  orientation: Float32Array;
+  ladder: keyof typeof HATCH_LADDERS;
+  darkKeyed: boolean;
+}
+
+export function prepareV2(rgba: Uint8ClampedArray, w: number, h: number, opts: V2Options = {}): V2Prepared {
   const gray = grayFromRGBA(rgba, w, h).data;
   const prep = prepOptionsFor(gray);
   const tone = prepTone(gray, w, h, prep);
+  const ladder = pickLadder(tone, opts.ladder ?? "auto", w, h);
+  // Large-scale flow so strokes stay long and parallel (form, not pore noise).
+  const flowSrc = gaussian(tone, w, h, 2);
+  const { gx, gy } = gradients(flowSrc, w, h);
+  const orientation = structureTensorOrientation(gx, gy, w, h, 10 * Math.max(w, h) / 1024, 3);
+  return { w, h, tone, orientation, ladder, darkKeyed: prep.protectShadows };
+}
 
-  const ladderKey = pickLadder(tone, opts.ladder ?? "auto");
+/** Cheap per-knob render from a prepared photo (XDoG + hatch + cleanup only). */
+export function renderV2(pre: V2Prepared, opts: V2Options = {}): V2Result {
+  const { w, h, tone, orientation, darkKeyed } = pre;
+  const ladderKey = opts.ladder && opts.ladder !== "auto" ? opts.ladder : pre.ladder;
   const ladder = HATCH_LADDERS[ladderKey];
-  const darkKeyed = prep.protectShadows;
 
   const lines = dropFragments(
     xdogInk(tone, w, h, { epsilon: darkKeyed ? 0.02 : 0, ...opts.xdog }, opts.localContrast ?? 0.5),
     w, h, opts.minLinePx ?? 20, 0.4,
   );
-
-  // Large-scale flow so strokes stay long and parallel (form, not pore noise).
-  const flowSrc = gaussian(tone, w, h, 2);
-  const { gx, gy } = gradients(flowSrc, w, h);
-  const orientation = structureTensorOrientation(gx, gy, w, h, 10 * Math.max(w, h) / 1024, 3);
-
   const hatchRaw = renderHatchV2(tone, orientation, w, h, {
     levels: ladder.levels, spacing: ladder.spacing, width: 1.7,
     darkBoost: darkKeyed ? 0.5 : 0, supersample: 2, ...opts.hatch,
@@ -108,5 +153,10 @@ export function runV2(rgba: Uint8ClampedArray, w: number, h: number, opts: V2Opt
 
   const ink = new Float32Array(w * h);
   for (let i = 0; i < ink.length; i++) ink[i] = Math.min(1, Math.max(lines[i], hatch[i]));
-  return { ink, lines, hatch, w, h };
+  return { ladder: ladderKey, darkKeyed, ink, lines, hatch, w, h };
+}
+
+/** One-shot convenience (prepare + render). Output is identical to prepare-then-render. */
+export function runV2(rgba: Uint8ClampedArray, w: number, h: number, opts: V2Options = {}): V2Result {
+  return renderV2(prepareV2(rgba, w, h, opts), opts);
 }

@@ -16,8 +16,10 @@ import {
 import logo from "@/assets/stencil-logo.png";
 import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
-import { runPlugin, BUILTIN_PLUGINS } from "@/lib/plugins";
 import { processClassicalPro, type ClassicalProResult } from "@/lib/classical-pro-integration";
+import { createV2Session, type V2Session } from "@/lib/classical-v2/session";
+import { DEFAULT_TUNING, type V2Tuning } from "@/lib/classical-v2/tuning";
+import { FreeEngineTuning } from "@/components/FreeEngineTuning";
 import { computeStencilMetrics, computeTattooability, type TattooabilityResult } from "@/lib/classical-engine/inspector";
 // @ts-ignore — optional vectorization (imagetracerjs)
 import { vectorizeLineLayer } from "@/lib/classical-engine/vectorize";
@@ -210,8 +212,6 @@ function CreatePage() {
   const [keyDraft, setKeyDraft] = useState("");
   const [orKeyDraft, setOrKeyDraft] = useState("");
   const [provider, setProvider] = useState<Provider>("openrouter");
-  const [originalStencil, setOriginalStencil] = useState<string | null>(null);
-  const [pluginProcessing, setPluginProcessing] = useState<string | null>(null);
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
@@ -230,8 +230,13 @@ function CreatePage() {
   // for harshly-lit/backlit reference photos), per VISION.md's "optional,
   // not default" rule and the classical-engine-audit.md recommendation.
   const [useRetinex, setUseRetinex] = useState(false);
-  // classical-v2 pencil-style engine (opt-in, default off). Applies to Classical provider only.
-  const [useV2Engine, setUseV2Engine] = useState(false);
+  // Free client-side engine (classical-v2) session: heavy prep runs once per photo, then the
+  // optional fine-tune knobs only re-render. `freeEngineActive` is true ONLY when the current
+  // stencil came from the free engine, so the tuning panel never shows for AI results.
+  const v2SessionRef = useRef<V2Session | null>(null);
+  const v2TuningRef = useRef<V2Tuning>(DEFAULT_TUNING);
+  const [freeEngineActive, setFreeEngineActive] = useState(false);
+  const [tuningBusy, setTuningBusy] = useState(false);
   // Background separation -- 'keep' by default (fully inert), same
   // optional/off-by-default treatment as Retinex above.
   const [backgroundMode, setBackgroundMode] = useState<"keep" | "remove" | "fade">("keep");
@@ -338,52 +343,33 @@ function CreatePage() {
     setOrKeyDraft("");
   }
 
-  async function applyPlugin(pluginId: string) {
-    if (!stencil) return;
-    const plugin = BUILTIN_PLUGINS.find((p) => p.id === pluginId);
-    if (!plugin) return;
-
-    // Save original if this is the first plugin application
-    if (!originalStencil) setOriginalStencil(stencil);
-
-    setPluginProcessing(pluginId);
+  // Optional fine-tune for the free engine: re-render from the cached session (no re-prep).
+  async function retuneFreeEngine(tuning: V2Tuning) {
+    const session = v2SessionRef.current;
+    if (!session || !freeEngineActive) return;
+    v2TuningRef.current = tuning;
+    setTuningBusy(true);
+    // Let the busy spinner paint before the synchronous render blocks the thread.
+    await new Promise((r) => setTimeout(r, 0));
     try {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.src = stencil;
-      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
-
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-      const params: Record<string, any> = {};
-      plugin.params?.forEach((p) => { params[p.key] = p.default; });
-
-      const result = await runPlugin(plugin, imageData, params);
-      ctx.putImageData(result, 0, 0);
-      setStencil(canvas.toDataURL("image/png"));
-      toast.success(`${plugin.name} applied`);
+      const out = session.render(tuning, { purpleTint: true });
+      // A newer knob change may have arrived while rendering; only apply the latest.
+      if (v2TuningRef.current === tuning) {
+        setStencil(out.dataUrl);
+        setInkStyleData(out.intermediate);
+        scoreStencil(out.dataUrl).then(setTattooability).catch(() => setTattooability(null));
+      }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Plugin failed");
+      toast.error(e instanceof Error ? e.message : "Couldn't re-draw the stencil");
     } finally {
-      setPluginProcessing(null);
-    }
-  }
-
-  function revertPlugins() {
-    if (originalStencil) {
-      setStencil(originalStencil);
-      setOriginalStencil(null);
-      toast.success("Reverted to original");
+      setTuningBusy(false);
     }
   }
 
   async function onPick(file?: File | null) {
     if (!file) return;
+    setFreeEngineActive(false);
+    v2SessionRef.current = null;
     setStencil(null);
     setTattooability(null);
     setInkStyleData(null);
@@ -426,6 +412,7 @@ function CreatePage() {
     setLoading(true);
     setError(null);
     setStencil(null);
+    setFreeEngineActive(false);
     setInkStyleData(null);
     lastGenRef.current = {
       engine: provider,
@@ -437,24 +424,22 @@ function CreatePage() {
     };
     try {
       if (provider === "classical") {
-        const result = await processClassicalPro(photo, {
-          style,
-          intensity,
-          purpleTint: true,
-          useAdvancedPipeline,
-          useRetinex,
-          backgroundMode,
-          useV2Engine,
-        });
-        // v2 already emits correctly-coloured soft (anti-aliased) ink; the 1-bit
-        // normaliser would snap every faint stroke to full strength, so skip it there.
-        const usedV2 = useV2Engine && style !== "dotwork";
-        const purpleResult = usedV2 ? result.dataUrl : await normalizeToPurpleInk(result.dataUrl);
-        setStencil(purpleResult);
-        scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
-        // Store intermediate data for InkStylePanel (if available from the engine)
-        setInkStyleData(result.intermediate ?? null);
-        toast.success(`Classical Pro: ${style} (${result.processingTime}ms)`);
+        // Free client-side engine: standalone (no style presets). Default tuning = the
+        // calibrated look; the optional fine-tune panel re-renders from this session.
+        const img = new Image();
+        img.src = photo;
+        await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+        // Yield once so the loading state paints before the synchronous heavy work.
+        await new Promise((r) => setTimeout(r, 0));
+        const session = createV2Session(img);
+        v2SessionRef.current = session;
+        v2TuningRef.current = DEFAULT_TUNING;
+        const out = session.render(DEFAULT_TUNING, { purpleTint: true });
+        setStencil(out.dataUrl);
+        setFreeEngineActive(true);
+        scoreStencil(out.dataUrl).then(setTattooability).catch(() => setTattooability(null));
+        setInkStyleData(out.intermediate);
+        toast.success(`Free engine (${out.processingTime}ms)`);
         setLoading(false);
         return;
       }
@@ -828,63 +813,10 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
           {provider === "classical" ? (
             <div className="mt-3 p-4 rounded-2xl border border-border bg-card space-y-2">
               <p className="text-[11px] text-muted-foreground">
-                Classical Pro uses the same style + shading density as above. Runs locally — no API key, no credits.
+                <strong className="text-foreground">Free engine:</strong> pencil-style line work and shading, drawn on your
+                device. No API key, no credits. It tunes itself to your photo, and after generating you can fine-tune it
+                if you want to.
               </p>
-              <label
-                className={`flex items-center gap-2 text-xs cursor-pointer ${style === "dotwork" ? "text-muted-foreground/40 cursor-not-allowed" : "text-muted-foreground"}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={useAdvancedPipeline && style !== "dotwork"}
-                  disabled={style === "dotwork"}
-                  onChange={(e) => setUseAdvancedPipeline(e.target.checked)}
-                  className="accent-primary"
-                />
-                <span>Advanced multi-scale pipeline (experimental)</span>
-              </label>
-              {style === "dotwork" && useAdvancedPipeline ? (
-                <p className="text-[10px] text-muted-foreground/70">
-                  Advanced doesn't support Dotwork yet — using the standard engine for this style.
-                </p>
-              ) : null}
-              <label
-                className={`flex items-center gap-2 text-xs cursor-pointer ${style === "dotwork" ? "text-muted-foreground/40 cursor-not-allowed" : "text-muted-foreground"}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={useV2Engine && style !== "dotwork"}
-                  disabled={style === "dotwork"}
-                  onChange={(e) => setUseV2Engine(e.target.checked)}
-                  className="accent-primary"
-                />
-                <span>Pencil-style engine v2 (new, soft anti-aliased strokes)</span>
-              </label>
-              {style === "dotwork" && useV2Engine ? (
-                <p className="text-[10px] text-muted-foreground/70">
-                  Engine v2 doesn't support Dotwork yet — using the standard engine for this style.
-                </p>
-              ) : null}
-              <label className="flex items-center gap-2 text-xs cursor-pointer text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={useRetinex}
-                  onChange={(e) => { setUseRetinex(e.target.checked); setPhotoSuggestion(null); }}
-                  className="accent-primary"
-                />
-                <span>Fix harsh lighting (illumination normalization)</span>
-              </label>
-              <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>Background:</span>
-                <select
-                  value={backgroundMode}
-                  onChange={(e) => setBackgroundMode(e.target.value as "keep" | "remove" | "fade")}
-                  className="bg-background border border-border rounded-lg px-2 py-1 text-xs"
-                >
-                  <option value="keep">Keep</option>
-                  <option value="remove">Remove</option>
-                  <option value="fade">Fade</option>
-                </select>
-              </label>
             </div>
           ) : null}
           {provider === "hybrid" ? (
@@ -1216,52 +1148,10 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
               />
             ) : null}
 
-            {/* Plugin Enhancement Panel */}
-            <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Zap size={16} className="text-primary" />
-                  <span className="text-sm font-semibold">Quick Enhance</span>
-                </div>
-                {originalStencil ? (
-                  <button
-                    onClick={revertPlugins}
-                    className="text-xs text-muted-foreground hover:text-foreground underline"
-                  >
-                    Revert all
-                  </button>
-                ) : null}
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                One-tap filters to fine-tune your stencil. Stack multiple — each applies on top of the last.
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  { id: "builtin.stencil-sharpen", label: "Sharpen", icon: "✨" },
-                  { id: "builtin.smart-contrast", label: "Contrast", icon: "◐" },
-                  { id: "builtin.otsu-threshold", label: "Auto B/W", icon: "⬛" },
-                  { id: "builtin.edge-connector", label: "Fix Gaps", icon: "🔗" },
-                  { id: "builtin.line-thinning", label: "Thin Lines", icon: "✏️" },
-                  { id: "builtin.bilateral-smooth", label: "Smooth", icon: "🌊" },
-                  { id: "builtin.halftone-stipple", label: "Stipple", icon: "⚫" },
-                  { id: "builtin.mirror-symmetry", label: "Mirror", icon: "🪞" },
-                ].map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => applyPlugin(p.id)}
-                    disabled={pluginProcessing !== null}
-                    className="flex flex-col items-center gap-1 p-3 rounded-xl border border-border hover:border-primary/50 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {pluginProcessing === p.id ? (
-                      <Loader2 size={18} className="animate-spin text-primary" />
-                    ) : (
-                      <span className="text-lg">{p.icon}</span>
-                    )}
-                    <span className="text-[10px] font-medium">{p.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+            {/* Optional fine-tune: FREE client-side engine only, never shown for AI results */}
+            {freeEngineActive ? (
+              <FreeEngineTuning onChange={retuneFreeEngine} busy={tuningBusy} />
+            ) : null}
           </section>
         ) : null}
       </main>
