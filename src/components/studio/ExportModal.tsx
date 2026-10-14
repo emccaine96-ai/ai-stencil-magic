@@ -1,16 +1,21 @@
 import { useState } from "react";
 import { X, Download, Printer } from "lucide-react";
 import { exportCanvas, exportTiledPrint, type ExportFormat } from "@/lib/exporters";
+import { exportPSD, PSD_MAX_DIMENSION } from "@/lib/psd-export";
+import type { Layer } from "@/lib/layer-system";
 
 interface Props {
   canvas: HTMLCanvasElement;
   defaultName: string;
   onClose: () => void;
+  /** Document layers (bottom first). When provided, PSD export keeps every layer. */
+  layers?: Layer[];
 }
 
-export function ExportModal({ canvas, defaultName, onClose }: Props) {
+export function ExportModal({ canvas, defaultName, onClose, layers }: Props) {
   const [tab, setTab] = useState<"single" | "tiled">("single");
-  const [format, setFormat] = useState<ExportFormat>("png");
+  const [format, setFormat] = useState<ExportFormat | "psd">("png");
+  const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState(defaultName);
   const [quality, setQuality] = useState(92);
   const [busy, setBusy] = useState(false);
@@ -25,9 +30,39 @@ export function ExportModal({ canvas, defaultName, onClose }: Props) {
 
   async function run() {
     setBusy(true);
+    setError(null);
     try {
-      if (tab === "single") {
-        await exportCanvas(canvas, { format, filename: name, quality: quality / 100 });
+      if (tab === "single" && format === "psd") {
+        if (canvas.width > PSD_MAX_DIMENSION || canvas.height > PSD_MAX_DIMENSION) {
+          throw new Error(`PSD supports up to ${PSD_MAX_DIMENSION}px per side.`);
+        }
+        // Without Studio layers, fall back to a single flattened layer so the file is still valid.
+        const docLayers: Layer[] = layers?.length
+          ? layers
+          : [
+              {
+                id: "flat",
+                name: "Stencil",
+                kind: "raster",
+                visible: true,
+                locked: false,
+                opacity: 1,
+                blendMode: "normal",
+                clipped: false,
+                canvas,
+              } as Layer,
+            ];
+        const blob = exportPSD(canvas.width, canvas.height, docLayers, canvas);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${name || "stencil"}.psd`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      } else if (tab === "single") {
+        await exportCanvas(canvas, { format: format as ExportFormat, filename: name, quality: quality / 100 });
       } else {
         await exportTiledPrint(canvas, {
           filename: name,
@@ -40,6 +75,8 @@ export function ExportModal({ canvas, defaultName, onClose }: Props) {
         });
       }
       onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export failed");
     } finally {
       setBusy(false);
     }
@@ -70,6 +107,11 @@ export function ExportModal({ canvas, defaultName, onClose }: Props) {
         </div>
 
         <div className="p-4 space-y-3 text-xs">
+          {error && (
+            <div role="alert" className="rounded border border-destructive/40 bg-destructive/10 text-destructive px-2 py-1.5">
+              {error}
+            </div>
+          )}
           <label className="block">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
               Filename
@@ -89,7 +131,7 @@ export function ExportModal({ canvas, defaultName, onClose }: Props) {
                 </span>
                 <select
                   value={format}
-                  onChange={(e) => setFormat(e.target.value as ExportFormat)}
+                  onChange={(e) => setFormat(e.target.value as ExportFormat | "psd")}
                   className="w-full mt-1 bg-background border border-border rounded px-2 py-1.5"
                 >
                   <option value="png">PNG (white background)</option>
@@ -97,6 +139,7 @@ export function ExportModal({ canvas, defaultName, onClose }: Props) {
                   <option value="jpg">JPG</option>
                   <option value="pdf">PDF</option>
                   <option value="svg">SVG (embedded raster)</option>
+                  <option value="psd">PSD (layered, Photoshop)</option>
                 </select>
               </label>
               {format === "jpg" && (

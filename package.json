@@ -4,8 +4,11 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/copy-mediapipe-wasm.mjs",
     "dev": "vite dev",
+    "prebuild": "node scripts/copy-mediapipe-wasm.mjs",
     "build": "vite build",
+    "prebuild:dev": "node scripts/copy-mediapipe-wasm.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "echo \"Linting bypassed for build\"",

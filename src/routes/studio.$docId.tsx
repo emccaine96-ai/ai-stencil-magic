@@ -35,6 +35,8 @@ import {
   Sliders,
   Layers2,
   HelpCircle,
+  Eraser,
+  Film,
 } from "lucide-react";
 import {
   getDocument,
@@ -83,6 +85,11 @@ import { FiltersModal } from "@/components/studio/FiltersModal";
 import { AICopilotModal } from "@/components/studio/AICopilotModal";
 import { PublishGalleryModal } from "@/components/studio/PublishGalleryModal";
 import { Share2 } from "lucide-react";
+import { HistoryScrubber, type HistoryEntry as ScrubEntry } from "@/components/studio/HistoryScrubber";
+import { Timeline } from "@/components/studio/Timeline";
+import { RadialMenu, type RadialItem } from "@/components/studio/RadialMenu";
+import { newAnimation, type AnimationData, type Frame } from "@/lib/animation";
+import type { Layer } from "@/lib/layer-system";
 
 export const Route = createFileRoute("/studio/$docId")({
   head: () => ({
@@ -191,6 +198,15 @@ function StudioPage() {
   } | null>(null);
   const historyRef = useRef<HistoryEntry[]>([]);
   const futureRef = useRef<HistoryEntry[]>([]);
+  // History scrubber: position within the undo stack (undo count already applied = future length).
+  const [historyTick, setHistoryTick] = useState(0);
+  // Animation timeline (persisted in the doc's animationData sidecar)
+  const [anim, setAnim] = useState<AnimationData | null>(null);
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [onionSkin, setOnionSkin] = useState(0);
+  // Long-press radial menu (touch / pen only)
+  const [radial, setRadial] = useState<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
+  const longPressRef = useRef<{ timer: number | null; sx: number; sy: number; id: number } | null>(null);
 
   // Selection drag state
   const selDragRef = useRef<{ start: { x: number; y: number }; lasso: number[] } | null>(null);
@@ -228,6 +244,14 @@ function StudioPage() {
       setDoc(d);
       const initial = await ensureEditorState(d);
       if (!alive) return;
+      if (d.animationData) {
+        try {
+          const a = JSON.parse(d.animationData) as AnimationData;
+          if (a && Array.isArray(a.frames)) setAnim(a);
+        } catch {
+          /* corrupt sidecar: start without an animation rather than crash the studio */
+        }
+      }
       for (const layer of initial.layers) {
         const c = await dataUrlToCanvas(layer.dataUrl, initial.width, initial.height);
         layerCanvases.current.set(layer.id, c);
@@ -286,6 +310,7 @@ function StudioPage() {
     }
     ctx.restore();
     drawOverlay();
+    setHistoryTick((t) => (t + 1) % 1_000_000);
   }, [state, floating, hasSelection, antPhase]);
 
   useEffect(() => {
@@ -366,9 +391,28 @@ function StudioPage() {
   }
 
   /* ---------- Pointer handlers ---------- */
+  function cancelLongPress() {
+    const lp = longPressRef.current;
+    if (lp?.timer != null) window.clearTimeout(lp.timer);
+    longPressRef.current = null;
+  }
+
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
     if (!state) return;
     (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+    // Long-press radial menu: touch/pen only (a mouse never long-presses), single pointer, brush tool,
+    // and cancelled the moment the finger travels or lifts, so it can never fire mid-stroke.
+    cancelLongPress();
+    if (e.pointerType !== "mouse" && e.isPrimary && tool === "brush") {
+      const sx = e.clientX, sy = e.clientY;
+      longPressRef.current = {
+        sx, sy, id: e.pointerId,
+        timer: window.setTimeout(() => {
+          longPressRef.current = null;
+          setRadial({ open: true, x: sx, y: sy });
+        }, 550),
+      };
+    }
     const p = canvasCoords(e);
 
     if (tool === "transform" && floating) {
@@ -430,6 +474,8 @@ function StudioPage() {
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    const lp = longPressRef.current;
+    if (lp && Math.hypot(e.clientX - lp.sx, e.clientY - lp.sy) > 8) cancelLongPress();
     if (!state) return;
     const p = canvasCoords(e);
 
@@ -527,6 +573,7 @@ function StudioPage() {
   }
 
   function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
+    cancelLongPress();
     if (tfmDragRef.current) {
       tfmDragRef.current = null;
       return;
@@ -780,6 +827,95 @@ function StudioPage() {
     setDirty(true);
   }
 
+  /* ---------- PSD layer adapter ---------- */
+  const psdLayers: Layer[] | undefined = state
+    ? state.layers
+        .map((l) => {
+          const canvas = layerCanvases.current.get(l.id);
+          if (!canvas) return null;
+          return {
+            id: l.id,
+            name: l.name,
+            kind: "raster" as const,
+            visible: l.visible,
+            locked: l.locked,
+            opacity: l.opacity,
+            blendMode: l.blendMode,
+            clipped: l.clipping,
+            canvas,
+          } as Layer;
+        })
+        .filter((l): l is Layer => l !== null)
+    : undefined;
+
+  /* ---------- History scrubber ---------- */
+  // One entry per applied step plus the blank "Start"; index = steps currently applied.
+  // Scrubbing replays the existing undo()/redo(), so there is a single source of truth.
+  const scrubEntries: ScrubEntry[] = useMemo(() => {
+    const total = historyRef.current.length + futureRef.current.length;
+    return Array.from({ length: total + 1 }, (_, i) => ({
+      id: `h${i}`,
+      label: i === 0 ? "Start" : `Step ${i}`,
+      t: i,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyTick]);
+  const scrubIndex = historyRef.current.length;
+  function scrubTo(target: number) {
+    let guard = scrubEntries.length + 2;
+    while (guard-- > 0 && historyRef.current.length > target && historyRef.current.length > 0) undo();
+    while (guard-- > 0 && historyRef.current.length < target && futureRef.current.length > 0) redo();
+  }
+
+  const radialItems: RadialItem[] = [
+    { id: "undo", label: "Undo", icon: <Undo2 size={16} />, onPick: () => { undo(); setRadial((r) => ({ ...r, open: false })); } },
+    { id: "redo", label: "Redo", icon: <Redo2 size={16} />, onPick: () => { redo(); setRadial((r) => ({ ...r, open: false })); } },
+    { id: "brush", label: "Brush", icon: <BrushIcon size={16} />, onPick: () => { setActiveBrushId("hard-round"); setTool("brush"); setRadial((r) => ({ ...r, open: false })); } },
+    { id: "eraser", label: "Eraser", icon: <Eraser size={16} />, onPick: () => { setActiveBrushId("eraser"); setTool("brush"); setRadial((r) => ({ ...r, open: false })); } },
+    { id: "layers", label: "Layers", icon: <LayersIcon size={16} />, onPick: () => { setShowLayers(true); setShowBrushes(false); setRadial((r) => ({ ...r, open: false })); } },
+  ];
+
+  /* ---------- Animation timeline ---------- */
+  function captureFrame(): { thumbnail: string; state: string } {
+    const cv = composedRef.current!;
+    const layers = state!.layers.map((l) => ({
+      ...l,
+      dataUrl: layerCanvases.current.get(l.id)?.toDataURL("image/png") ?? "",
+    }));
+    return { thumbnail: cv.toDataURL("image/jpeg", 0.5), state: JSON.stringify({ ...state!, layers }) };
+  }
+  async function renderFrameTo(frame: Frame, target: HTMLCanvasElement) {
+    const es = JSON.parse(frame.state) as EditorState;
+    target.width = es.width;
+    target.height = es.height;
+    const ctx = target.getContext("2d")!;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, target.width, target.height);
+    for (const l of es.layers) {
+      if (!l.visible) continue;
+      const c = await dataUrlToCanvas(l.dataUrl, es.width, es.height);
+      ctx.globalAlpha = l.opacity;
+      ctx.globalCompositeOperation = l.blendMode as GlobalCompositeOperation;
+      ctx.drawImage(c, 0, 0);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
+  async function selectFrame(frame: Frame) {
+    const es = JSON.parse(frame.state) as EditorState;
+    for (const l of es.layers) {
+      layerCanvases.current.set(l.id, await dataUrlToCanvas(l.dataUrl, es.width, es.height));
+    }
+    historyRef.current = [];
+    futureRef.current = [];
+    setState(es);
+    setDirty(true);
+  }
+  function changeAnim(a: AnimationData) {
+    setAnim(a);
+    setDirty(true);
+  }
+
   /* ---------- Layer ops ---------- */
   function addLayer() {
     if (!state) return;
@@ -839,7 +975,12 @@ function StudioPage() {
         const thumb = await makeThumbnail(composed);
         const editorJson = JSON.stringify({ ...state, layers } satisfies EditorState);
         const next = await saveDocument(
-          { ...doc, thumbnail: thumb, layeredEditorData: editorJson },
+          {
+            ...doc,
+            thumbnail: thumb,
+            layeredEditorData: editorJson,
+            animationData: anim ? JSON.stringify(anim) : doc.animationData,
+          },
           { changes, thumbnail: thumb, editorState: editorJson },
         );
         setDoc(next);
@@ -848,7 +989,7 @@ function StudioPage() {
         setSaving(false);
       }
     },
-    [doc, state, saving],
+    [doc, state, saving, anim],
   );
 
   useEffect(() => {
@@ -1010,6 +1151,21 @@ function StudioPage() {
           className="px-2 py-1 rounded bg-gradient-primary text-primary-foreground font-semibold flex items-center gap-1"
         >
           <Save size={12} /> {saving ? "Saving…" : dirty ? "Save" : "Saved"}
+        </button>
+        <button
+          onClick={() => {
+            if (!timelineOpen && !anim && state) {
+              const f = captureFrame();
+              setAnim(newAnimation({ state: JSON.parse(f.state), thumbnail: f.thumbnail }));
+            }
+            setTimelineOpen((o) => !o);
+          }}
+          className={`p-1.5 rounded hover:bg-muted ${timelineOpen ? "text-primary" : ""}`}
+          aria-label="Animation timeline"
+          aria-pressed={timelineOpen}
+          title="Animation timeline"
+        >
+          <Film size={14} />
         </button>
         <button
           onClick={() => setExportOpen(true)}
@@ -1353,6 +1509,35 @@ function StudioPage() {
         )}
       </div>
 
+      {/* History scrubber + animation timeline (collapsible, bottom of canvas area) */}
+      {((timelineOpen && anim) || scrubEntries.length > 1) && (
+        <div className="shrink-0 border-t border-border bg-card px-2 py-2 space-y-2 max-h-[40vh] overflow-y-auto">
+          {scrubEntries.length > 1 && (
+            <HistoryScrubber entries={scrubEntries} index={scrubIndex} onScrub={scrubTo} />
+          )}
+          {timelineOpen && anim && (
+            <Timeline
+              anim={anim}
+              onChange={changeAnim}
+              onSelectFrame={selectFrame}
+              onCaptureCurrent={captureFrame}
+              composedCanvas={composedRef.current}
+              renderFrameTo={renderFrameTo}
+              onionSkin={onionSkin}
+              setOnionSkin={setOnionSkin}
+            />
+          )}
+        </div>
+      )}
+
+      <RadialMenu
+        open={radial.open}
+        x={radial.x}
+        y={radial.y}
+        onClose={() => setRadial((r) => ({ ...r, open: false }))}
+        items={radialItems}
+      />
+
       {showReference && (
         <ReferencePanel
           src={referenceSrc}
@@ -1366,6 +1551,7 @@ function StudioPage() {
           canvas={composedRef.current}
           defaultName={doc.name || "stencil"}
           onClose={() => setExportOpen(false)}
+          layers={psdLayers}
         />
       )}
 

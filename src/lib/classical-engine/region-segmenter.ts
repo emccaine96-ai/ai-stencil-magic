@@ -20,7 +20,7 @@ export async function getRegionSegmenter(): Promise<any> {
       try {
         const { FilesetResolver, ImageSegmenter } = await import('@mediapipe/tasks-vision' as any);
         const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+          '/mediapipe/wasm'
         );
         return ImageSegmenter.createFromOptions(vision, {
           baseOptions: {

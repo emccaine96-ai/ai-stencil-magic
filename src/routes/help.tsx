@@ -87,12 +87,13 @@ const SECTIONS: Section[] = [
     id: "brushes",
     title: "Pro Brush Engine",
     icon: Brush,
-    blurb: "27 hand-tuned brushes plus a full parameter editor.",
+    blurb: "47 hand-tuned brushes, including tattoo liners, magnums and shaders, plus a parameter editor.",
     body: (
       <div className="space-y-3">
         <p>
-          The brush engine is GPU-accelerated via OffscreenCanvas with LRU stamp caching, so even
-          huge brushes stay at 120 fps on modern Android tablets.
+          Every brush is pressure-aware and runs through a Kalman input smoother, so lines stay clean
+          even on a shaky hand. The set includes dedicated tattoo tools: 3RL and 9RL liners, 7 and 13
+          magnums, a curved mag, whip shading, pepper shading and a smooth shader.
         </p>
         <div className="grid sm:grid-cols-2 gap-3">
           {[
@@ -134,7 +135,7 @@ const SECTIONS: Section[] = [
     body: (
       <div className="space-y-3">
         <p>
-          The pointer router (<code>src/lib/pointer.ts</code>) filters by <code>pointerType</code>{" "}
+          The studio filters by <code>pointerType</code>{" "}
           so your palm is ignored when a stylus is active. Pressure is read from the device when
           available and Kalman-smoothed in real time.
         </p>
@@ -330,14 +331,13 @@ const SECTIONS: Section[] = [
   },
   {
     id: "collab",
-    title: "Real-time Collaboration",
+    title: "Collaboration (coming soon)",
     icon: Cloud,
-    blurb: "Live cursors, stroke broadcasting, CRDT-safe merges.",
+    blurb: "Coming after launch.",
     body: (
       <p className="text-sm">
-        Share a document via the <i>Share</i> button. Peers see your cursor and strokes in real time
-        over Supabase Realtime. The op-based CRDT in <code>src/lib/crdt-collab.ts</code> reconciles
-        concurrent edits without conflicts.
+        Live co-editing is not part of this release. You can already share finished work through the
+        Gallery. Real-time collaboration will ship once private, access-controlled rooms are ready.
       </p>
     ),
   },
@@ -399,11 +399,8 @@ const SECTIONS: Section[] = [
           fidelity.
         </li>
         <li>
-          <b>OffscreenCanvas workers</b> — keep the main thread free for UI.
-        </li>
-        <li>
-          <b>Tile-based undo</b> — only dirty regions snapshot, so 4K canvases stay responsive on
-          mid-range devices.
+          <b>Per-layer undo</b> — each step stores only the layer it changed, and the history
+          scrubber lets you jump to any earlier step.
         </li>
       </ul>
     ),
@@ -443,9 +440,9 @@ function HelpPage() {
         <section className="space-y-3">
           <h2 className="text-3xl font-bold">A Procreate-class studio, tailored for Android.</h2>
           <p className="text-muted-foreground">
-            PrimalCanvas 2.0 ships a full painting pipeline — pressure & tilt input, 27 hand-tuned
-            brushes, unlimited layers with 16 blend modes, vector node editing, AI copilot,
-            collaboration and pro export. This guide walks you through every feature.
+            PrimalCanvas 2.0 ships a full painting pipeline — pressure & tilt input, 47 hand-tuned
+            brushes, unlimited layers with blend modes, animation timeline, AI copilot,
+            and pro export. This guide walks you through every feature.
           </p>
           <div className="flex flex-wrap gap-2 pt-2">
             <Link

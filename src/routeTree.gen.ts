@@ -15,6 +15,7 @@ import { Route as CreateRouteImport } from './routes/create'
 import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as McpRouteImport } from './routes/mcp'
+import { Route as PluginWorkerDotjsRouteImport } from './routes/plugin-worker[.]js'
 import { Route as PluginsRouteImport } from './routes/plugins'
 import { Route as RetouchRouteImport } from './routes/retouch'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -58,6 +59,11 @@ const HelpRoute = HelpRouteImport.update({
 const McpRoute = McpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PluginWorkerDotjsRoute = PluginWorkerDotjsRouteImport.update({
+  id: '/plugin-worker.js',
+  path: '/plugin-worker.js',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PluginsRoute = PluginsRouteImport.update({
@@ -141,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/gallery': typeof GalleryRouteWithChildren
   '/help': typeof HelpRoute
   '/mcp': typeof McpRoute
+  '/plugin-worker.js': typeof PluginWorkerDotjsRoute
   '/plugins': typeof PluginsRoute
   '/retouch': typeof RetouchRoute
   '/settings': typeof SettingsRoute
@@ -163,6 +170,7 @@ export interface FileRoutesByTo {
   '/gallery': typeof GalleryRouteWithChildren
   '/help': typeof HelpRoute
   '/mcp': typeof McpRoute
+  '/plugin-worker.js': typeof PluginWorkerDotjsRoute
   '/plugins': typeof PluginsRoute
   '/retouch': typeof RetouchRoute
   '/settings': typeof SettingsRoute
@@ -186,6 +194,7 @@ export interface FileRoutesById {
   '/gallery': typeof GalleryRouteWithChildren
   '/help': typeof HelpRoute
   '/mcp': typeof McpRoute
+  '/plugin-worker.js': typeof PluginWorkerDotjsRoute
   '/plugins': typeof PluginsRoute
   '/retouch': typeof RetouchRoute
   '/settings': typeof SettingsRoute
@@ -210,6 +219,7 @@ export interface FileRouteTypes {
     | '/gallery'
     | '/help'
     | '/mcp'
+    | '/plugin-worker.js'
     | '/plugins'
     | '/retouch'
     | '/settings'
@@ -232,6 +242,7 @@ export interface FileRouteTypes {
     | '/gallery'
     | '/help'
     | '/mcp'
+    | '/plugin-worker.js'
     | '/plugins'
     | '/retouch'
     | '/settings'
@@ -254,6 +265,7 @@ export interface FileRouteTypes {
     | '/gallery'
     | '/help'
     | '/mcp'
+    | '/plugin-worker.js'
     | '/plugins'
     | '/retouch'
     | '/settings'
@@ -277,6 +289,7 @@ export interface RootRouteChildren {
   GalleryRoute: typeof GalleryRouteWithChildren
   HelpRoute: typeof HelpRoute
   McpRoute: typeof McpRoute
+  PluginWorkerDotjsRoute: typeof PluginWorkerDotjsRoute
   PluginsRoute: typeof PluginsRoute
   RetouchRoute: typeof RetouchRoute
   SettingsRoute: typeof SettingsRoute
@@ -334,6 +347,13 @@ declare module '@tanstack/react-router' {
       path: '/mcp'
       fullPath: '/mcp'
       preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plugin-worker.js': {
+      id: '/plugin-worker.js'
+      path: '/plugin-worker.js'
+      fullPath: '/plugin-worker.js'
+      preLoaderRoute: typeof PluginWorkerDotjsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/plugins': {
@@ -455,6 +475,7 @@ const rootRouteChildren: RootRouteChildren = {
   GalleryRoute: GalleryRouteWithChildren,
   HelpRoute: HelpRoute,
   McpRoute: McpRoute,
+  PluginWorkerDotjsRoute: PluginWorkerDotjsRoute,
   PluginsRoute: PluginsRoute,
   RetouchRoute: RetouchRoute,
   SettingsRoute: SettingsRoute,

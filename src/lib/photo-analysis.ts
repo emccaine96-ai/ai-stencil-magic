@@ -25,7 +25,7 @@ async function getFaceDetector(): Promise<any> {
       try {
         const { FilesetResolver, FaceDetector } = await import("@mediapipe/tasks-vision" as any);
         const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+          "/mediapipe/wasm"
         );
         return FaceDetector.createFromOptions(vision, {
           baseOptions: {

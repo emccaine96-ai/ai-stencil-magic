@@ -18,6 +18,8 @@ import {
   persistFromCanvases,
 } from "@/lib/editor-persist";
 import { toast } from "sonner";
+import { useTier } from "@/hooks/use-tier";
+import { can, TIER_LABEL, type Feature } from "@/lib/entitlements";
 import {
   DEFAULTS,
   BRUSH_LABELS,
@@ -30,10 +32,29 @@ import {
 } from "@/lib/brushes";
 import { PicsartDock, type PicsartDockHandlers } from "./PicsartDock";
 import { BrushPickerPanel } from "./BrushPickerPanel";
+import { FilterGalleryModal } from "./FilterGalleryModal";
+import { LayoutDialog, type LayoutKind, type LayoutResult } from "./LayoutDialog";
+import { borderImageData, cropImageData, frameImageData, resizeImageData } from "@/lib/vault-ops/layout-ops";
+import { createMask, featherMask, isEmpty, magicWand } from "@/lib/selection";
 import { useNavigate } from "@tanstack/react-router";
-import { applyAdjustmentsToCanvas, type AdjustmentValues } from "@/lib/canvas/adjustments";
+import { applyAdjustments, applyAdjustmentsToCanvas, type AdjustmentValues } from "@/lib/canvas/adjustments";
 import { applyWithinMask } from "@/lib/canvas/local-touchup";
 import { runPlugin, BUILTIN_PLUGINS } from "@/lib/plugins";
+import {
+  FILTER_OPS,
+  STROKE_OPS,
+  ASYNC_OPS,
+  type StrokeKind,
+} from "@/lib/vault-ops/dock-ops";
+import {
+  smudgeImageData,
+  liquifyImageData,
+  healImageData,
+  cloneStampImageData,
+  removeBackground,
+  upscaleImageData,
+  type Point as OpPoint,
+} from "@/lib/vault-ops/brush-ops";
 
 type Props = {
   doc: DocumentData;
@@ -43,6 +64,12 @@ type Props = {
 
 type Tool = "brush" | "eraser" | "pan" | "eyedrop";
 
+/** Upper bound on pixels held by undo snapshots. */
+const UNDO_BUDGET_BYTES = 240 * 1024 * 1024;
+/** Largest long edge the Upscale button will produce (a 4096 square is ~67 MB per snapshot). */
+const UPSCALE_TARGET_LONG_EDGE = 6000;
+const UPSCALE_MAX_PIXELS = 36_000_000; // 6000 x 6000
+
 /**
  * Vault studio editor — unified save path + first-run Draw coach.
  * Loads layered state, supports draw/pan/undo, and persists via persistFromCanvases.
@@ -50,6 +77,15 @@ type Tool = "brush" | "eraser" | "pan" | "eyedrop";
 export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const { tier } = useTier();
+  /** Soft gate for paid tools. Returns true when allowed; otherwise explains and returns false. */
+  const requirePlan = (feature: Feature, label: string): boolean => {
+    if (can(tier, feature)) return true;
+    toast.info(`${label} is a Pro feature (you're on ${TIER_LABEL[tier]}).`, {
+      description: "Upgrade to Pro in Settings to unlock it.",
+    });
+    return false;
+  };
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const refCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const refCtxRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -80,6 +116,11 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   const [coachVisible, setCoachVisible] = useState(false);
   const [brushPickerOpen, setBrushPickerOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [wandOn, setWandOn] = useState(false);
+  const [layoutKind, setLayoutKind] = useState<LayoutKind | null>(null);
+  const [wandTolerance, setWandTolerance] = useState(32);
+  const [gallerySource, setGallerySource] = useState<ImageData | null>(null);
   const [adjustments, setAdjustments] = useState<AdjustmentValues>({});
 
   const navigate = useNavigate();
@@ -205,7 +246,12 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     if (!ctx) return;
     const snap = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
     undoStack.current.push(snap);
-    while (undoStack.current.length > 40) undoStack.current.shift();
+    // Keep at most 40 steps AND at most ~240 MB of snapshots, so a large canvas can't exhaust phone memory.
+    const bytes = (x: ImageData) => x.width * x.height * 4;
+    let total = undoStack.current.reduce((n, x) => n + bytes(x), 0);
+    while (undoStack.current.length > 2 && (undoStack.current.length > 40 || total > UNDO_BUDGET_BYTES)) {
+      total -= bytes(undoStack.current.shift()!);
+    }
     redoStack.current = [];
     setCanUndo(undoStack.current.length > 1);
     setCanRedo(false);
@@ -259,22 +305,46 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     };
   }, [autosaveNow]);
 
-  function doUndo() {
+  /** Put a snapshot on the canvas, resizing the canvas (and reference overlay) if its size differs. */
+  function restoreSnapshot(snap: ImageData) {
     const ctx = ctxRef.current;
-    if (!ctx || undoStack.current.length < 2) return;
+    if (!ctx) return;
+    const canvas = ctx.canvas;
+    if (canvas.width !== snap.width || canvas.height !== snap.height) {
+      canvas.width = snap.width;
+      canvas.height = snap.height;
+      const ref = refCanvasRef.current;
+      if (ref) {
+        // Resizing wipes a canvas, so carry the reference image across (scaled to fit).
+        const keep = document.createElement("canvas");
+        keep.width = ref.width;
+        keep.height = ref.height;
+        keep.getContext("2d")!.drawImage(ref, 0, 0);
+        ref.width = snap.width;
+        ref.height = snap.height;
+        if (keep.width > 0 && keep.height > 0) {
+          refCtxRef.current?.drawImage(keep, 0, 0, snap.width, snap.height);
+        }
+      }
+      fitToScreen();
+    }
+    ctx.putImageData(snap, 0, 0);
+  }
+
+  function doUndo() {
+    if (!ctxRef.current || undoStack.current.length < 2) return;
     const cur = undoStack.current.pop()!;
     redoStack.current.push(cur);
-    ctx.putImageData(undoStack.current[undoStack.current.length - 1], 0, 0);
+    restoreSnapshot(undoStack.current[undoStack.current.length - 1]);
     setCanUndo(undoStack.current.length > 1);
     setCanRedo(true);
   }
 
   function doRedo() {
-    const ctx = ctxRef.current;
-    if (!ctx) return;
+    if (!ctxRef.current) return;
     const next = redoStack.current.pop();
     if (!next) return;
-    ctx.putImageData(next, 0, 0);
+    restoreSnapshot(next);
     undoStack.current.push(next);
     setCanUndo(true);
     setCanRedo(redoStack.current.length > 0);
@@ -318,6 +388,33 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     }
   }
 
+  /** Magic wand cutout: select the contiguous region under the tap and erase it to transparent. */
+  function wandCutAt(cx: number, cy: number) {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    const { x, y } = screenToCanvas(cx, cy);
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+    const { width: w, height: h } = ctx.canvas;
+    if (ix < 0 || iy < 0 || ix >= w || iy >= h) return;
+    const img = ctx.getImageData(0, 0, w, h);
+    if (img.data[(iy * w + ix) * 4 + 3] === 0) {
+      toast.info("That area is already transparent");
+      return;
+    }
+    const mask = createMask(w, h);
+    magicWand(mask, img, ix, iy, wandTolerance, true);
+    if (isEmpty(mask)) return;
+    featherMask(mask, 1); // soften the cut edge a touch so it isn't jagged
+    const d = img.data;
+    for (let p = 0; p < mask.data.length; p++) {
+      const m = mask.data[p];
+      if (m) d[p * 4 + 3] = Math.round((d[p * 4 + 3] * (255 - m)) / 255);
+    }
+    ctx.putImageData(img, 0, 0);
+    pushUndo();
+  }
+
   function eyedropAt(cx: number, cy: number) {
     const ctx = ctxRef.current!;
     const { x, y } = screenToCanvas(cx, cy);
@@ -346,12 +443,30 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
     if (pointers.current.size >= 2) {
       if (drawingPointerId.current !== null) {
-        endDraw();
+        if (retouch) retouchPath.current = [];
+        else endDraw();
         drawingPointerId.current = null;
       }
       return;
     }
 
+    if (retouch) {
+      const { x, y } = screenToCanvas(e.clientX, e.clientY);
+      // Clone stamp: first tap (with no source yet) picks the source point.
+      if (retouch === "clone" && !cloneSource.current) {
+        cloneSource.current = { x, y };
+        toast.info("Source set. Now paint where you want the copy.", { duration: 2000 });
+        return;
+      }
+      drawingPointerId.current = e.pointerId;
+      retouchPath.current = [{ x, y, pressure: pressure }];
+      return;
+    }
+
+    if (wandOn) {
+      wandCutAt(e.clientX, e.clientY);
+      return;
+    }
     if (tool === "eyedrop") {
       eyedropAt(e.clientX, e.clientY);
       return;
@@ -369,7 +484,13 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     p.cy = e.clientY;
     p.pressure = e.pressure > 0 ? e.pressure : p.pressure;
 
-    if (e.pointerId === drawingPointerId.current) {
+    if (retouch && e.pointerId === drawingPointerId.current) {
+      const { x, y } = screenToCanvas(e.clientX, e.clientY);
+      const last = retouchPath.current[retouchPath.current.length - 1];
+      if (!last || Math.hypot(x - last.x, y - last.y) >= 1.5) {
+        retouchPath.current.push({ x, y, pressure: p.pressure });
+      }
+    } else if (e.pointerId === drawingPointerId.current) {
       continueDraw(e.clientX, e.clientY, p.pressure);
     } else if (tool === "pan" && pointers.current.size === 1) {
       const v = viewRef.current;
@@ -380,7 +501,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   function onPointerUp(e: React.PointerEvent) {
     pointers.current.delete(e.pointerId);
     if (e.pointerId === drawingPointerId.current) {
-      endDraw();
+      if (retouch) finishRetouch();
+      else endDraw();
       drawingPointerId.current = null;
     }
   }
@@ -422,6 +544,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
   }
 
   const enterDrawMode = useCallback(() => {
+    setRetouch(null);
+    setWandOn(false);
     setDrawMode(true);
     setTool("brush");
     toast.info("Draw mode — brush active", { duration: 2000 });
@@ -477,68 +601,208 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     pushUndo();
   }
 
-  const stub = (label: string) => () => toast.info(`${label} in full studio`);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [retouch, setRetouch] = useState<StrokeKind | null>(null);
+  const retouchPath = useRef<OpPoint[]>([]);
+  const cloneSource = useRef<{ x: number; y: number } | null>(null);
+
+  /** Run a pure ImageData op on the canvas, write the result back and record undo. */
+  function applyFilter(label: string, run: (img: ImageData) => ImageData) {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    try {
+      const src = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+      const out = run(src);
+      if (out.width !== src.width || out.height !== src.height) {
+        restoreSnapshot(out);
+      } else {
+        ctx.putImageData(out, 0, 0);
+      }
+      pushUndo();
+    } catch (err) {
+      console.error(`[editor] ${label} failed`, err);
+      toast.error(`${label} failed`);
+    }
+  }
+
+  /** Same as applyFilter, but for async jobs, with a busy indicator. */
+  async function applyAsync(label: string, run: (img: ImageData) => Promise<ImageData>) {
+    const ctx = ctxRef.current;
+    if (!ctx || busy) return;
+    setBusy(label);
+    try {
+      // Let the busy state paint before heavy synchronous work starts.
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      const src = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+      const out = await run(src);
+      if (out.width !== src.width || out.height !== src.height) restoreSnapshot(out);
+      else ctx.putImageData(out, 0, 0);
+      pushUndo();
+      toast.success(`${label} done`);
+    } catch (err) {
+      console.error(`[editor] ${label} failed`, err);
+      toast.error(`${label} failed`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Switch to a drag-to-retouch tool. The stroke is applied when the finger lifts. */
+  function startRetouch(kind: StrokeKind, label: string, hint: string) {
+    setWandOn(false);
+    setRetouch(kind);
+    setTool("pan");
+    setDrawMode(false);
+    cloneSource.current = null;
+    retouchPath.current = [];
+    toast.info(`${label}: ${hint}`, { duration: 2500 });
+  }
+
+  /** Apply the collected retouch path, then clear it. */
+  function finishRetouch() {
+    const kind = retouch;
+    const path = retouchPath.current;
+    retouchPath.current = [];
+    if (!kind || path.length === 0) return;
+    const radius = Math.max(4, Math.round(size * 1.5));
+    const label = Object.values(STROKE_OPS).find((o) => o.stroke === kind)?.label ?? "Retouch";
+    applyFilter(label, (img) => {
+      switch (kind) {
+        case "smudge":
+          return smudgeImageData(img, path, { radius, strength: 0.7 });
+        case "liquify-push":
+          return liquifyImageData(img, path, { mode: "push", radius, strength: 0.6 });
+        case "liquify-inflate":
+          return liquifyImageData(img, path, { mode: "inflate", radius, strength: 0.6 });
+        case "liquify-deflate":
+          return liquifyImageData(img, path, { mode: "deflate", radius, strength: 0.6 });
+        case "heal": {
+          // Build a mask from the painted path.
+          const mask = new Uint8Array(img.width * img.height);
+          const r2 = radius * radius;
+          for (const p of path) {
+            const x0 = Math.max(0, Math.floor(p.x - radius)), x1 = Math.min(img.width - 1, Math.ceil(p.x + radius));
+            const y0 = Math.max(0, Math.floor(p.y - radius)), y1 = Math.min(img.height - 1, Math.ceil(p.y + radius));
+            for (let y = y0; y <= y1; y++)
+              for (let x = x0; x <= x1; x++)
+                if ((x - p.x) ** 2 + (y - p.y) ** 2 <= r2) mask[y * img.width + x] = 255;
+          }
+          return healImageData(img, { mask });
+        }
+        case "clone": {
+          const src = cloneSource.current;
+          if (!src) return img;
+          const first = path[0];
+          return cloneStampImageData(img, path, {
+            sourceOffset: { x: src.x - first.x, y: src.y - first.y },
+            radius,
+            strength: 1,
+          });
+        }
+      }
+    });
+  }
+
+  const stub = (label: string) => () => toast.info(`${label} isn't available yet`);
+
+  /** Handler for a one-tap filter from the shared op table. */
+  const filter = (key: string) => () => applyFilter(FILTER_OPS[key].label, FILTER_OPS[key].run);
+  /** Handler for a drag-to-retouch tool. */
+  const stroke = (key: string) => () => {
+    const o = STROKE_OPS[key];
+    startRetouch(o.stroke, o.label, o.hint);
+  };
 
   const dockHandlers: PicsartDockHandlers = {
-    openCrop: stub("Crop"),
+    openCrop: () => setLayoutKind("crop"),
     setSelectionMode: stub("Selection"),
+    openFilters: () => {
+      const ctx = ctxRef.current;
+      if (!ctx) return;
+      setGallerySource(ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height));
+      setGalleryOpen(true);
+    },
     openAdjust: () => setAdjustOpen(true),
     enhance: () => setAdjustOpen(true),
-    resizeMenu: stub("Resize"),
-    flipH: stub("Flip"),
-    flipV: stub("Flip"),
-    rotate90: stub("Rotate"),
+    resizeMenu: () => setLayoutKind("resize"),
+    flipH: filter("flipH"),
+    flipV: filter("flipV"),
+    rotate90: filter("rotate90"),
     perspective: stub("Perspective"),
-    tiltShift: stub("Tilt shift"),
+    tiltShift: filter("tiltShift"),
     aiExpand: stub("Expand"),
     aiReplace: stub("Replace"),
-    dispersion: stub("Dispersion"),
-    stretch: stub("Stretch"),
-    motion: stub("Motion"),
+    dispersion: filter("dispersion"),
+    stretch: filter("stretch"),
+    motion: filter("motion"),
     shapeCrop: stub("Shape crop"),
     freeCrop: stub("Free crop"),
-    cloneStamp: stub("Clone"),
-    curves: stub("Curves"),
-    upscale6k: stub("Upscale"),
+    cloneStamp: stroke("cloneStamp"),
+    curves: filter("curves"),
+    upscale6k: () => {
+      if (!requirePlan("upscale-6k", "Upscale 6K")) return;
+      const ctx = ctxRef.current;
+      if (!ctx) return;
+      const { width: w, height: h } = ctx.canvas;
+      // Scale so the long edge reaches ~6000px, never shrinking and never beyond the pixel budget.
+      let factor = UPSCALE_TARGET_LONG_EDGE / Math.max(w, h);
+      factor = Math.min(factor, Math.sqrt(UPSCALE_MAX_PIXELS / (w * h)));
+      if (factor < 1.05) {
+        toast.info("This stencil is already at maximum size");
+        return;
+      }
+      const outW = Math.round(w * factor);
+      const outH = Math.round(h * factor);
+      void applyAsync(`Upscaling to ${outW}×${outH}`, (img) =>
+        upscaleImageData(img, factor, undefined, { sharpenAmount: 0.25 }),
+      );
+    },
     stencilClean: () => applyDockPlugin("builtin.edge-connector"),
     threshold: () => applyDockPlugin("builtin.otsu-threshold"),
-    thermalBlue: stub("Thermal"),
-    thermalPurple: () => applyDockPlugin("builtin.hectograph-purple"),
-    sharpen: () => applyDockPlugin("builtin.stencil-sharpen"),
-    blur: stub("Blur"),
-    vignette: stub("Vignette"),
+    thermalBlue: filter("thermalBlue"),
+    thermalPurple: filter("thermalPurple"),
+    sharpen: filter("sharpen"),
+    blur: filter("blur"),
+    vignette: filter("vignette"),
     halftone: () => applyDockPlugin("builtin.halftone-stipple"),
-    pixelate: stub("Pixelate"),
+    pixelate: filter("pixelate"),
     posterize: () => applyDockPlugin("builtin.posterize"),
-    edge: stub("Edge"),
-    grain: stub("Grain"),
-    sepia: stub("Sepia"),
-    lensFlare: stub("Lens flare"),
-    glow: stub("Glow"),
-    chromatic: stub("Chromatic"),
-    gradientMap: stub("Gradient map"),
-    smudge: stub("Smudge"),
-    heal: stub("Heal"),
-    liquifyPush: stub("Liquify"),
-    liquifyInflate: stub("Liquify"),
-    liquifyDeflate: stub("Liquify"),
-    removeBg: stub("Remove BG"),
-    cutout: stub("Cutout"),
+    edge: filter("edge"),
+    grain: filter("grain"),
+    sepia: filter("sepia"),
+    lensFlare: filter("lensFlare"),
+    glow: filter("glow"),
+    chromatic: filter("chromatic"),
+    gradientMap: filter("gradientMap"),
+    smudge: stroke("smudge"),
+    heal: stroke("heal"),
+    liquifyPush: stroke("liquifyPush"),
+    liquifyInflate: stroke("liquifyInflate"),
+    liquifyDeflate: stroke("liquifyDeflate"),
+    removeBg: () => !requirePlan("remove-bg", "Remove BG") ? undefined : applyAsync(ASYNC_OPS.removeBg.label, async (img) => (await removeBackground(img)).imageData),
+    cutout: () => {
+      setRetouch(null);
+      setDrawMode(false);
+      setTool("pan");
+      setWandOn(true);
+      toast.info("Magic Wand: tap an area to cut it out", { duration: 2500 });
+    },
     text: stub("Text"),
     addPhoto: stub("Reference"),
     openBrushes: () => setBrushPickerOpen(true),
     shapeMask: stub("Shape mask"),
-    frame: stub("Frame"),
+    frame: () => setLayoutKind("frame"),
     callout: stub("Callout"),
     draw: () => enterDrawMode(),
     sticker: stub("Sticker"),
     aiTryOn: () => navigate({ to: "/plugins" }),
     apps: () => navigate({ to: "/plugins" }),
     myFolders: () => onClose(),
-    border: stub("Border"),
+    border: () => setLayoutKind("border"),
     shape: stub("Shape"),
     mask: stub("Mask"),
   };
+
 
   return (
     <div
@@ -600,6 +864,42 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
             <Check size={13} /> Done
           </button>
         )}
+        {wandOn && (
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1 text-[10px] text-white/70">
+              Tolerance
+              <input
+                type="range"
+                min={0}
+                max={120}
+                value={wandTolerance}
+                onChange={(e) => setWandTolerance(Number(e.target.value))}
+                aria-label="Wand tolerance"
+                className="w-20"
+              />
+            </label>
+            <button
+              onClick={() => setWandOn(false)}
+              className="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 bg-[#00F5D4] text-black"
+              aria-label="Finish magic wand"
+            >
+              <Check size={13} /> Wand · Done
+            </button>
+          </div>
+        )}
+        {retouch && (
+          <button
+            onClick={() => {
+              setRetouch(null);
+              retouchPath.current = [];
+              cloneSource.current = null;
+            }}
+            className="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 bg-[#00F5D4] text-black"
+            aria-label="Finish retouch"
+          >
+            <Check size={13} /> {Object.values(STROKE_OPS).find((o) => o.stroke === retouch)?.label ?? "Retouch"} · Done
+          </button>
+        )}
         <button
           onClick={doUndo}
           disabled={!canUndo}
@@ -646,14 +946,14 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           }}
         >
           <button
-            onClick={() => setTool("brush")}
+            onClick={() => { setRetouch(null); setWandOn(false); setTool("brush"); }}
             className={`p-2 rounded ${tool === "brush" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`}
             aria-label="Brush"
           >
             <Pen size={16} className="mx-auto" />
           </button>
           <button
-            onClick={() => setTool("pan")}
+            onClick={() => { setRetouch(null); setWandOn(false); setTool("pan"); }}
             className={`p-2 rounded ${tool === "pan" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`}
             aria-label="Pan"
           >
@@ -661,6 +961,8 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           </button>
           <button
             onClick={() => {
+              setRetouch(null);
+              setWandOn(false);
               setTool("eraser");
               setBrushId("eraser");
             }}
@@ -670,7 +972,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
             <Eraser size={16} className="mx-auto" />
           </button>
           <button
-            onClick={() => setTool("eyedrop")}
+            onClick={() => { setRetouch(null); setWandOn(false); setTool("eyedrop"); }}
             className={`p-2 rounded ${tool === "eyedrop" ? "bg-[#00F5D4]/20 text-[#00F5D4]" : "hover:bg-white/10"}`}
             aria-label="Eyedropper"
           >
@@ -840,6 +1142,50 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
           </div>
         </div>
       )}
+      {busy && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute inset-0 grid place-items-center"
+          style={{ zIndex: 60, background: "rgba(0,0,0,0.45)" }}
+        >
+          <div className="px-4 py-2 rounded-full text-sm font-semibold bg-[#121216] border border-white/10">
+            {busy}…
+          </div>
+        </div>
+      )}
+
+      {layoutKind && ctxRef.current && (
+        <LayoutDialog
+          kind={layoutKind}
+          width={ctxRef.current.canvas.width}
+          height={ctxRef.current.canvas.height}
+          onClose={() => setLayoutKind(null)}
+          onApply={(r: LayoutResult) => {
+            setLayoutKind(null);
+            if (r.kind === "crop") applyFilter("Crop", (img) => cropImageData(img, r.rect));
+            else if (r.kind === "resize") applyFilter("Resize", (img) => resizeImageData(img, r.width, r.height));
+            else if (r.kind === "border") applyFilter("Border", (img) => borderImageData(img, r.thickness, r.color));
+            else applyFilter("Frame", (img) => frameImageData(img, r.radius, r.thickness, r.color));
+          }}
+        />
+      )}
+
+      {galleryOpen && (
+        <FilterGalleryModal
+          source={gallerySource}
+          onClose={() => {
+            setGalleryOpen(false);
+            setGallerySource(null);
+          }}
+          onApply={(preset) => {
+            applyFilter(preset.name, (img) => applyAdjustments(img, preset.values) ?? img);
+            setGalleryOpen(false);
+            setGallerySource(null);
+          }}
+        />
+      )}
+
       <PicsartDock handlers={dockHandlers} />
     </div>
   );

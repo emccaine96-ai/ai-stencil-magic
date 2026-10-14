@@ -1,5 +1,8 @@
 import { jsPDF } from "jspdf";
 
+/** Pixel density the exported PDF is laid out at. */
+export const PDF_EXPORT_DPI = 300;
+
 export type ExportFormat = "png" | "png-transparent" | "jpg" | "pdf" | "svg";
 
 export interface ExportOptions {
@@ -27,13 +30,18 @@ export async function exportCanvas(canvas: HTMLCanvasElement, opts: ExportOption
       return;
     }
     case "pdf": {
+      // Size the page from the pixel grid at PDF_EXPORT_DPI so the stencil prints at its true
+      // physical size (1 px = 1/300 in). Using pixels as points would print at only 72 dpi.
+      const pageW = (canvas.width / PDF_EXPORT_DPI) * 72;
+      const pageH = (canvas.height / PDF_EXPORT_DPI) * 72;
       const pdf = new jsPDF({
         orientation: canvas.width >= canvas.height ? "landscape" : "portrait",
         unit: "pt",
-        format: [canvas.width, canvas.height],
+        format: [pageW, pageH],
       });
       const c = withBg(canvas, opts.bgColor ?? "#ffffff");
-      pdf.addImage(c.toDataURL("image/jpeg", 0.95), "JPEG", 0, 0, canvas.width, canvas.height);
+      // PNG keeps stencil lines crisp (JPEG ringing around thin lines hurts thermal transfer).
+      pdf.addImage(c.toDataURL("image/png"), "PNG", 0, 0, pageW, pageH, undefined, "FAST");
       pdf.save(`${name}.pdf`);
       return;
     }

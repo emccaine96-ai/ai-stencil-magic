@@ -1,10 +1,22 @@
 /**
  * Plugin SDK — user-scriptable filters/generators that run inside a sandboxed
- * iframe so untrusted code never touches the host page.
+ * Web Worker created from a Blob URL. Worker environment has no DOM or
+ * localStorage access, ensuring untrusted third-party code is fully isolated.
+ *
+ * Signature verification prevents unauthorized execution: third-party code
+ * runs ONLY if verified against a trusted publisher key.
  *
  * Filter signature:    (ctx) => void   ctx = { width, height, data: Uint8ClampedArray, params }
  * Generator signature: (ctx) => void   same shape; data starts blank.
  */
+
+import {
+  verifyPlugin,
+  loadTrustedKeysFromStorage,
+  type PluginManifest,
+  type VerificationStatus,
+  type PluginVerificationResult,
+} from "./plugin-signing";
 
 export type PluginKind = "filter" | "generator";
 
@@ -16,6 +28,12 @@ export type Plugin = {
   kind: PluginKind;
   description?: string;
   code: string;
+  signature?: string;
+  publisherKeyId?: string;
+  expiresAt?: number;
+  revoked?: boolean;
+  verificationStatus?: VerificationStatus;
+  verificationReason?: string;
   params?: Array<{
     key: string;
     label: string;
@@ -29,11 +47,25 @@ export type Plugin = {
 
 const STORE_KEY = "stencilmagic:plugins:v1";
 
+/**
+ * A plugin is built-in only if BOTH its id and its code match the bundled original.
+ * Matching on id alone would let an installed plugin claim "builtin.*" and skip verification.
+ */
+export function isBuiltinPlugin(plugin: Plugin): boolean {
+  return BUILTIN_PLUGINS.some((b) => b.id === plugin.id && b.code === plugin.code);
+}
+
+/** True if the id is reserved for built-ins (installed plugins may not use it). */
+export function isReservedPluginId(id: string): boolean {
+  return id.startsWith("builtin.") || BUILTIN_PLUGINS.some((b) => b.id === id);
+}
+
 export function loadPlugins(): Plugin[] {
+  loadTrustedKeysFromStorage();
   if (typeof localStorage === "undefined") return BUILTIN_PLUGINS;
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    const user = raw ? (JSON.parse(raw) as Plugin[]) : [];
+    const user = (raw ? (JSON.parse(raw) as Plugin[]) : []).filter((p) => !isReservedPluginId(p.id));
     return [...BUILTIN_PLUGINS, ...user];
   } catch {
     return BUILTIN_PLUGINS;
@@ -41,80 +73,113 @@ export function loadPlugins(): Plugin[] {
 }
 
 export function saveUserPlugins(plugins: Plugin[]) {
-  const user = plugins.filter((p) => !BUILTIN_PLUGINS.some((b) => b.id === p.id));
+  const user = plugins.filter((p) => !isReservedPluginId(p.id));
   localStorage.setItem(STORE_KEY, JSON.stringify(user));
 }
 
-export function runPlugin(
+/** Check verification status of a plugin */
+export async function checkPluginStatus(plugin: Plugin): Promise<PluginVerificationResult> {
+  if (isBuiltinPlugin(plugin)) {
+    return { valid: true, status: "verified" };
+  }
+  return await verifyPlugin(plugin);
+}
+
+/** Maximum image payload size: 50 MB */
+const MAX_IMAGE_BUFFER_BYTES = 50 * 1024 * 1024;
+
+export async function runPlugin(
   plugin: Plugin,
   image: ImageData,
   params: Record<string, any>,
-  timeoutMs = 5000,
+  timeoutMs = 10000,
 ): Promise<ImageData> {
+  // Security Check: Built-in plugins are exempt; third-party/user plugins MUST be verified.
+  if (!isBuiltinPlugin(plugin)) {
+    const verification = await verifyPlugin(plugin);
+    if (!verification.valid) {
+      const msg = verification.reason || `Plugin verification failed (${verification.status})`;
+      throw new Error(`Cannot execute plugin '${plugin.name}': ${msg}`);
+    }
+  }
+
+  if (image.data.byteLength > MAX_IMAGE_BUFFER_BYTES) {
+    throw new Error(
+      `Image size (${(image.data.byteLength / 1024 / 1024).toFixed(1)}MB) exceeds safety limit (50MB)`,
+    );
+  }
+
   return new Promise((resolve, reject) => {
-    const iframe = document.createElement("iframe");
-    iframe.sandbox.add("allow-scripts");
-    iframe.style.display = "none";
-    const html =
-      "<!doctype html><html><body><script>" +
-      "window.addEventListener('message', function(e){" +
-      "  var d = e.data || {};" +
-      "  try {" +
-      "    var data = new Uint8ClampedArray(d.buffer);" +
-      "    var ctx = { width: d.width, height: d.height, data: data, params: d.params };" +
-      "    var fn = new Function('ctx', d.code);" +
-      "    var start = Date.now();" +
-      "    fn(ctx);" +
-      "    parent.postMessage({ id: d.id, ok: true, buffer: data.buffer, ms: Date.now()-start }, '*', [data.buffer]);" +
-      "  } catch (err) {" +
-      "    parent.postMessage({ id: d.id, ok: false, error: String(err && err.message || err) }, '*');" +
-      "  }" +
-      "});" +
-      "parent.postMessage({ ready: true }, '*');" +
-      "</script></body></html>";
-    iframe.srcdoc = html;
-    const id = Math.random().toString(36).slice(2);
+    // Web Worker script running in isolated global scope (no DOM, no window, no localStorage)
+
+    let worker: Worker | null = null;
     let done = false;
+
     const cleanup = () => {
-      window.removeEventListener("message", onMsg);
-      iframe.remove();
+      if (worker) {
+        worker.terminate();
+        worker = null;
+      }
     };
+
     const timer = setTimeout(() => {
       if (!done) {
         done = true;
         cleanup();
-        reject(new Error("plugin timeout"));
+        reject(new Error(`Plugin execution timed out after ${timeoutMs}ms`));
       }
-    }, timeoutMs + 500);
-    function onMsg(ev: MessageEvent) {
-      if (ev.source !== iframe.contentWindow) return;
-      const msg: any = ev.data;
-      if (msg?.ready) {
-        const copy = new Uint8ClampedArray(image.data);
-        iframe.contentWindow!.postMessage(
-          {
-            id,
-            width: image.width,
-            height: image.height,
-            buffer: copy.buffer,
-            code: plugin.code,
-            params,
-          },
-          "*",
-          [copy.buffer],
-        );
-        return;
-      }
-      if (msg?.id !== id) return;
+    }, timeoutMs);
+
+    try {
+      // Loaded from a real URL (not a Blob) so the response's own CSP header applies to the worker.
+      worker = new Worker("/plugin-worker.js");
+
+      const id = Math.random().toString(36).slice(2);
+      const copy = new Uint8ClampedArray(image.data);
+
+      worker.onmessage = (ev: MessageEvent) => {
+        const msg = ev.data;
+        if (!msg || msg.id !== id) return;
+        done = true;
+        clearTimeout(timer);
+        cleanup();
+
+        if (!msg.ok) {
+          reject(new Error(msg.error || "Plugin execution failed"));
+          return;
+        }
+
+        const arr = new Uint8ClampedArray(msg.buffer);
+        resolve(new ImageData(arr, image.width, image.height));
+      };
+
+      worker.onerror = (ev: ErrorEvent) => {
+        if (!done) {
+          done = true;
+          clearTimeout(timer);
+          cleanup();
+          reject(new Error(ev.message || "Plugin worker error"));
+        }
+      };
+
+      worker.postMessage(
+        {
+          type: "run",
+          id,
+          width: image.width,
+          height: image.height,
+          buffer: copy.buffer,
+          code: plugin.code,
+          params,
+        },
+        [copy.buffer],
+      );
+    } catch (e: any) {
       done = true;
       clearTimeout(timer);
       cleanup();
-      if (!msg.ok) return reject(new Error(msg.error || "plugin error"));
-      const arr = new Uint8ClampedArray(msg.buffer);
-      resolve(new ImageData(arr, image.width, image.height));
+      reject(new Error(e.message || String(e)));
     }
-    window.addEventListener("message", onMsg);
-    document.body.appendChild(iframe);
   });
 }
 
@@ -284,230 +349,6 @@ export const BUILTIN_PLUGINS: Plugin[] = [
       "    d[i]=255;d[i+1]=255;d[i+2]=255;",
       "  }",
       "}",
-    ].join("\n"),
-  },
-  {
-    id: "builtin.edge-connector",
-    name: "Edge Connector",
-    version: "1.1",
-    author: "AI Stencil Magic",
-    kind: "filter",
-    description: "Bridges small gaps in broken lines via a true morphological close (dilate then erode) — fills small gaps without thickening the rest of the artwork.",
-    params: [
-      { key: "radius", label: "Bridge Radius", type: "number", default: 2, min: 1, max: 8, step: 1 },
-    ],
-    code: [
-      "var w=ctx.width,h=ctx.height,d=ctx.data,r=ctx.params.radius|0;",
-      "var inkR=0,inkG=0,inkB=0,foundInk=false;",
-      "for(var i=0;i<d.length&&!foundInk;i+=4){if(d[i+3]>10){inkR=d[i];inkG=d[i+1];inkB=d[i+2];foundInk=true;}}",
-      "var alphaMask=new Uint8Array(w*h);",
-      "for(var p=0;p<w*h;p++)alphaMask[p]=d[p*4+3]>10?1:0;",
-      "function pass(src,grow){",
-      "  var out=new Uint8Array(w*h);",
-      "  for(var y=0;y<h;y++)for(var x=0;x<w;x++){",
-      "    var hit=false;",
-      "    for(var dy=-r;dy<=r&&!hit;dy++)for(var dx=-r;dx<=r;dx++){",
-      "      var nx=x+dx,ny=y+dy;",
-      "      var v=(nx<0||nx>=w||ny<0||ny>=h)?0:src[ny*w+nx];",
-      "      if(!!v===grow){hit=true;break;}",
-      "    }",
-      "    out[y*w+x]=(grow?hit:!hit)?1:0;",
-      "  }",
-      "  return out;",
-      "}",
-      "var dilated=pass(alphaMask,true);",
-      "var closed=pass(dilated,false);",
-      "for(var q=0;q<w*h;q++){",
-      "  var j=q*4;",
-      "  if(closed[q]){d[j]=inkR;d[j+1]=inkG;d[j+2]=inkB;d[j+3]=255;}",
-      "  else{d[j]=255;d[j+1]=255;d[j+2]=255;d[j+3]=0;}",
-      "}",
-    ].join("\n"),
-  },
-  {
-    id: "builtin.line-thinning",
-    name: "Line Thinning",
-    version: "1.0",
-    author: "AI Stencil Magic",
-    kind: "filter",
-    description: "Morphological erosion — thins stencil lines for fine-line and single-needle work.",
-    params: [
-      { key: "iterations", label: "Iterations", type: "number", default: 1, min: 1, max: 5, step: 1 },
-    ],
-    code: [
-      "var w=ctx.width,h=ctx.height,d=ctx.data,iters=ctx.params.iterations|0;",
-      "var inkR=0,inkG=0,inkB=0,foundInk=false;",
-      "for(var i=0;i<d.length&&!foundInk;i+=4){if(d[i+3]>10){inkR=d[i];inkG=d[i+1];inkB=d[i+2];foundInk=true;}}",
-      "var mask=new Uint8Array(w*h);",
-      "for(var p=0;p<w*h;p++)mask[p]=d[p*4+3]>10?1:0;",
-      "var ortho=[[-1,0],[1,0],[0,-1],[0,1]];",
-      "for(var it=0;it<iters;it++){",
-      "  var out=new Uint8Array(w*h);",
-      "  for(var y=0;y<h;y++)for(var x=0;x<w;x++){",
-      "    if(!mask[y*w+x]){out[y*w+x]=0;continue;}",
-      "    var inkNbrs=0;",
-      "    for(var n=0;n<4;n++){",
-      "      var nx=x+ortho[n][0],ny=y+ortho[n][1];",
-      "      if(nx<0||nx>=w||ny<0||ny>=h)continue;",
-      "      if(mask[ny*w+nx])inkNbrs++;",
-      "    }",
-      "    out[y*w+x]=inkNbrs>=2?1:0;",
-      "  }",
-      "  mask=out;",
-      "}",
-      "for(var q=0;q<w*h;q++){",
-      "  var j=q*4;",
-      "  if(mask[q]){d[j]=inkR;d[j+1]=inkG;d[j+2]=inkB;d[j+3]=255;}",
-      "  else{d[j]=255;d[j+1]=255;d[j+2]=255;d[j+3]=0;}",
-      "}",
-    ].join("\n"),
-  },
-  {
-    id: "builtin.halftone-stipple",
-    name: "Halftone Stipple",
-    version: "1.0",
-    author: "AI Stencil Magic",
-    kind: "generator",
-    description: "Generates a stippling dot pattern from image luminance — dot size based on darkness, like whip shading.",
-    params: [
-      { key: "spacing", label: "Dot Spacing", type: "number", default: 8, min: 4, max: 30, step: 1 },
-      { key: "maxRadius", label: "Max Dot Size", type: "number", default: 4, min: 1, max: 12, step: 1 },
-    ],
-    code: [
-      "var w=ctx.width,h=ctx.height,d=ctx.data,sp=ctx.params.spacing|0,mr=ctx.params.maxRadius|0;",
-      "var srcAlpha=new Uint8Array(w*h);",
-      "var inkR=0,inkG=0,inkB=0,foundInk=false;",
-      "for(var p=0;p<w*h;p++){",
-      "  var a=d[p*4+3];srcAlpha[p]=a>10?1:0;",
-      "  if(a>10&&!foundInk){inkR=d[p*4];inkG=d[p*4+1];inkB=d[p*4+2];foundInk=true;}",
-      "}",
-      "for(var i=0;i<d.length;i+=4){d[i]=255;d[i+1]=255;d[i+2]=255;d[i+3]=0;}",
-      "var seed=(w*73856093)^(h*19349663)^0x9e3779b9;",
-      "var rand=function(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};",
-      "var scale=Math.max(0.5,Math.min(w,h)/1024);",
-      "sp=Math.max(2,sp*scale);var minR=0.6*scale,maxR=mr*scale;",
-      "for(var y=-sp;y<h+sp;y+=sp){",
-      "  for(var x=-sp;x<w+sp;x+=sp){",
-      "    var jx=x+(rand()-0.5)*sp*0.9,jy=y+(rand()-0.5)*sp*0.9;",
-      "    var sx=Math.min(w-1,Math.max(0,Math.round(jx))),sy=Math.min(h-1,Math.max(0,Math.round(jy)));",
-      "    var darkness=srcAlpha[sy*w+sx]?1:0;",
-      "    if(darkness<=0.02)continue;",
-      "    var gamma=Math.pow(darkness,0.75);if(rand()>gamma)continue;",
-      "    var r=minR+(maxR-minR)*gamma*(0.75+rand()*0.5);if(r<0.35)continue;",
-      "    var ri=Math.ceil(r),cxi=Math.round(jx),cyi=Math.round(jy);",
-      "    for(var dy=-ri;dy<=ri;dy++){var ny=cyi+dy;if(ny<0||ny>=h)continue;",
-      "      for(var dx=-ri;dx<=ri;dx++){var nx=cxi+dx;if(nx<0||nx>=w)continue;",
-      "        if(dx*dx+dy*dy>r*r)continue;var idx=(ny*w+nx)*4;",
-      "        d[idx]=inkR;d[idx+1]=inkG;d[idx+2]=inkB;d[idx+3]=255;",
-      "      }",
-      "    }",
-      "  }",
-      "}",
-    ].join("\n"),
-  },
-  {
-    id: "builtin.otsu-threshold",
-    name: "Otsu Auto-Threshold",
-    version: "1.0",
-    author: "AI Stencil Magic",
-    kind: "filter",
-    description: "Automatically finds the optimal black/white threshold using Otsu's method — no guessing.",
-    params: [],
-    code: [
-      "var d=ctx.data;",
-      "var hist=new Array(256).fill(0);",
-      "var total=0;",
-      "for(var i=0;i<d.length;i+=4){",
-      "  if(d[i+3]<=10)continue;",
-      "  var lum=Math.round(0.3*d[i]+0.59*d[i+1]+0.11*d[i+2]);",
-      "  hist[lum]++;total++;",
-      "}",
-      "if(total>0){",
-      "  var sum=0;",
-      "  for(var t=0;t<256;t++)sum+=t*hist[t];",
-      "  var sumB=0,wB=0,maxVar=0,threshold=128;",
-      "  for(var t2=0;t2<256;t2++){",
-      "    wB+=hist[t2];if(wB===0)continue;",
-      "    var wF=total-wB;if(wF===0)break;",
-      "    sumB+=t2*hist[t2];",
-      "    var mB=sumB/wB,mF=(sum-sumB)/wF;",
-      "    var v=wB*wF*(mB-mF)*(mB-mF);",
-      "    if(v>maxVar){maxVar=v;threshold=t2;}",
-      "  }",
-      "  for(var j=0;j<d.length;j+=4){",
-      "    if(d[j+3]<=10)continue;",
-      "    var lum2=0.3*d[j]+0.59*d[j+1]+0.11*d[j+2];",
-      "    if(lum2<threshold){d[j]=0;d[j+1]=0;d[j+2]=0;d[j+3]=255;}",
-      "    else{d[j]=255;d[j+1]=255;d[j+2]=255;d[j+3]=0;}",
-      "  }",
-      "}",
-    ].join("\n"),
-  },
-  {
-    id: "builtin.mirror-symmetry",
-    name: "Mirror Symmetry",
-    version: "1.1",
-    author: "AI Stencil Magic",
-    kind: "filter",
-    description: "Creates a mirrored copy across the chosen axis — perfect for symmetrical designs (mandalas, butterflies, etc).",
-    params: [
-      { key: "axis", label: "Axis (horizontal or vertical)", type: "string", default: "horizontal", min: 0, max: 0, step: 0 },
-    ],
-    code: [
-      "var w=ctx.width,h=ctx.height,d=ctx.data;",
-      "var vertical = String(ctx.params.axis).toLowerCase().indexOf('vert') === 0;",
-      "if (vertical) {",
-      "  for(var y=0;y<h/2;y++){",
-      "    var sy=h-1-y;",
-      "    for(var x=0;x<w;x++){",
-      "      var i1=(y*w+x)*4,i2=(sy*w+x)*4;",
-      "      d[i2]=d[i1];d[i2+1]=d[i1+1];d[i2+2]=d[i1+2];d[i2+3]=d[i1+3];",
-      "    }",
-      "  }",
-      "} else {",
-      "  for(var y2=0;y2<h;y2++){",
-      "    for(var x2=0;x2<w/2;x2++){",
-      "      var sx=w-1-x2;",
-      "      var i1b=(y2*w+x2)*4,i2b=(y2*w+sx)*4;",
-      "      d[i2b]=d[i1b];d[i2b+1]=d[i1b+1];d[i2b+2]=d[i1b+2];d[i2b+3]=d[i1b+3];",
-      "    }",
-      "  }",
-      "}",
-    ].join("\n"),
-  },
-  {
-    id: "builtin.bilateral-smooth",
-    name: "Bilateral Smooth",
-    version: "1.0",
-    author: "AI Stencil Magic",
-    kind: "filter",
-    description: "Edge-preserving smoothing — cleans up skin tones and soft areas without blurring lines.",
-    params: [
-      { key: "radius", label: "Radius", type: "number", default: 3, min: 1, max: 10, step: 1 },
-      { key: "threshold", label: "Edge Threshold", type: "number", default: 30, min: 5, max: 80, step: 5 },
-    ],
-    code: [
-      "var w=ctx.width,h=ctx.height,d=ctx.data,rIn=ctx.params.radius|0,th=ctx.params.threshold|0;",
-      "var maxOps=6000000;",
-      "var r=rIn;",
-      "while(r>1 && w*h*(2*r+1)*(2*r+1)>maxOps){r--;}",
-      "var out=new Uint8ClampedArray(d.length);",
-      "for(var y=0;y<h;y++)for(var x=0;x<w;x++){",
-      "  var i=(y*w+x)*4;",
-      "  if(d[i+3]<=10){out[i]=255;out[i+1]=255;out[i+2]=255;out[i+3]=0;continue;}",
-      "  var cr=d[i],cg=d[i+1],cb=d[i+2];",
-      "  var sr=0,sg=0,sb=0,c=0;",
-      "  for(var dy=-r;dy<=r;dy++)for(var dx=-r;dx<=r;dx++){",
-      "    var nx=x+dx,ny=y+dy;",
-      "    if(nx<0||nx>=w||ny<0||ny>=h)continue;",
-      "    var j=(ny*w+nx)*4;",
-      "    if(d[j+3]<=10)continue;",
-      "    var diff=Math.abs(d[j]-cr)+Math.abs(d[j+1]-cg)+Math.abs(d[j+2]-cb);",
-      "    if(diff<th*3){sr+=d[j];sg+=d[j+1];sb+=d[j+2];c++;}",
-      "  }",
-      "  out[i]=c>0?sr/c:cr;out[i+1]=c>0?sg/c:cg;out[i+2]=c>0?sb/c:cb;out[i+3]=255;",
-      "}",
-      "for(var k=0;k<d.length;k++)d[k]=out[k];",
     ].join("\n"),
   },
 ];
