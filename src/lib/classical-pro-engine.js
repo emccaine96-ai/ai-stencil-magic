@@ -15,6 +15,7 @@ import { quantizeTones } from './classical-engine/tone-simplify.js';
 import { otsuThreshold, applyThreshold } from './classical-engine/otsu.js';
 import { structureTensorOrientation } from './classical-engine/hatching.js';
 import { streamlineHatch } from './classical-engine/streamline-hatch.js';
+import { renderTonalShading } from './classical/tonal-shading.js';
 import { removeSmallInkSpecks, morphClose } from './classical-engine/cleanup.js';
 import { applyBackgroundMode } from './classical-engine/background.js';
 import { PipelineCache, hashParams } from './classical-engine/pipeline-types.js';
@@ -35,6 +36,7 @@ class ClassicalProEngine {
     this.hectographPurple = { r: 168, g: 85, b: 247 };
     this.cache = new PipelineCache();
     this.lastPrimaryLines = null;
+    this.lastTonalDiagnostics = null;
     this.lastToneIdx = null;
     this.lastToneGray = null;
     this.lastWidth = 0;
@@ -57,6 +59,8 @@ class ClassicalProEngine {
     const s = Object.assign({
       useClahe: true,
       useRetinex: false,
+      useTonalShading: false,
+      tonalOptions: null,
       toneLevels: 5,
       useOtsu: false,
       useFormHatching: false,
@@ -103,6 +107,13 @@ class ClassicalProEngine {
     // 1.5 Multi-Scale Retinex (illumination normalization, opt-in)
     if (s.useRetinex) {
       img = applyMultiScaleRetinex(img);
+    }
+
+    // Tone capture for opt-in Tonal shading (step 6.65), taken before CLAHE/S-curve/gamma.
+    let _tonalSrc = null;
+    if (s.useTonalShading) {
+      _tonalSrc = new Float32Array(workW * workH);
+      for (let i = 0, p = 0; i < img.data.length; i += 4, p++) _tonalSrc[p] = img.data[i];
     }
 
     // 2. CLAHE
@@ -237,7 +248,7 @@ class ClassicalProEngine {
     // stroke as a "speck," making this feature a silent no-op whenever any
     // cleanup was active — which it always is for styles that use hatching
     // (enhancedCleanup is set for the hatching style). Fixed 2026-09-02.
-    if (s.useFormHatching && (s.shadingMode === 'multiscale' || s.shadingMode === 'xdog')) {
+    if (s.useFormHatching && !s.useTonalShading && (s.shadingMode === 'multiscale' || s.shadingMode === 'xdog')) {
       const lowEdges = sobel(_sharedGray, workW, workH);
       const gxField = new Float32Array(workW * workH);
       const gyField = new Float32Array(workW * workH);
@@ -281,6 +292,19 @@ class ClassicalProEngine {
         if (hatchLayer[p] && relevant[p]) { od[i] = od[i+1] = od[i+2] = 0; od[i+3] = 255; }
       }
     }
+
+    // 6.65. Optional Tonal 3D shading (opt-in; replaces the 6.6 hatch layer when on).
+    // Dotwork (dither) is excluded on purpose.
+    if (s.useTonalShading && _tonalSrc && s.shadingMode !== 'dither') {
+      const t = renderTonalShading(_tonalSrc, workW, workH, s.tonalOptions || {});
+      this.lastTonalDiagnostics = t.diagnostics;
+      const od = stencil.data;
+      for (let i = 0, p = 0; i < od.length; i += 4, p++) {
+        if (t.mask[p]) { od[i] = od[i+1] = od[i+2] = 0; od[i+3] = 255; }
+      }
+    }
+
+
 
     // 7. Line weight
     if (s.line_weight !== 0) {
