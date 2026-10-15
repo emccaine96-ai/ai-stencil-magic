@@ -9,6 +9,29 @@ type Body = {
   model?: string; // client-supplied model override for OpenRouter
 };
 
+const MAX_PROMPT_CHARS = 8000;
+const MAX_IMAGE_B64_CHARS = 14_000_000; // ~10 MB decoded per image
+const MAX_IMAGES = 3;
+const ALLOWED_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
+const DEFAULT_OR_MODEL = "google/gemini-2.5-flash-image";
+// OpenRouter model ids look like "vendor/name" (optionally ":variant"). Anything else is rejected
+// so a client can't push arbitrary strings into the upstream request.
+const MODEL_ID_RE = /^[A-Za-z0-9][\w.-]{0,63}\/[A-Za-z0-9][\w.:-]{0,63}$/;
+
+type Img = { mimeType: string; data: string };
+
+function isValidImage(img: unknown): img is Img {
+  if (!img || typeof img !== "object") return false;
+  const i = img as Img;
+  return (
+    typeof i.mimeType === "string" &&
+    ALLOWED_MIME.has(i.mimeType) &&
+    typeof i.data === "string" &&
+    i.data.length > 0 &&
+    i.data.length <= MAX_IMAGE_B64_CHARS
+  );
+}
+
 export const Route = createFileRoute("/api/generate-stencil")({
   server: {
     handlers: {
@@ -19,8 +42,18 @@ export const Route = createFileRoute("/api/generate-stencil")({
         } catch {
           return Response.json({ error: "Invalid JSON body" }, { status: 400 });
         }
-        if (!body?.prompt || !body?.image?.data || !body?.image?.mimeType) {
+        if (!body?.prompt || typeof body.prompt !== "string" || !isValidImage(body?.image)) {
           return Response.json({ error: "prompt and image are required" }, { status: 400 });
+        }
+        if (body.prompt.length > MAX_PROMPT_CHARS) {
+          return Response.json({ error: "prompt is too long" }, { status: 413 });
+        }
+        const extraImages = Array.isArray(body.images) ? body.images : [];
+        if (extraImages.length > MAX_IMAGES || !extraImages.every(isValidImage)) {
+          return Response.json({ error: "invalid images payload" }, { status: 400 });
+        }
+        if (body.model !== undefined && (typeof body.model !== "string" || !MODEL_ID_RE.test(body.model))) {
+          return Response.json({ error: "Invalid OpenRouter model id" }, { status: 400 });
         }
 
         const provider = body.provider || "openrouter";
@@ -49,7 +82,7 @@ export const Route = createFileRoute("/api/generate-stencil")({
                 "X-Title": "AI Stencil Magic",
               },
               body: JSON.stringify({
-                model: body.model || "google/gemini-2.5-flash-image",
+                model: body.model || DEFAULT_OR_MODEL,
                 modalities: ["image", "text"],
                 messages: [
                   {
@@ -70,7 +103,9 @@ export const Route = createFileRoute("/api/generate-stencil")({
           );
 
           if (!upstream.ok) {
-            const errText = await upstream.text();
+            // Keep upstream bodies server-side; they can echo account or key details.
+            const errText = await upstream.text().catch(() => "");
+            console.error("[generate-stencil] OpenRouter error", upstream.status, errText.slice(0, 500));
             if (upstream.status === 429) {
               return Response.json(
                 { error: "OpenRouter rate limit reached. Please try again." },
@@ -84,8 +119,8 @@ export const Route = createFileRoute("/api/generate-stencil")({
               );
             }
             return Response.json(
-              { error: errText || `OpenRouter error ${upstream.status}` },
-              { status: upstream.status },
+              { error: `OpenRouter error ${upstream.status}` },
+              { status: upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502 },
             );
           }
 
@@ -148,11 +183,12 @@ export const Route = createFileRoute("/api/generate-stencil")({
           return Response.json({ error: "Missing GEMINI_API_KEY" }, { status: 500 });
         }
 
+        // Key goes in a header, not the URL, so it stays out of access logs.
         const upstream = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${encodeURIComponent(key)}`,
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent",
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
             body: JSON.stringify({
               contents: [
                 {
@@ -182,9 +218,10 @@ export const Route = createFileRoute("/api/generate-stencil")({
               { status: upstream.status },
             );
           }
+          console.error("[generate-stencil] Gemini error", upstream.status, text.slice(0, 500));
           return Response.json(
-            { error: text || `Upstream error ${upstream.status}` },
-            { status: upstream.status },
+            { error: `Gemini error ${upstream.status}` },
+            { status: upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502 },
           );
         }
 

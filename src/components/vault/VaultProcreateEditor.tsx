@@ -33,6 +33,22 @@ import { BrushPickerPanel } from "./BrushPickerPanel";
 import { useNavigate } from "@tanstack/react-router";
 import { applyAdjustmentsToCanvas, type AdjustmentValues } from "@/lib/canvas/adjustments";
 import { runPlugin, BUILTIN_PLUGINS } from "@/lib/plugins";
+import {
+  flipHorizontal,
+  flipVertical,
+  gaussianBlur as blurCtx,
+  vignette as vignetteCtx,
+  pixelate as pixelateCtx,
+  sepia as sepiaCtx,
+  grain as grainCtx,
+  edgeDetect as edgeCtx,
+  tiltShift as tiltShiftCtx,
+  lensFlare as lensFlareCtx,
+  dispersion as dispersionCtx,
+  borderFrame,
+  removeBackground as removeBgCtx,
+} from "@/lib/picsart-filters";
+import { glow, chromaticAberration } from "@/lib/canvas/effects";
 
 type Props = {
   doc: DocumentData;
@@ -462,20 +478,37 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
   const stub = (label: string) => () => toast.info(`${label} in full studio`);
 
+  // Real effects: run on the live canvas, then record one undo step.
+  const fxCtx = (label: string, fn: (ctx: CanvasRenderingContext2D) => void) => () => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    fn(ctx);
+    pushUndo();
+    toast.success(`${label} applied`);
+  };
+  const fxImage = (label: string, fn: (img: ImageData) => ImageData) => () => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    const out = fn(ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height));
+    ctx.putImageData(out, 0, 0);
+    pushUndo();
+    toast.success(`${label} applied`);
+  };
+
   const dockHandlers: PicsartDockHandlers = {
     openCrop: stub("Crop"),
     setSelectionMode: stub("Selection"),
     openAdjust: () => setAdjustOpen(true),
     enhance: () => setAdjustOpen(true),
     resizeMenu: stub("Resize"),
-    flipH: stub("Flip"),
-    flipV: stub("Flip"),
+    flipH: fxCtx("Flip", flipHorizontal),
+    flipV: fxCtx("Flip", flipVertical),
     rotate90: stub("Rotate"),
     perspective: stub("Perspective"),
-    tiltShift: stub("Tilt shift"),
+    tiltShift: fxCtx("Tilt shift", (c) => tiltShiftCtx(c)),
     aiExpand: stub("Expand"),
     aiReplace: stub("Replace"),
-    dispersion: stub("Dispersion"),
+    dispersion: fxCtx("Dispersion", (c) => dispersionCtx(c)),
     stretch: stub("Stretch"),
     motion: stub("Motion"),
     shapeCrop: stub("Shape crop"),
@@ -488,24 +521,24 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     thermalBlue: stub("Thermal"),
     thermalPurple: () => applyDockPlugin("builtin.hectograph-purple"),
     sharpen: () => applyDockPlugin("builtin.stencil-sharpen"),
-    blur: stub("Blur"),
-    vignette: stub("Vignette"),
+    blur: fxCtx("Blur", (c) => blurCtx(c, 6)),
+    vignette: fxCtx("Vignette", (c) => vignetteCtx(c)),
     halftone: () => applyDockPlugin("builtin.halftone-stipple"),
-    pixelate: stub("Pixelate"),
+    pixelate: fxCtx("Pixelate", (c) => pixelateCtx(c)),
     posterize: () => applyDockPlugin("builtin.posterize"),
-    edge: stub("Edge"),
-    grain: stub("Grain"),
-    sepia: stub("Sepia"),
-    lensFlare: stub("Lens flare"),
-    glow: stub("Glow"),
-    chromatic: stub("Chromatic"),
+    edge: fxCtx("Edge", (c) => edgeCtx(c)),
+    grain: fxCtx("Grain", (c) => grainCtx(c)),
+    sepia: fxCtx("Sepia", (c) => sepiaCtx(c)),
+    lensFlare: fxCtx("Lens flare", (c) => lensFlareCtx(c)),
+    glow: fxImage("Glow", (img) => glow(img)),
+    chromatic: fxImage("Chromatic", (img) => chromaticAberration(img)),
     gradientMap: stub("Gradient map"),
     smudge: stub("Smudge"),
     heal: stub("Heal"),
     liquifyPush: stub("Liquify"),
     liquifyInflate: stub("Liquify"),
     liquifyDeflate: stub("Liquify"),
-    removeBg: stub("Remove BG"),
+    removeBg: fxCtx("Remove BG", (c) => removeBgCtx(c)),
     cutout: stub("Cutout"),
     text: stub("Text"),
     addPhoto: stub("Reference"),
@@ -518,7 +551,7 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     aiTryOn: () => navigate({ to: "/plugins" }),
     apps: () => navigate({ to: "/plugins" }),
     myFolders: () => onClose(),
-    border: stub("Border"),
+    border: fxCtx("Border", (c) => borderFrame(c)),
     shape: stub("Shape"),
     mask: stub("Mask"),
   };

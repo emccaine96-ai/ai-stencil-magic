@@ -16,6 +16,8 @@ export const Route = createFileRoute("/settings")({
 const GEMINI_KEY_STORAGE = "stencilmagic.gemini.key";
 const OPENROUTER_KEY_STORAGE = "stencilmagic.openrouter.key";
 const OPENROUTER_MODEL_STORAGE = "stencilmagic.openrouter.model";
+// Same rule the server enforces in /api/generate-stencil.
+const MODEL_ID_RE = /^[A-Za-z0-9][\w.-]{0,63}\/[A-Za-z0-9][\w.:-]{0,63}$/;
 
 type TestStatus = "idle" | "testing" | "success" | "error";
 
@@ -273,6 +275,10 @@ function ModelSelector() {
   function saveCustom() {
     const v = custom.trim();
     if (!v) return;
+    if (!MODEL_ID_RE.test(v)) {
+      toast.error("Model IDs must look like vendor/model-name");
+      return;
+    }
     choose(v);
     setCustom("");
   }
@@ -303,27 +309,7 @@ function ModelSelector() {
           <Loader2 size={14} className="animate-spin" /> Loading live model list…
         </div>
       ) : fetchError ? (
-        <div className="space-y-2">
-          <p className="text-sm text-destructive">
-            {fetchError} — using default model.
-          </p>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={custom}
-              onChange={(e) => setCustom(e.target.value)}
-              placeholder="Paste a model ID from openrouter.ai/models"
-              className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-            />
-            <button
-              onClick={saveCustom}
-              disabled={!custom.trim()}
-              className="rounded-xl bg-gradient-primary text-primary-foreground px-4 py-2 text-xs font-bold disabled:opacity-50"
-            >
-              Save
-            </button>
-          </div>
-        </div>
+        <p className="text-sm text-destructive">{fetchError} — using default model.</p>
       ) : (
         <>
           <input
@@ -355,6 +341,32 @@ function ModelSelector() {
           </div>
         </>
       )}
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground">
+          Any paid model ID works, including ones not in the list above. Paste it from{" "}
+          openrouter.ai/models in the form <span className="font-mono">vendor/model</span>.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={custom}
+            onChange={(e) => setCustom(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && saveCustom()}
+            placeholder="e.g. vendor/model-name"
+            className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-sm font-mono outline-none focus:border-primary"
+          />
+          <button
+            onClick={saveCustom}
+            disabled={!custom.trim()}
+            className="rounded-xl bg-gradient-primary text-primary-foreground px-4 py-2 text-xs font-bold disabled:opacity-50"
+          >
+            Save
+          </button>
+        </div>
+        {custom.trim() && !MODEL_ID_RE.test(custom.trim()) ? (
+          <p className="text-[11px] text-destructive">Use the form vendor/model-name.</p>
+        ) : null}
+      </div>
       <p className="text-[11px] text-muted-foreground font-mono">Current: {selected}</p>
     </div>
   );
