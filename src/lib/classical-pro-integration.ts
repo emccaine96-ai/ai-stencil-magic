@@ -121,6 +121,9 @@ export interface ClassicalProOptions {
   // photos, per VISION.md's "optional, not default" rule. Standard engine
   // path only; the Advanced orchestrator path doesn't have a Retinex stage.
   useRetinex?: boolean;
+  // Opt-in Tonal 3D shading (classical/tonal-shading.js). Standard engine path only.
+  useTonalShading?: boolean;
+  tonalStrength?: number;
   // Background separation (classical-engine/background.ts + engine step 8.5).
   // Default 'keep' => fully inert. Standard engine path only; the Advanced
   // orchestrator has no background stage.
@@ -254,6 +257,8 @@ export async function processClassicalPro(
     useFormHatching: scaled.useFormHatching ?? false,
     minBlobArea: scaled.minBlobArea ?? 6,
     useRetinex: options.useRetinex ?? false,
+    useTonalShading: options.useTonalShading ?? false,
+    tonalOptions: { strength: options.tonalStrength ?? 1.0 },
     backgroundMode: bgMode,
     backgroundMask: bgMask,
     backgroundFadeOpacity: options.backgroundFadeOpacity ?? 0.25,
