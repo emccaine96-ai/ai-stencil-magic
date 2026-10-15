@@ -231,6 +231,40 @@ function CreatePage() {
   // for harshly-lit/backlit reference photos), per VISION.md's "optional,
   // not default" rule and the classical-engine-audit.md recommendation.
   const [useRetinex, setUseRetinex] = useState(false);
+  // Opt-in Tonal 3D shading (beta) -- off by default; disabled for Dotwork.
+  const [useTonalShading, setUseTonalShading] = useState(false);
+  const [tonalStrength, setTonalStrength] = useState(1.0);
+  const tonalControls = (
+    <>
+      <label
+        className={`flex items-center gap-2 text-xs cursor-pointer ${style === "dotwork" ? "text-muted-foreground/40 cursor-not-allowed" : "text-muted-foreground"}`}
+      >
+        <input
+          type="checkbox"
+          checked={useTonalShading && style !== "dotwork"}
+          disabled={style === "dotwork"}
+          onChange={(e) => setUseTonalShading(e.target.checked)}
+          className="accent-primary"
+        />
+        <span>Tonal 3D shading (beta): hatching that follows the form and matches the photo's tone</span>
+      </label>
+      {useTonalShading && style !== "dotwork" ? (
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>Shading strength</span>
+          <input
+            type="range"
+            min={0.6}
+            max={1.4}
+            step={0.05}
+            value={tonalStrength}
+            onChange={(e) => setTonalStrength(Number(e.target.value))}
+            className="accent-primary flex-1"
+          />
+          <span className="tabular-nums w-8 text-right">{tonalStrength.toFixed(2)}</span>
+        </label>
+      ) : null}
+    </>
+  );
   // Background separation -- 'keep' by default (fully inert), same
   // optional/off-by-default treatment as Retinex above.
   const [backgroundMode, setBackgroundMode] = useState<"keep" | "remove" | "fade">("keep");
@@ -442,6 +476,8 @@ function CreatePage() {
           purpleTint: true,
           useAdvancedPipeline,
           useRetinex,
+          useTonalShading: useTonalShading && style !== "dotwork",
+          tonalStrength,
           backgroundMode,
         });
         const purpleResult = await normalizeToPurpleInk(result.dataUrl);
@@ -460,6 +496,8 @@ function CreatePage() {
           intensity,
           purpleTint: false,
           useRetinex,
+          useTonalShading: useTonalShading && style !== "dotwork",
+          tonalStrength,
           backgroundMode,
         });
         // Step 2: Send classical result to AI for refinement — WITH the
@@ -851,6 +889,7 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
                 />
                 <span>Fix harsh lighting (illumination normalization)</span>
               </label>
+              {tonalControls}
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Background:</span>
                 <select
@@ -882,6 +921,7 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
                 />
                 <span>Fix harsh lighting (illumination normalization)</span>
               </label>
+              {tonalControls}
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Background:</span>
                 <select
