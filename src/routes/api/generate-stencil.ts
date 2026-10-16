@@ -20,6 +20,10 @@ const MODEL_ID_RE = /^[A-Za-z0-9][\w.-]{0,63}\/[A-Za-z0-9][\w.:-]{0,63}$/;
 
 type Img = { mimeType: string; data: string };
 
+/**
+ * Check for an allowed MIME type and a nonempty image data string within the size limit.
+ * This checks payload shape and length; it does not decode or validate the image bytes.
+ */
 function isValidImage(img: unknown): img is Img {
   if (!img || typeof img !== "object") return false;
   const i = img as Img;

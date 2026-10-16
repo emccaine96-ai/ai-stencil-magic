@@ -478,7 +478,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
 
   const stub = (label: string) => () => toast.info(`${label} in full studio`);
 
-  // Real effects: run on the live canvas, then record one undo step.
+  /**
+   * Create a handler that applies a context effect to the live canvas, records undo, and notifies.
+   * The handler does nothing when the canvas context is unavailable.
+   */
   const fxCtx = (label: string, fn: (ctx: CanvasRenderingContext2D) => void) => () => {
     const ctx = ctxRef.current;
     if (!ctx) return;
@@ -486,6 +489,10 @@ export function VaultProcreateEditor({ doc, onClose, onSaved }: Props) {
     pushUndo();
     toast.success(`${label} applied`);
   };
+  /**
+   * Create a handler that transforms and replaces the live canvas pixels, records undo, and notifies.
+   * The handler does nothing when the canvas context is unavailable.
+   */
   const fxImage = (label: string, fn: (img: ImageData) => ImageData) => () => {
     const ctx = ctxRef.current;
     if (!ctx) return;

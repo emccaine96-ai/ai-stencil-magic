@@ -22,6 +22,14 @@ export interface OpenRouterOptions {
   apiKey?: string;
 }
 
+/**
+ * Send a single chat completion request using the supplied API key or the saved browser key.
+ *
+ * @param prompt - Text sent as the user message.
+ * @param options - Optional model, sampling, token limit, and API key overrides.
+ * @returns The parsed JSON response from OpenRouter.
+ * @throws If no key is available, the request fails, or the response is invalid JSON.
+ */
 export async function fetchOpenRouterCompletion(
   prompt: string,
   options: OpenRouterOptions = {},

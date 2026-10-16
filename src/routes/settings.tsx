@@ -231,6 +231,9 @@ function formatImagePrice(model: OpenRouterModel): string {
   return `~$${n.toFixed(3)}/image`;
 }
 
+/**
+ * Render the live OpenRouter image model list and custom model input, persisting the selection.
+ */
 function ModelSelector() {
   const [models, setModels] = useState<OpenRouterModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -272,6 +275,7 @@ function ModelSelector() {
     toast.success("Model saved");
   }
 
+  /** Validate and save a trimmed custom model ID, then clear the input on success. */
   function saveCustom() {
     const v = custom.trim();
     if (!v) return;
