@@ -347,7 +347,7 @@ function ModelSelector() {
       )}
       <div className="space-y-1">
         <p className="text-xs text-muted-foreground">
-          Any paid model ID works, including ones not in the list above. Paste it from{" "}
+          Choose a paid model that supports image output, including ones not in the list above. Paste its ID from{" "}
           openrouter.ai/models in the form <span className="font-mono">vendor/model</span>.
         </p>
         <div className="flex gap-2">

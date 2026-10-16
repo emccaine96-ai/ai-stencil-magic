@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { bodyLimit, H3Event, HTTPError } from "h3";
 
 type Body = {
   prompt: string;
@@ -12,6 +13,9 @@ type Body = {
 const MAX_PROMPT_CHARS = 8000;
 const MAX_IMAGE_B64_CHARS = 14_000_000; // ~10 MB decoded per image
 const MAX_IMAGES = 3;
+// Primary image plus all extra images, with room for the prompt and JSON metadata.
+const MAX_REQUEST_BODY_BYTES = MAX_IMAGE_B64_CHARS * (MAX_IMAGES + 1) + 64 * 1024;
+const limitStencilBody = bodyLimit(MAX_REQUEST_BODY_BYTES);
 const ALLOWED_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
 const DEFAULT_OR_MODEL = "google/gemini-2.5-flash-image";
 // OpenRouter model ids look like "vendor/name" (optionally ":variant"). Anything else is rejected
@@ -42,8 +46,12 @@ export const Route = createFileRoute("/api/generate-stencil")({
       POST: async ({ request }) => {
         let body: Body;
         try {
-          body = (await request.json()) as Body;
-        } catch {
+          const event = new H3Event(request);
+          body = (await limitStencilBody(event, () => event.req.json())) as Body;
+        } catch (error) {
+          if (HTTPError.isError(error) && error.status === 413) {
+            return Response.json({ error: "Request body is too large" }, { status: 413 });
+          }
           return Response.json({ error: "Invalid JSON body" }, { status: 400 });
         }
         if (!body?.prompt || typeof body.prompt !== "string" || !isValidImage(body?.image)) {
@@ -52,7 +60,10 @@ export const Route = createFileRoute("/api/generate-stencil")({
         if (body.prompt.length > MAX_PROMPT_CHARS) {
           return Response.json({ error: "prompt is too long" }, { status: 413 });
         }
-        const extraImages = Array.isArray(body.images) ? body.images : [];
+        if (body.images !== undefined && !Array.isArray(body.images)) {
+          return Response.json({ error: "invalid images payload" }, { status: 400 });
+        }
+        const extraImages = body.images ?? [];
         if (extraImages.length > MAX_IMAGES || !extraImages.every(isValidImage)) {
           return Response.json({ error: "invalid images payload" }, { status: 400 });
         }
@@ -93,7 +104,7 @@ export const Route = createFileRoute("/api/generate-stencil")({
                     role: "user",
                     content: [
                       { type: "text", text: body.prompt },
-                      ...(body.images && body.images.length > 0 ? body.images : [body.image]).map(
+                      ...(extraImages.length > 0 ? extraImages : [body.image]).map(
                         (img) => ({
                           type: "image_url" as const,
                           image_url: { url: `data:${img.mimeType};base64,${img.data}` },

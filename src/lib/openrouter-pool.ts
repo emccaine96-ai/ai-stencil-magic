@@ -23,7 +23,7 @@ export interface OpenRouterOptions {
 }
 
 /**
- * Send a single chat completion request using the supplied API key or the saved browser key.
+ * Send a chat completion using the supplied or saved browser key, retrying once with the fallback model on HTTP 429.
  *
  * @param prompt - Text sent as the user message.
  * @param options - Optional model, sampling, token limit, and API key overrides.
@@ -39,7 +39,7 @@ export async function fetchOpenRouterCompletion(
     (typeof localStorage !== "undefined" ? localStorage.getItem("stencilmagic.openrouter.key") : null);
   if (!apiKey) throw new Error("Missing Bring-Your-Own-Key configuration.");
 
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+  const sendRequest = (model: string) => fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -48,12 +48,17 @@ export async function fetchOpenRouterCompletion(
       "X-Title": "AI Stencil Magic",
     },
     body: JSON.stringify({
-      model: options.model || openRouterConfig.defaultModel,
+      model,
       messages: [{ role: "user", content: prompt }],
       temperature: options.temperature ?? openRouterConfig.temperature,
       max_tokens: options.maxTokens ?? openRouterConfig.maxTokens,
     }),
   });
+
+  let response = await sendRequest(options.model || openRouterConfig.defaultModel);
+  if (response.status === 429) {
+    response = await sendRequest(openRouterConfig.fallbackModel);
+  }
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");

@@ -211,7 +211,7 @@ export function tiltShift(ctx: Ctx, bandRatio = 0.35, blur = 10) {
   sharp.getContext("2d")!.drawImage(ctx.canvas, 0, 0);
   // Blur whole canvas
   gaussianBlur(ctx, blur);
-  // Paste sharp band back over the middle using a vertical gradient mask
+  // Blend the sharp band with the blur using complementary gradient masks.
   const bandH = h * bandRatio;
   const cy = h / 2;
   const tmp = document.createElement("canvas");
@@ -226,7 +226,14 @@ export function tiltShift(ctx: Ctx, bandRatio = 0.35, blur = 10) {
   tctx.globalCompositeOperation = "destination-in";
   tctx.fillStyle = grad;
   tctx.fillRect(0, 0, w, h);
+  // Remove the blur even where the original is transparent, then add the sharp pixels.
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  ctx.globalCompositeOperation = "lighter";
   ctx.drawImage(tmp, 0, 0);
+  ctx.restore();
 }
 
 /* ----------------------------- Dispersion ------------------------------- */
