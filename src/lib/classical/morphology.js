@@ -65,7 +65,19 @@ export function removeSmallBlobs(imageData, minArea = 6) {
   const o = out.data;
   const stack = [];
 
-  const dirs = [-1, 1, -width, width];
+  // 8-connected (audit Fix #1, confirmed 2026-09-06): includes diagonals so
+  // a chain of ink pixels that only touch at a corner (fine dotwork tips,
+  // whisker ends, single-pixel-wide diagonal strokes) is treated as ONE
+  // region, matching how a viewer perceives connectivity and matching the
+  // diagonal-bridging logic already applied upstream in threshold.js's
+  // bridgeDiagonalGaps. The existing wraparound guard below
+  // (Math.abs(nx - x) > 1) already correctly rejects row-wrap for these new
+  // diagonal offsets too -- independently hand-traced all 4 new directions,
+  // no change needed to that guard.
+  const dirs = [
+    -1, 1, -width, width,
+    -width - 1, -width + 1, width - 1, width + 1,
+  ];
 
   for (let i = 0; i < width * height; i++) {
     if (data[i * 4] >= 128 || visited[i]) continue;
@@ -129,6 +141,37 @@ export function dilateErode(imageData, amount) {
       const idx = (y * width + x) * 4;
       o[idx] = o[idx + 1] = o[idx + 2] = val;
       o[idx + 3] = 255;
+    }
+  }
+  return out;
+}
+
+/**
+ * Square-window dilation of a 0/1 mask, separable (two 1-D passes) so cost is O(r)
+ * per pixel, not O(r^2). Used to scope hatching to the neighbourhood of line ink.
+ */
+export function dilateSquare(mask, width, height, radius) {
+  const tmp = new Uint8Array(width * height);
+  const out = new Uint8Array(width * height);
+  const FAR = 1 << 30; // sentinel for "no set pixel on this side" (Int32Array cannot hold Infinity)
+  const nextSet = new Int32Array(Math.max(width, height));
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    let next = FAR;
+    for (let x = width - 1; x >= 0; x--) { if (mask[row + x]) next = x; nextSet[x] = next; }
+    let last = -FAR;
+    for (let x = 0; x < width; x++) {
+      if (mask[row + x]) last = x;
+      tmp[row + x] = (x - last <= radius || nextSet[x] - x <= radius) ? 1 : 0;
+    }
+  }
+  for (let x = 0; x < width; x++) {
+    let next = FAR;
+    for (let y = height - 1; y >= 0; y--) { if (tmp[y * width + x]) next = y; nextSet[y] = next; }
+    let last = -FAR;
+    for (let y = 0; y < height; y++) {
+      if (tmp[y * width + x]) last = y;
+      out[y * width + x] = (y - last <= radius || nextSet[y] - y <= radius) ? 1 : 0;
     }
   }
   return out;

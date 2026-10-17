@@ -11,14 +11,29 @@ import {
   Sparkles,
   Archive,
   Zap,
+  Paintbrush,
 } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
 import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
 import { runPlugin, BUILTIN_PLUGINS } from "@/lib/plugins";
-import { processClassicalPro } from "@/lib/classical-pro-integration";
+import { processClassicalPro, type ClassicalProResult } from "@/lib/classical-pro-integration";
+import { computeStencilMetrics, computeTattooability, type TattooabilityResult } from "@/lib/classical-engine/inspector";
+// @ts-ignore — optional vectorization (imagetracerjs)
+import { vectorizeLineLayer } from "@/lib/classical-engine/vectorize";
+// @ts-ignore — ink style panel (optional add-on, collapsed by default)
+import { InkStylePanel } from "@/components/InkStylePanel";
+// @ts-ignore — font system (self-hosted Font Squirrel fonts)
+import { injectSelfHostedFontFaces, preloadAllSelfHostedFonts } from "@/fonts/load-font";
+import { renderLetteringToImageData } from "@/fonts/text-to-stencil";
 import { toast } from "sonner";
 import { CustomPromptPanel } from "@/components/CustomPromptPanel";
+import { analyzePhoto, suggestTuning, type TuningSuggestion } from "@/lib/photo-analysis";
+import { PhotoAnalysisBanner } from "@/components/PhotoAnalysisBanner";
+import {
+  type TouchUpGenConfig,
+} from "@/lib/touch-up/session";
+import { writeHandoff } from "@/lib/touch-up/handoff";
 
 export const Route = createFileRoute("/create")({
   head: () => ({
@@ -29,6 +44,10 @@ export const Route = createFileRoute("/create")({
         content:
           "Upload a photo and generate a professional tattoo stencil with 5-tier tonal layering.",
       },
+      { property: "og:title", content: "Create Stencil — AI Stencil Magic" },
+      { property: "og:description", content: "Generate photo-faithful tattoo stencils in hatching, solid contour, dotwork, or hybrid styles." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: CreatePage,
@@ -47,15 +66,57 @@ const OR_KEY_STORAGE = "stencilmagic.openrouter.key";
 const PROVIDER_STORAGE = "stencilmagic.provider"; // 'openrouter' | 'gemini'
 const OR_MODEL_STORAGE = "stencilmagic.openrouter.model";
 type Provider = "openrouter" | "gemini" | "classical" | "hybrid";
-const STYLE_PROMPTS: Record<Style, string> = {
-  hatching:
-    "Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable.",
-  solid:
-    "Clean bold solid line work, no shading fills. Use varying line weights only. Closed clean contours. Highlights pure white.",
-  dotwork:
-    "Dotwork stencil: clean solid CONTOUR LINES define every shape, with stippling DOTS filling the interior tones. Shadows = very dense small dots; dark mids = medium density; mids = sparse; lights = very few; highlights = pure white. Contour lines must be present and crisp — this is NOT pure dots, it is line work + dot shading.",
-  hybrid:
-    "Combine bold solid CONTOUR LINES with CROSSHATCHING in dark areas and STIPPLING dots in mid-to-light areas. All three techniques visible in the same image.",
+const STYLE_PROMPT_BLOCKS: Record<Style, string> = {
+  // Restored pre-September 3 recipe, with technique instructions scoped per style.
+  hatching: `STYLE: HATCHING
+Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable.
+- For portraits: apply 3D face-mesh aware crosshatching that follows facial surface curvature (cheek, jawline, brow ridge, nose bridge). Eyes, lips and teeth crisply defined.
+- For flowers / objects: delicate parallel hatching radiating along petal curvature, soft pencil-like graduations from saturated purple in shadow folds to faint outline on outer petals.
+
+TONAL LAYERING (5 tiers via Otsu multi-level thresholding, hatch density/direction only):
+1. Deep shadows — densest mark-making, 3 overlaid hatch directions.
+2. Dark mid-tones — heavy mark-making, 2 hatch directions.
+3. Mid-tones — medium single-direction hatching.
+4. Light mid-tones — sparse parallel strokes.
+5. Highlights — pure white paper, no marks.
+
+HATCH GEOMETRY: primary 45°, secondary 135°, tertiary 90°. ~3px line spacing. Lines must be crisp, straight and clearly readable. Absolutely no dots or stipple marks anywhere.`,
+
+  solid: `STYLE: SOLID
+Clean bold solid line work, no shading fills. Use varying line weights only. Closed clean contours. Highlights pure white.
+NO cross-hatching, NO parallel hatching, NO dots or stippling. Depth is expressed ONLY through line-weight variation on contours, never interior shading marks.
+- For portraits: clean varying-weight contours define the actual facial features and structural edges; heavier lines at deep-shadow boundaries, lighter lines for subtle contours.
+- For flowers / objects: clean outlines follow each petal, leaf and edge boundary, with heavier weight where forms overlap or a deep fold occurs.`,
+
+  dotwork: `STYLE: DOTWORK
+Dotwork stencil: clean solid CONTOUR LINES define every shape, with stippling DOTS filling the interior tones. Shadows = very dense small dots; dark mids = medium density; mids = sparse; lights = very few; highlights = pure white. Contour lines must be present and crisp — this is NOT pure dots, it is line work + dot shading.
+ALL interior shading is stippling DOTS only — NEVER hatch lines or parallel strokes anywhere in the image.
+- For portraits: crisp solid contour lines outline every facial feature and boundary; all tonal depth inside those contours comes entirely from dot density, never from line strokes.
+- For flowers / objects: bold contour per shape; interior shading is dot density only.
+
+DOT DENSITY LAYERING (5 tiers via Otsu multi-level thresholding, density only — no hatch lines):
+1. Deep shadows — dots nearly touching, maximum density.
+2. Dark mid-tones — medium-dense dots with visible white space between each dot.
+3. Mid-tones — evenly spaced sparse dots.
+4. Light mid-tones — very few, widely scattered dots.
+5. Highlights — pure white, zero dots.
+
+DOT GEOMETRY: dots ~1-2px diameter, circular, cleanly separated — never smudged together into a line or hatch mark. Contour lines are present and crisp; this is NOT pure dots, it is line work + dot shading, but the shading itself is 100% dots.`,
+
+  hybrid: `STYLE: HYBRID
+Combine bold solid CONTOUR LINES with CROSSHATCHING in dark areas and STIPPLING dots in mid-to-light areas. All three techniques visible in the same image.
+Keep each shading technique confined to its own tonal range so they don't blend into mud.
+- For portraits: bold contour lines on every feature edge; crosshatching only in the deepest shadow pockets (eye sockets, under-jaw, nostril shadow); dot shading carries the mid-tones and light transitions.
+- For flowers / objects: bold outline per petal/leaf; hatching only in the deepest fold shadows; dots for the mid-tone gradation toward the highlight.
+
+TONAL LAYERING (5 tiers via Otsu multi-level thresholding — technique changes by tier):
+1. Deep shadows — 2-3 overlaid hatch directions (45°/135°/90°).
+2. Dark mid-tones — single-direction hatching, transitioning to dense dots at the tier's edge.
+3. Mid-tones — dense-to-medium dot stippling, no hatch lines.
+4. Light mid-tones — sparse, widely-spaced dots.
+5. Highlights — pure white paper, no marks.
+
+Contour line weight follows the same logic as Solid: heavier at deep-shadow boundaries, thin at light edges.`,
 };
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -65,6 +126,35 @@ async function fileToDataUrl(file: File): Promise<string> {
     r.onerror = rej;
     r.readAsDataURL(file);
   });
+}
+
+// Formats /api/generate-stencil accepts. Keep in sync with ALLOWED_MIME on the server.
+const SERVER_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+/**
+ * Return a data URL the server will accept. PNG, JPEG, and WebP pass through unchanged;
+ * any other format the browser can decode (GIF, AVIF, BMP, ...) is re-encoded to PNG.
+ * @throws If the file cannot be decoded as an image.
+ */
+async function fileToServerSafeDataUrl(file: File): Promise<string> {
+  const dataUrl = await fileToDataUrl(file);
+  if (SERVER_IMAGE_TYPES.has(file.type)) return dataUrl;
+  const img = new Image();
+  img.src = dataUrl;
+  try {
+    await img.decode();
+  } catch {
+    throw new Error("That image format isn't supported. Please use a PNG, JPEG, or WebP photo.");
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  if (!ctx || canvas.width === 0 || canvas.height === 0) {
+    throw new Error("That image format isn't supported. Please use a PNG, JPEG, or WebP photo.");
+  }
+  ctx.drawImage(img, 0, 0);
+  return canvas.toDataURL("image/png");
 }
 
 function dataUrlToInline(dataUrl: string): { mimeType: string; data: string } {
@@ -107,6 +197,28 @@ async function normalizeToPurpleInk(dataUrl: string): Promise<string> {
   return canvas.toDataURL("image/png");
 }
 
+async function scoreStencil(dataUrl: string): Promise<TattooabilityResult> {
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.src = dataUrl;
+  await new Promise((res, rej) => {
+    img.onload = res;
+    img.onerror = rej;
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(img, 0, 0);
+  const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const ink = new Uint8ClampedArray(width * height);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    ink[p] = data[i + 3] > 10 ? 255 : 0;
+  }
+  const metrics = computeStencilMetrics(ink, width, height);
+  return computeTattooability(metrics);
+}
+
 function CreatePage() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [style, setStyle] = useState<Style>("hatching");
@@ -114,9 +226,11 @@ function CreatePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stencil, setStencil] = useState<string | null>(null);
+  const [tattooability, setTattooability] = useState<TattooabilityResult | null>(null);
   const [pos, setPos] = useState(50);
   const fileRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const lastGenRef = useRef<TouchUpGenConfig | null>(null);
 
   // API keys
   const [apiKey, setApiKey] = useState("");
@@ -131,6 +245,76 @@ function CreatePage() {
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
+  // Ink style panel intermediate data (from classical engine)
+  const [inkStyleData, setInkStyleData] = useState<{
+    primaryLines: Uint8ClampedArray;
+    toneIdx: Uint8Array;
+    toneGray: Float32Array;
+    width: number;
+    height: number;
+  } | null>(null);
+  // SVG export state
+  const [svgExporting, setSvgExporting] = useState(false);
+  const [useAdvancedPipeline, setUseAdvancedPipeline] = useState(false);
+  // Multi-Scale Retinex illumination normalization -- off by default (opt-in
+  // for harshly-lit/backlit reference photos), per VISION.md's "optional,
+  // not default" rule and the classical-engine-audit.md recommendation.
+  const [useRetinex, setUseRetinex] = useState(false);
+  // Opt-in Tonal 3D shading (beta) -- off by default; disabled for Dotwork.
+  const [useTonalShading, setUseTonalShading] = useState(false);
+  const [tonalStrength, setTonalStrength] = useState(1.0);
+  const tonalControls = (
+    <>
+      <label
+        className={`flex items-center gap-2 text-xs cursor-pointer ${style === "dotwork" ? "text-muted-foreground/40 cursor-not-allowed" : "text-muted-foreground"}`}
+      >
+        <input
+          type="checkbox"
+          checked={useTonalShading && style !== "dotwork"}
+          disabled={style === "dotwork"}
+          onChange={(e) => setUseTonalShading(e.target.checked)}
+          className="accent-primary"
+        />
+        <span>Tonal 3D shading (beta): hatching that follows the form and matches the photo's tone</span>
+      </label>
+      {useTonalShading && style !== "dotwork" ? (
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>Shading strength</span>
+          <input
+            type="range"
+            min={0.6}
+            max={1.4}
+            step={0.05}
+            value={tonalStrength}
+            onChange={(e) => setTonalStrength(Number(e.target.value))}
+            className="accent-primary flex-1"
+          />
+          <span className="tabular-nums w-8 text-right">{tonalStrength.toFixed(2)}</span>
+        </label>
+      ) : null}
+    </>
+  );
+  // Background separation -- 'keep' by default (fully inert), same
+  // optional/off-by-default treatment as Retinex above.
+  const [backgroundMode, setBackgroundMode] = useState<"keep" | "remove" | "fade">("keep");
+  // Local pre-tuning model: on-device suggestion for Detail/Retinex based on
+  // what's actually in the selected photo. Suggestion-only, always
+  // dismissible, never auto-applies. Smart Suggestions toggle (default on)
+  // lets the user skip this entirely -- when off, analyzePhoto() is never
+  // called, so the face-detector model never downloads either.
+  const [smartSuggestionsEnabled, setSmartSuggestionsEnabled] = useState(true);
+  const [photoSuggestion, setPhotoSuggestion] = useState<TuningSuggestion | null>(null);
+  // Guards against a race: if the user picks a second photo while the first
+  // photo's analysis is still running, a late-arriving result for the first
+  // photo must not get applied to the second.
+  const latestPhotoRef = useRef<string | null>(null);
+
+
+  // Load self-hosted fonts on mount (Font Squirrel system)
+  useEffect(() => {
+    injectSelfHostedFontFaces();
+    preloadAllSelfHostedFonts().catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -263,8 +447,37 @@ function CreatePage() {
   async function onPick(file?: File | null) {
     if (!file) return;
     setStencil(null);
+    setTattooability(null);
+    setInkStyleData(null);
     setError(null);
-    setPhoto(await fileToDataUrl(file));
+    setPhotoSuggestion(null);
+    let dataUrl: string;
+    try {
+      dataUrl = await fileToServerSafeDataUrl(file);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not read that image.");
+      return;
+    }
+    setPhoto(dataUrl);
+    latestPhotoRef.current = dataUrl;
+
+    if (smartSuggestionsEnabled) {
+      const img = new Image();
+      img.onload = async () => {
+        try {
+          const analysis = await analyzePhoto(img);
+          // Only apply if this is still the photo currently selected -- the
+          // user may have picked a different photo while this ran.
+          if (latestPhotoRef.current === dataUrl) {
+            setPhotoSuggestion(suggestTuning(analysis));
+          }
+        } catch (e) {
+          console.warn("Photo analysis failed:", e);
+        }
+      };
+      img.onerror = () => console.warn("Photo analysis: image failed to load for analysis");
+      img.src = dataUrl;
+    }
   }
 
   async function generate() {
@@ -281,15 +494,32 @@ function CreatePage() {
     setLoading(true);
     setError(null);
     setStencil(null);
+    setInkStyleData(null);
+    lastGenRef.current = {
+      engine: provider,
+      style,
+      intensity,
+      useRetinex,
+      backgroundMode,
+      useAdvancedPipeline,
+    };
     try {
       if (provider === "classical") {
         const result = await processClassicalPro(photo, {
           style,
           intensity,
           purpleTint: true,
+          useAdvancedPipeline,
+          useRetinex,
+          useTonalShading: useTonalShading && style !== "dotwork",
+          tonalStrength,
+          backgroundMode,
         });
         const purpleResult = await normalizeToPurpleInk(result.dataUrl);
         setStencil(purpleResult);
+        scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
+        // Store intermediate data for InkStylePanel (if available from the engine)
+        setInkStyleData(result.intermediate ?? null);
         toast.success(`Classical Pro: ${style} (${result.processingTime}ms)`);
         setLoading(false);
         return;
@@ -300,6 +530,10 @@ function CreatePage() {
           style,
           intensity,
           purpleTint: false,
+          useRetinex,
+          useTonalShading: useTonalShading && style !== "dotwork",
+          tonalStrength,
+          backgroundMode,
         });
         // Step 2: Send classical result to AI for refinement — WITH the
         // original photo included for identity/likeness grounding, since the
@@ -307,7 +541,21 @@ function CreatePage() {
         // nothing to stay faithful to.
         const { mimeType: cm, data: cB64 } = dataUrlToInline(classicalResult.dataUrl);
         const { mimeType: om, data: oB64 } = dataUrlToInline(photo);
-        const hybridPrompt = `Reference image 1 is the ORIGINAL PHOTO — preserve this subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly. Reference image 2 is a pre-processed structural line-art guide for the "${style}" style at ${Math.round(intensity * 100)}% shading density — use it as a structural guide for line placement, but the final result's likeness must match reference image 1, not deviate into generic features. Output a single clean tattoo stencil line drawing on pure white background, improving line quality and adding artistic detail while staying faithful to the original photo's actual identity. ${customPrompt || ""}`;
+        // FIXED 2026-09-05 (audit follow-up task 5): this used to be one
+        // generic sentence with zero style-specific technique reinforcement
+        // — the AI refinement step had nothing telling it "no shading fills"
+        // for Solid or "dots only, never hatch lines" for Dotwork, relying
+        // entirely on the classical reference image to carry style. Now
+        // folds in the same STYLE_PROMPT_BLOCKS[style] block buildPrompt()
+        // already gives the other 3 providers, so Hybrid gets identical
+        // textual technique reinforcement instead of relying on the
+        // reference image alone. buildPrompt() itself and the other 3
+        // providers are untouched — this only changes the hybrid branch.
+        const hybridPrompt = `Reference image 1 is the ORIGINAL PHOTO — preserve this subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly. Reference image 2 is a pre-processed structural line-art guide for the "${style}" style at ${Math.round(intensity * 100)}% shading density — use it as a structural guide for line placement, but the final result's likeness must match reference image 1, not deviate into generic features.
+
+${STYLE_PROMPT_BLOCKS[style]}
+
+Output a single clean tattoo stencil line drawing on pure white background, improving line quality and adding artistic detail while staying faithful to the original photo's actual identity, and strictly following the technique rules above for the "${style}" style. ${customPrompt || ""}`;
         let hybridDataUrl: string | null = null;
         // Try server-side first (OpenRouter). NOTE: passes both images via an
         // `images` array — generate-stencil.ts needs to read body.images
@@ -367,6 +615,12 @@ function CreatePage() {
         }
         const purpleResult = await normalizeToPurpleInk(hybridDataUrl);
         setStencil(purpleResult);
+        scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
+        // Hybrid genuinely has fresh Classical Pro intermediate data from its own
+        // pre-processing step above — surface it to the Ink Style Panel like the
+        // classical branch does, instead of leaving the panel hidden despite the
+        // data being available.
+        setInkStyleData(classicalResult.intermediate ?? null);
         setLoading(false);
         return;
       }
@@ -386,7 +640,11 @@ function CreatePage() {
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data?.error || `OpenRouter AI error ${r.status}`);
-        setStencil(await normalizeToPurpleInk(data.dataUrl));
+        {
+          const purpleResult = await normalizeToPurpleInk(data.dataUrl);
+          setStencil(purpleResult);
+          scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
+        }
       } else {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${encodeURIComponent(apiKey)}`;
         const r = await fetch(url, {
@@ -407,12 +665,52 @@ function CreatePage() {
         const imgPart = parts.find((p: any) => p?.inlineData?.data);
         if (!imgPart) throw new Error("No image returned by Gemini");
         const outMime = imgPart.inlineData.mimeType || "image/png";
-        setStencil(await normalizeToPurpleInk(`data:${outMime};base64,${imgPart.inlineData.data}`));
+        {
+          const purpleResult = await normalizeToPurpleInk(`data:${outMime};base64,${imgPart.inlineData.data}`);
+          setStencil(purpleResult);
+          scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function downloadSVG() {
+    if (!stencil) return;
+    setSvgExporting(true);
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = stencil;
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      const svg = await vectorizeLineLayer(canvas);
+      const blob = new Blob([svg], { type: "image/svg+xml" });
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = u;
+      a.download = "stencil-vector.svg";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(u), 1000);
+      toast.success("SVG exported");
+    } catch (e) {
+      // FIXED 2026-09-05: imagetracerjs IS installed (confirmed via direct
+      // import test) and this catch block can fire for other reasons (image
+      // load failure, canvas errors) -- the old message claimed a specific,
+      // now-incorrect cause. Generic message instead of a wrong diagnosis.
+      console.error('[create] SVG export failed', e);
+      toast.error("SVG export failed — please try again");
+    } finally {
+      setSvgExporting(false);
     }
   }
 
@@ -487,6 +785,14 @@ function CreatePage() {
             >
               <Archive size={14} />
               <span className="hidden sm:inline">Vault</span>
+            </Link>
+            <Link
+              to="/touch-up"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              aria-label="Touch-Up Studio"
+            >
+              <Paintbrush size={14} />
+              <span className="hidden sm:inline">Touch-Up</span>
             </Link>
             <MasterSuite
               photo={photo}
@@ -592,6 +898,45 @@ function CreatePage() {
               <p className="text-[11px] text-muted-foreground">
                 Classical Pro uses the same style + shading density as above. Runs locally — no API key, no credits.
               </p>
+              <label
+                className={`flex items-center gap-2 text-xs cursor-pointer ${style === "dotwork" ? "text-muted-foreground/40 cursor-not-allowed" : "text-muted-foreground"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={useAdvancedPipeline && style !== "dotwork"}
+                  disabled={style === "dotwork"}
+                  onChange={(e) => setUseAdvancedPipeline(e.target.checked)}
+                  className="accent-primary"
+                />
+                <span>Advanced multi-scale pipeline (experimental)</span>
+              </label>
+              {style === "dotwork" && useAdvancedPipeline ? (
+                <p className="text-[10px] text-muted-foreground/70">
+                  Advanced doesn't support Dotwork yet — using the standard engine for this style.
+                </p>
+              ) : null}
+              <label className="flex items-center gap-2 text-xs cursor-pointer text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={useRetinex}
+                  onChange={(e) => { setUseRetinex(e.target.checked); setPhotoSuggestion(null); }}
+                  className="accent-primary"
+                />
+                <span>Fix harsh lighting (illumination normalization)</span>
+              </label>
+              {tonalControls}
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Background:</span>
+                <select
+                  value={backgroundMode}
+                  onChange={(e) => setBackgroundMode(e.target.value as "keep" | "remove" | "fade")}
+                  className="bg-background border border-border rounded-lg px-2 py-1 text-xs"
+                >
+                  <option value="keep">Keep</option>
+                  <option value="remove">Remove</option>
+                  <option value="fade">Fade</option>
+                </select>
+              </label>
             </div>
           ) : null}
           {provider === "hybrid" ? (
@@ -602,6 +947,28 @@ function CreatePage() {
               <p className="text-[10px] text-muted-foreground">
                 Uses 1 API call. Falls back to Classical Pro only if no key is set.
               </p>
+              <label className="flex items-center gap-2 text-xs cursor-pointer text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={useRetinex}
+                  onChange={(e) => { setUseRetinex(e.target.checked); setPhotoSuggestion(null); }}
+                  className="accent-primary"
+                />
+                <span>Fix harsh lighting (illumination normalization)</span>
+              </label>
+              {tonalControls}
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Background:</span>
+                <select
+                  value={backgroundMode}
+                  onChange={(e) => setBackgroundMode(e.target.value as "keep" | "remove" | "fade")}
+                  className="bg-background border border-border rounded-lg px-2 py-1 text-xs"
+                >
+                  <option value="keep">Keep</option>
+                  <option value="remove">Remove</option>
+                  <option value="fade">Fade</option>
+                </select>
+              </label>
             </div>
           ) : null}
           {provider === "openrouter" && !orKey ? (
@@ -645,6 +1012,18 @@ function CreatePage() {
               </span>
             </div>
           ) : null}
+          <label className="mt-2 flex items-center gap-2 text-[11px] cursor-pointer text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={smartSuggestionsEnabled}
+              onChange={(e) => {
+                setSmartSuggestionsEnabled(e.target.checked);
+                if (!e.target.checked) setPhotoSuggestion(null);
+              }}
+              className="accent-primary"
+            />
+            <span>Smart Suggestions (on-device photo analysis for Detail/lighting tips)</span>
+          </label>
         </section>
 
         <section>
@@ -681,13 +1060,26 @@ function CreatePage() {
               min={0}
               max={100}
               value={intensity * 100}
-              onChange={(e) => setIntensity(Number(e.target.value) / 100)}
+              onChange={(e) => { setIntensity(Number(e.target.value) / 100); setPhotoSuggestion(null); }}
               className="w-full mt-2 accent-primary"
             />
             <p className="text-xs text-muted-foreground mt-2">
               Controls the 5-tier tonal layering: shadows → dark mids → mids → light mids →
               highlights. Higher density = denser hatching/dots in darker tones.
             </p>
+            {photoSuggestion ? (
+              <div className="mt-3">
+                <PhotoAnalysisBanner
+                  suggestion={photoSuggestion}
+                  onApply={() => {
+                    setIntensity(photoSuggestion.intensity);
+                    setUseRetinex(photoSuggestion.useRetinex);
+                    setPhotoSuggestion(null);
+                  }}
+                  onDismiss={() => setPhotoSuggestion(null)}
+                />
+              </div>
+            ) : null}
           </div>
         </section>
 
@@ -721,6 +1113,35 @@ function CreatePage() {
         {stencil ? (
           <section className="space-y-4">
             <h2 className="text-2xl font-extrabold">Your stencil</h2>
+            {tattooability ? (
+              <div className="rounded-2xl border border-border bg-card p-4 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Tattooability
+                  </span>
+                  <span
+                    className={`text-lg font-extrabold ${
+                      tattooability.score >= 75
+                        ? "text-primary"
+                        : tattooability.score >= 50
+                          ? "text-amber-400"
+                          : "text-destructive"
+                    }`}
+                  >
+                    {tattooability.score}/100
+                  </span>
+                </div>
+                {tattooability.reasons.length > 0 ? (
+                  <ul className="text-[11px] text-muted-foreground space-y-0.5 list-disc list-inside">
+                    {tattooability.reasons.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">Clean, tattoo-ready line work.</p>
+                )}
+              </div>
+            ) : null}
             <div className="relative aspect-square bg-white rounded-3xl overflow-hidden border border-border">
               {photo ? (
                 <img
@@ -796,7 +1217,57 @@ function CreatePage() {
               <p className="text-[10px] text-muted-foreground text-center">
                 Upscaled in your browser via high-quality bicubic interpolation.
               </p>
+              <button
+                onClick={downloadSVG}
+                disabled={svgExporting}
+                className="w-full rounded-full border border-border hover:border-primary/50 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition flex items-center justify-center gap-2"
+              >
+                {svgExporting ? (
+                  <>
+                    <Loader2 className="animate-spin" size={14} /> Converting…
+                  </>
+                ) : (
+                  <>Export as SVG (vector)</>
+                )}
+              </button>
+              <button
+                onClick={async () => {
+                  if (!stencil) return;
+                  try {
+                    await writeHandoff({
+                      stencil,
+                      photo,
+                      config: lastGenRef.current ?? undefined,
+                    });
+                    navigate({ to: "/touch-up" });
+                  } catch (e) {
+                    console.error("[create] touch-up handoff failed", e);
+                    toast.error("Couldn't open Touch-Up Studio — please try again");
+                  }
+                }}
+                className="w-full rounded-full border border-border hover:border-primary/50 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition flex items-center justify-center gap-2"
+              >
+                <Paintbrush size={14} /> Open in Touch-Up Studio
+              </button>
             </div>
+
+            {/* Ink Style Panel — optional add-on, collapsed by default */}
+            {inkStyleData ? (
+              <InkStylePanel
+                primaryLines={inkStyleData.primaryLines}
+                toneIdx={inkStyleData.toneIdx}
+                toneGray={inkStyleData.toneGray}
+                width={inkStyleData.width}
+                height={inkStyleData.height}
+                onResult={(imageData) => {
+                  const canvas = document.createElement("canvas");
+                  canvas.width = imageData.width;
+                  canvas.height = imageData.height;
+                  canvas.getContext("2d")!.putImageData(imageData, 0, 0);
+                  setStencil(canvas.toDataURL("image/png"));
+                }}
+              />
+            ) : null}
 
             {/* Plugin Enhancement Panel */}
             <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
@@ -955,9 +1426,17 @@ function CreatePage() {
 }
 
 function buildPrompt(o: { style: Style; intensity: number; customPrompt?: string }) {
-  // Bake the proven "May 27" defaults into the prompt so first-shot output is
-  // gallery-grade without the user needing to touch sliders.
-  const base = `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.\n\nHARD RULES:\n- Output a single image on PURE WHITE background.\n- All ink is the EXACT color #A855F7 (neon purple). No gray, no black, no other colors.\n- Crystal-clear closed contour line work, tattoo-stencil ready.\n- Preserve the subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly.\n- For portraits: apply 3D face-mesh aware crosshatching that follows facial surface curvature (cheek, jawline, brow ridge, nose bridge). Eyes, lips and teeth crisply defined.\n- For flowers / objects: delicate parallel hatching radiating along petal curvature, soft pencil-like graduations from saturated purple in shadow folds to faint outline on outer petals.\n\nTONAL LAYERING (5 tiers via Otsu multi-level thresholding):\n1. Deep shadows — densest mark-making, 3 overlaid hatch directions.\n2. Dark mid-tones — heavy mark-making, 2 hatch directions.\n3. Mid-tones — medium single-direction hatching.\n4. Light mid-tones — sparse parallel strokes.\n5. Highlights — pure white paper.\n\nHATCH GEOMETRY: primary 45°, secondary 135°, tertiary 90°. ~3px line spacing.\n\nSTYLE: ${o.style.toUpperCase()}\n${STYLE_PROMPTS[o.style]}\n\nOverall shading density: ${Math.round(o.intensity * 100)}%.\nNo text, no watermarks, no signatures, no frame, no background scenery.`;
+  // Gemini and OpenRouter share the restored historical recipe. Keep the
+  // universal header technique-neutral to avoid the old Solid/Dotwork conflict.
+  const header = `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.
+
+HARD RULES:
+- Output a single image on PURE WHITE background.
+- All ink is the EXACT color #A855F7 (neon purple). No gray, no black, no other colors.
+- Crystal-clear closed contour line work, tattoo-stencil ready.
+- Preserve the subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly.
+- No text, no watermarks, no signatures, no frame, no background scenery.`;
+  const base = `${header}\n\n${STYLE_PROMPT_BLOCKS[o.style]}\n\nOverall shading density: ${Math.round(o.intensity * 100)}%.`;
   const extra = o.customPrompt?.trim();
   if (!extra) return base;
   return `${base}\n\nADDITIONAL ARTIST INSTRUCTIONS (apply on top of everything above; do not violate the hard rules, ink color, white background, or tonal-layering rules above):\n${extra}`;

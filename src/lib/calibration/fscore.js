@@ -9,15 +9,18 @@
 
 /**
  * Convert ImageData (or canvas) to binary ink mask.
- * Ink = 1 where luminance < threshold, else 0.
+ * Composite over white; ink = 1 where channel darkness >= threshold.
  */
-function toBinaryMask(imageData, threshold = 128) {
+function toBinaryMask(imageData, threshold = 90) {
   const { width, height, data } = imageData;
   const mask = new Uint8Array(width * height);
 
   for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    mask[p] = lum < threshold ? 1 : 0;
+    const alpha = data[i + 3] / 255;
+    const r = 255 + alpha * (data[i] - 255);
+    const g = 255 + alpha * (data[i + 1] - 255);
+    const b = 255 + alpha * (data[i + 2] - 255);
+    mask[p] = 255 - Math.min(r, g, b) >= threshold ? 1 : 0;
   }
   return { mask, width, height };
 }
@@ -77,7 +80,7 @@ function edgeOverlapFScore(predMaskObj, gtMaskObj, dilateRadius = 1) {
  * Returns { precision, recall, f1 }
  */
 async function scoreStencilPair(predSource, gtSource, options = {}) {
-  const threshold = options.threshold ?? 128;
+  const threshold = options.inkThreshold ?? options.threshold ?? 90;
   const dilateRadius = options.dilateRadius ?? 1;
 
   const toImageData = async (src) => {

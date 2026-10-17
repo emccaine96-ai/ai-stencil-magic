@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ChevronDown, Sparkles, Image as ImageIcon, Droplet, Palette } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { ChevronDown, Sparkles, Image as ImageIcon, Droplet, Palette, Paintbrush } from "lucide-react";
 import { Upscaler } from "./Upscaler";
 import { InkInventory } from "./InkInventory";
 import { ColorWheel } from "./ColorWheel";
@@ -50,6 +51,15 @@ export function MasterSuite({
             {tab === "upscaler" ? <Upscaler photo={photo} onReplace={onReplacePhoto} /> : null}
             {tab === "ink" ? <InkInventory photo={photo} /> : null}
             {tab === "wheel" ? <ColorWheel /> : null}
+          </div>
+          <div className="border-t border-border p-2">
+            <Link
+              to="/touch-up"
+              className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition"
+              onClick={() => setOpen(false)}
+            >
+              <Paintbrush size={12} /> Open Touch-Up Studio
+            </Link>
           </div>
         </div>
       ) : null}
