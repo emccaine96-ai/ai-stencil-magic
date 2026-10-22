@@ -69,18 +69,18 @@ type Provider = "openrouter" | "gemini" | "classical" | "hybrid";
 const STYLE_PROMPT_BLOCKS: Record<Style, string> = {
   // Restored pre-September 3 recipe, with technique instructions scoped per style.
   hatching: `STYLE: HATCHING
-Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable.
-- For portraits: apply 3D face-mesh aware crosshatching that follows facial surface curvature (cheek, jawline, brow ridge, nose bridge). Eyes, lips and teeth crisply defined.
-- For flowers / objects: delicate parallel hatching radiating along petal curvature, soft pencil-like graduations from saturated purple in shadow folds to faint outline on outer petals.
+Pure pen-and-ink CROSSHATCHING — visible fine line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp and clearly readable; strokes are straight in flat areas and gently curve to follow the form.
+- For portraits: apply crosshatching whose strokes follow the facial planes and surface curvature (cheek, jawline, brow ridge, nose bridge). Eyes, lips and teeth crisply defined.
+- For flowers / objects: delicate parallel hatching radiating along petal curvature, soft pencil-like graduations from dense strokes in shadow folds to sparse, light strokes on outer petals (same single ink color throughout).
 
-TONAL LAYERING (5 tiers via Otsu multi-level thresholding, hatch density/direction only):
+TONAL LAYERING (5 tiers matched to the photo's tones, hatch density/direction only):
 1. Deep shadows — densest mark-making, 3 overlaid hatch directions.
 2. Dark mid-tones — heavy mark-making, 2 hatch directions.
 3. Mid-tones — medium single-direction hatching.
 4. Light mid-tones — sparse parallel strokes.
 5. Highlights — pure white paper, no marks.
 
-HATCH GEOMETRY: primary 45°, secondary 135°, tertiary 90°. ~3px line spacing. Lines must be crisp, straight and clearly readable. Absolutely no dots or stipple marks anywhere.`,
+HATCH GEOMETRY: primary 45°, secondary 135°, tertiary 90°. ~3px line spacing. Lines must be crisp and clearly readable. Absolutely no dots or stipple marks anywhere.`,
 
   solid: `STYLE: SOLID
 Clean bold solid line work, no shading fills. Use varying line weights only. Closed clean contours. Highlights pure white.
@@ -94,7 +94,7 @@ ALL interior shading is stippling DOTS only — NEVER hatch lines or parallel st
 - For portraits: crisp solid contour lines outline every facial feature and boundary; all tonal depth inside those contours comes entirely from dot density, never from line strokes.
 - For flowers / objects: bold contour per shape; interior shading is dot density only.
 
-DOT DENSITY LAYERING (5 tiers via Otsu multi-level thresholding, density only — no hatch lines):
+DOT DENSITY LAYERING (5 tiers matched to the photo's tones, density only — no hatch lines):
 1. Deep shadows — dots nearly touching, maximum density.
 2. Dark mid-tones — medium-dense dots with visible white space between each dot.
 3. Mid-tones — evenly spaced sparse dots.
@@ -109,7 +109,7 @@ Keep each shading technique confined to its own tonal range so they don't blend 
 - For portraits: bold contour lines on every feature edge; crosshatching only in the deepest shadow pockets (eye sockets, under-jaw, nostril shadow); dot shading carries the mid-tones and light transitions.
 - For flowers / objects: bold outline per petal/leaf; hatching only in the deepest fold shadows; dots for the mid-tone gradation toward the highlight.
 
-TONAL LAYERING (5 tiers via Otsu multi-level thresholding — technique changes by tier):
+TONAL LAYERING (5 tiers matched to the photo's tones — technique changes by tier):
 1. Deep shadows — 2-3 overlaid hatch directions (45°/135°/90°).
 2. Dark mid-tones — single-direction hatching, transitioning to dense dots at the tier's edge.
 3. Mid-tones — dense-to-medium dot stippling, no hatch lines.
@@ -163,7 +163,7 @@ function dataUrlToInline(dataUrl: string): { mimeType: string; data: string } {
   return { mimeType: m[1], data: m[2] };
 }
 
-async function normalizeToPurpleInk(dataUrl: string): Promise<string> {
+async function normalizeToPurpleInk(dataUrl: string, mode: "binary" | "coverage" = "binary"): Promise<string> {
   const img = new Image();
   img.crossOrigin = "anonymous";
   img.src = dataUrl;
@@ -181,7 +181,14 @@ async function normalizeToPurpleInk(dataUrl: string): Promise<string> {
   for (let i = 0; i < d.length; i += 4) {
     const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
     const alpha = d[i + 3];
-    if (alpha > 10 && lum < 200) {
+    if (mode === "coverage") {
+      const LIGHT = 235, DARK = 140;
+      let t = (LIGHT - lum) / (LIGHT - DARK);
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const a = Math.round(t * t * (3 - 2 * t) * alpha);
+      if (a === 0) { d[i] = 255; d[i + 1] = 255; d[i + 2] = 255; d[i + 3] = 0; }
+      else { d[i] = 168; d[i + 1] = 85; d[i + 2] = 247; d[i + 3] = a; }
+    } else if (alpha > 10 && lum < 200) {
       d[i] = 168;
       d[i + 1] = 85;
       d[i + 2] = 247;
@@ -213,7 +220,7 @@ async function scoreStencil(dataUrl: string): Promise<TattooabilityResult> {
   const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const ink = new Uint8ClampedArray(width * height);
   for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    ink[p] = data[i + 3] > 10 ? 255 : 0;
+    ink[p] = data[i + 3] > 96 ? 255 : 0;
   }
   const metrics = computeStencilMetrics(ink, width, height);
   return computeTattooability(metrics);
@@ -555,8 +562,9 @@ function CreatePage() {
 
 ${STYLE_PROMPT_BLOCKS[style]}
 
-Output a single clean tattoo stencil line drawing on pure white background, improving line quality and adding artistic detail while staying faithful to the original photo's actual identity, and strictly following the technique rules above for the "${style}" style. ${customPrompt || ""}`;
+Output a single clean tattoo stencil line drawing in the exact ink color #A855F7 on a pure white background (no text, watermarks or frame), improving line quality and adding artistic detail while staying faithful to the original photo's actual identity, and strictly following the technique rules above for the "${style}" style. ${customPrompt || ""}`;
         let hybridDataUrl: string | null = null;
+        let hybridFromAI = false;
         // Try server-side first (OpenRouter). NOTE: passes both images via an
         // `images` array — generate-stencil.ts needs to read body.images
         // (falling back to the single `image` field) and forward both to the
@@ -579,7 +587,7 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
             }),
           });
           const data = await r.json();
-          if (r.ok && data.dataUrl) hybridDataUrl = data.dataUrl;
+          if (r.ok && data.dataUrl) { hybridDataUrl = data.dataUrl; hybridFromAI = true; }
         } catch (err) {
           console.error("[create] hybrid OpenRouter step failed", err);
         }
@@ -606,6 +614,7 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
             if (inline?.data) {
               const outMime = inline.mimeType || inline.mime_type || "image/png";
               hybridDataUrl = `data:${outMime};base64,${inline.data}`;
+              hybridFromAI = true;
             }
           }
         }
@@ -613,7 +622,7 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
           hybridDataUrl = classicalResult.dataUrl;
           toast.info("No API key set — showing Classical Pro result. Add a Gemini or OpenRouter key for AI refinement.");
         }
-        const purpleResult = await normalizeToPurpleInk(hybridDataUrl);
+        const purpleResult = await normalizeToPurpleInk(hybridDataUrl, hybridFromAI ? "coverage" : "binary");
         setStencil(purpleResult);
         scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
         // Hybrid genuinely has fresh Classical Pro intermediate data from its own
@@ -641,7 +650,7 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
         const data = await r.json();
         if (!r.ok) throw new Error(data?.error || `OpenRouter AI error ${r.status}`);
         {
-          const purpleResult = await normalizeToPurpleInk(data.dataUrl);
+          const purpleResult = await normalizeToPurpleInk(data.dataUrl, "coverage");
           setStencil(purpleResult);
           scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
         }
@@ -666,7 +675,7 @@ Output a single clean tattoo stencil line drawing on pure white background, impr
         if (!imgPart) throw new Error("No image returned by Gemini");
         const outMime = imgPart.inlineData.mimeType || "image/png";
         {
-          const purpleResult = await normalizeToPurpleInk(`data:${outMime};base64,${imgPart.inlineData.data}`);
+          const purpleResult = await normalizeToPurpleInk(`data:${outMime};base64,${imgPart.inlineData.data}`, "coverage");
           setStencil(purpleResult);
           scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
         }
@@ -1433,7 +1442,7 @@ function buildPrompt(o: { style: Style; intensity: number; customPrompt?: string
 HARD RULES:
 - Output a single image on PURE WHITE background.
 - All ink is the EXACT color #A855F7 (neon purple). No gray, no black, no other colors.
-- Crystal-clear closed contour line work, tattoo-stencil ready.
+- Crisp, clean, tattoo-stencil-ready ink line work (follow the STYLE section below for contour and shading technique).
 - Preserve the subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly.
 - No text, no watermarks, no signatures, no frame, no background scenery.`;
   const base = `${header}\n\n${STYLE_PROMPT_BLOCKS[o.style]}\n\nOverall shading density: ${Math.round(o.intensity * 100)}%.`;

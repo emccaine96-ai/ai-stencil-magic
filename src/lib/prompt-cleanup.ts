@@ -10,7 +10,7 @@ export async function cleanUpPromptText(opts: {
   const system = `You rewrite tattoo-stencil artist notes into clear, concise ADDITIONAL INSTRUCTIONS for an image-to-stencil AI.
 Rules you MUST follow in the rewrite:
 - Keep the artist's intent
-- Never contradict: pure white background, single ink color, closed continuous contours, identity preservation, no text/watermarks
+- Never contradict: pure white background, single ink color, clean continuous line work (closed contours only where the chosen style calls for them), identity preservation, no text/watermarks
 - Prefer concrete line-weight, hatch, and detail language over vague adjectives
 - Output ONLY the rewritten instructions, no preamble or quotes`;
 
@@ -60,6 +60,6 @@ Rules you MUST follow in the rewrite:
 
   // Local heuristic fallback
   let cleaned = raw.replace(/\s+/g, " ").replace(/\b(please|just|kind of|sort of)\b/gi, "").trim();
-  cleaned = `Apply these artist notes on top of the base stencil rules (do not break white background, ink color, closed contours, or identity): ${cleaned}`;
+  cleaned = `Apply these artist notes on top of the base stencil rules (do not break white background, ink color, line-work style, or identity): ${cleaned}`;
   return { text: cleaned, source: "local" };
 }
