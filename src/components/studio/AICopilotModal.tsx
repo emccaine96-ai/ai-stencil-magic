@@ -7,31 +7,31 @@ const PRESETS: Preset[] = [
     id: "clean",
     label: "Auto-clean lines",
     prompt:
-      "Clean up this tattoo stencil. Remove noise and broken edges, make the linework crisp, uniform black on a clean white background, preserve composition.",
+      "Clean up this tattoo stencil. Remove noise and broken edges, make the linework crisp, in the stencil's existing ink color on a clean white background, preserve composition.",
   },
   {
     id: "ink",
     label: "Convert to clean ink",
     prompt:
-      "Convert this image into a clean, bold black-ink tattoo stencil with smooth outlines and no shading, white background.",
+      "Convert this image into a bold clean-ink tattoo stencil with smooth outlines and no shading, keeping the existing ink color, white background.",
   },
   {
     id: "shade",
     label: "Add fine shading",
     prompt:
-      "Add tasteful fine-line shading and stippling to this tattoo stencil while preserving the original outlines, black on white.",
+      "Add tasteful fine shading to this tattoo stencil, matching the technique already used in it (crosshatching stays crosshatching, dots stay dots) and preserving the original outlines. Keep the existing ink color on white.",
   },
   {
     id: "fineline",
     label: "Fine-line restyle",
     prompt:
-      "Restyle this stencil in a delicate single-needle fine-line tattoo style with thin, even strokes, black on white.",
+      "Restyle this stencil in a delicate single-needle fine-line tattoo style with thin, even strokes, in the existing ink color on white.",
   },
   {
     id: "neotrad",
     label: "Neo-traditional restyle",
     prompt:
-      "Restyle this stencil in a bold neo-traditional tattoo style with strong outlines and decorative flourishes, black on white.",
+      "Restyle this stencil in a bold neo-traditional tattoo style with strong outlines and decorative flourishes, in the existing ink color on white.",
   },
 ];
 
