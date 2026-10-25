@@ -178,7 +178,7 @@ async function scoreStencil(dataUrl: string): Promise<TattooabilityResult> {
   const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const ink = new Uint8ClampedArray(width * height);
   for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    ink[p] = data[i + 3] > 96 ? 255 : 0;
+    ink[p] = data[i + 3] > 10 ? 255 : 0;
   }
   const metrics = computeStencilMetrics(ink, width, height);
   return computeTattooability(metrics);
@@ -508,7 +508,6 @@ function CreatePage() {
         const { mimeType: om, data: oB64 } = dataUrlToInline(photo);
         const hybridPrompt = `Reference image 1 is the ORIGINAL PHOTO — preserve this subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly. Reference image 2 is a pre-processed structural line-art guide for the "${style}" style at ${Math.round(intensity * 100)}% shading density — use it as a structural guide for line placement, but the final result's likeness must match reference image 1, not deviate into generic features. Output a single clean tattoo stencil line drawing on pure white background, improving line quality and adding artistic detail while staying faithful to the original photo's actual identity. ${customPrompt || ""}`;
         let hybridDataUrl: string | null = null;
-        let hybridFromAI = false;
         // Try server-side first (OpenRouter). NOTE: passes both images via an
         // `images` array — generate-stencil.ts needs to read body.images
         // (falling back to the single `image` field) and forward both to the
@@ -531,7 +530,7 @@ function CreatePage() {
             }),
           });
           const data = await r.json();
-          if (r.ok && data.dataUrl) { hybridDataUrl = data.dataUrl; hybridFromAI = true; }
+          if (r.ok && data.dataUrl) hybridDataUrl = data.dataUrl;
         } catch (err) {
           console.error("[create] hybrid OpenRouter step failed", err);
         }
@@ -558,7 +557,6 @@ function CreatePage() {
             if (inline?.data) {
               const outMime = inline.mimeType || inline.mime_type || "image/png";
               hybridDataUrl = `data:${outMime};base64,${inline.data}`;
-              hybridFromAI = true;
             }
           }
         }
@@ -566,7 +564,7 @@ function CreatePage() {
           hybridDataUrl = classicalResult.dataUrl;
           toast.info("No API key set — showing Classical Pro result. Add a Gemini or OpenRouter key for AI refinement.");
         }
-        const purpleResult = await normalizeToPurpleInk(hybridDataUrl, hybridFromAI ? "coverage" : "binary");
+        const purpleResult = await normalizeToPurpleInk(hybridDataUrl);
         setStencil(purpleResult);
         scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
         // Hybrid genuinely has fresh Classical Pro intermediate data from its own
@@ -594,7 +592,7 @@ function CreatePage() {
         const data = await r.json();
         if (!r.ok) throw new Error(data?.error || `OpenRouter AI error ${r.status}`);
         {
-          const purpleResult = await normalizeToPurpleInk(data.dataUrl, "coverage");
+          const purpleResult = await normalizeToPurpleInk(data.dataUrl);
           setStencil(purpleResult);
           scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
         }
@@ -619,7 +617,7 @@ function CreatePage() {
         if (!imgPart) throw new Error("No image returned by Gemini");
         const outMime = imgPart.inlineData.mimeType || "image/png";
         {
-          const purpleResult = await normalizeToPurpleInk(`data:${outMime};base64,${imgPart.inlineData.data}`, "coverage");
+          const purpleResult = await normalizeToPurpleInk(`data:${outMime};base64,${imgPart.inlineData.data}`);
           setStencil(purpleResult);
           scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
         }
