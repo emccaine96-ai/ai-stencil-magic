@@ -68,7 +68,7 @@ const OR_MODEL_STORAGE = "stencilmagic.openrouter.model";
 type Provider = "openrouter" | "gemini" | "classical" | "hybrid";
 const STYLE_PROMPTS: Record<Style, string> = {
   hatching:
-    "Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable.",
+    "Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable. Transitions from bright light areas to dark shade must be gradual and smooth: let hatch density fade out and strokes taper off progressively across the transition, so the tone blends like a soft gradient. Never draw a line, outline or hard edge where light and shadow meet, and never add lines that are not real edges of the subject in the photo.",
   solid:
     "Clean bold solid line work, no shading fills. Use varying line weights only. Closed clean contours. Highlights pure white.",
   dotwork:
