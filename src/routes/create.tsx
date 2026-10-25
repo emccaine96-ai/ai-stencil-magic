@@ -66,57 +66,15 @@ const OR_KEY_STORAGE = "stencilmagic.openrouter.key";
 const PROVIDER_STORAGE = "stencilmagic.provider"; // 'openrouter' | 'gemini'
 const OR_MODEL_STORAGE = "stencilmagic.openrouter.model";
 type Provider = "openrouter" | "gemini" | "classical" | "hybrid";
-const STYLE_PROMPT_BLOCKS: Record<Style, string> = {
-  // Restored pre-September 3 recipe, with technique instructions scoped per style.
-  hatching: `STYLE: HATCHING
-Pure pen-and-ink CROSSHATCHING — visible fine line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp and clearly readable; strokes are straight in flat areas and gently curve to follow the form.
-- For portraits: apply crosshatching whose strokes follow the facial planes and surface curvature (cheek, jawline, brow ridge, nose bridge). Eyes, lips and teeth crisply defined.
-- For flowers / objects: delicate parallel hatching radiating along petal curvature, soft pencil-like graduations from dense strokes in shadow folds to sparse, light strokes on outer petals (same single ink color throughout).
-
-TONAL LAYERING (5 tiers matched to the photo's tones, hatch density/direction only):
-1. Deep shadows — densest mark-making, 3 overlaid hatch directions.
-2. Dark mid-tones — heavy mark-making, 2 hatch directions.
-3. Mid-tones — medium single-direction hatching.
-4. Light mid-tones — sparse parallel strokes.
-5. Highlights — pure white paper, no marks.
-
-HATCH GEOMETRY: primary 45°, secondary 135°, tertiary 90°. ~3px line spacing. Lines must be crisp and clearly readable. Absolutely no dots or stipple marks anywhere.`,
-
-  solid: `STYLE: SOLID
-Clean bold solid line work, no shading fills. Use varying line weights only. Closed clean contours. Highlights pure white.
-NO cross-hatching, NO parallel hatching, NO dots or stippling. Depth is expressed ONLY through line-weight variation on contours, never interior shading marks.
-- For portraits: clean varying-weight contours define the actual facial features and structural edges; heavier lines at deep-shadow boundaries, lighter lines for subtle contours.
-- For flowers / objects: clean outlines follow each petal, leaf and edge boundary, with heavier weight where forms overlap or a deep fold occurs.`,
-
-  dotwork: `STYLE: DOTWORK
-Dotwork stencil: clean solid CONTOUR LINES define every shape, with stippling DOTS filling the interior tones. Shadows = very dense small dots; dark mids = medium density; mids = sparse; lights = very few; highlights = pure white. Contour lines must be present and crisp — this is NOT pure dots, it is line work + dot shading.
-ALL interior shading is stippling DOTS only — NEVER hatch lines or parallel strokes anywhere in the image.
-- For portraits: crisp solid contour lines outline every facial feature and boundary; all tonal depth inside those contours comes entirely from dot density, never from line strokes.
-- For flowers / objects: bold contour per shape; interior shading is dot density only.
-
-DOT DENSITY LAYERING (5 tiers matched to the photo's tones, density only — no hatch lines):
-1. Deep shadows — dots nearly touching, maximum density.
-2. Dark mid-tones — medium-dense dots with visible white space between each dot.
-3. Mid-tones — evenly spaced sparse dots.
-4. Light mid-tones — very few, widely scattered dots.
-5. Highlights — pure white, zero dots.
-
-DOT GEOMETRY: dots ~1-2px diameter, circular, cleanly separated — never smudged together into a line or hatch mark. Contour lines are present and crisp; this is NOT pure dots, it is line work + dot shading, but the shading itself is 100% dots.`,
-
-  hybrid: `STYLE: HYBRID
-Combine bold solid CONTOUR LINES with CROSSHATCHING in dark areas and STIPPLING dots in mid-to-light areas. All three techniques visible in the same image.
-Keep each shading technique confined to its own tonal range so they don't blend into mud.
-- For portraits: bold contour lines on every feature edge; crosshatching only in the deepest shadow pockets (eye sockets, under-jaw, nostril shadow); dot shading carries the mid-tones and light transitions.
-- For flowers / objects: bold outline per petal/leaf; hatching only in the deepest fold shadows; dots for the mid-tone gradation toward the highlight.
-
-TONAL LAYERING (5 tiers matched to the photo's tones — technique changes by tier):
-1. Deep shadows — 2-3 overlaid hatch directions (45°/135°/90°).
-2. Dark mid-tones — single-direction hatching, transitioning to dense dots at the tier's edge.
-3. Mid-tones — dense-to-medium dot stippling, no hatch lines.
-4. Light mid-tones — sparse, widely-spaced dots.
-5. Highlights — pure white paper, no marks.
-
-Contour line weight follows the same logic as Solid: heavier at deep-shadow boundaries, thin at light edges.`,
+const STYLE_PROMPTS: Record<Style, string> = {
+  hatching:
+    "Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable.",
+  solid:
+    "Clean bold solid line work, no shading fills. Use varying line weights only. Closed clean contours. Highlights pure white.",
+  dotwork:
+    "Dotwork stencil: clean solid CONTOUR LINES define every shape, with stippling DOTS filling the interior tones. Shadows = very dense small dots; dark mids = medium density; mids = sparse; lights = very few; highlights = pure white. Contour lines must be present and crisp — this is NOT pure dots, it is line work + dot shading.",
+  hybrid:
+    "Combine bold solid CONTOUR LINES with CROSSHATCHING in dark areas and STIPPLING dots in mid-to-light areas. All three techniques visible in the same image.",
 };
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -220,7 +178,7 @@ async function scoreStencil(dataUrl: string): Promise<TattooabilityResult> {
   const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const ink = new Uint8ClampedArray(width * height);
   for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    ink[p] = data[i + 3] > 96 ? 255 : 0;
+    ink[p] = data[i + 3] > 10 ? 255 : 0;
   }
   const metrics = computeStencilMetrics(ink, width, height);
   return computeTattooability(metrics);
@@ -548,23 +506,8 @@ function CreatePage() {
         // nothing to stay faithful to.
         const { mimeType: cm, data: cB64 } = dataUrlToInline(classicalResult.dataUrl);
         const { mimeType: om, data: oB64 } = dataUrlToInline(photo);
-        // FIXED 2026-09-05 (audit follow-up task 5): this used to be one
-        // generic sentence with zero style-specific technique reinforcement
-        // — the AI refinement step had nothing telling it "no shading fills"
-        // for Solid or "dots only, never hatch lines" for Dotwork, relying
-        // entirely on the classical reference image to carry style. Now
-        // folds in the same STYLE_PROMPT_BLOCKS[style] block buildPrompt()
-        // already gives the other 3 providers, so Hybrid gets identical
-        // textual technique reinforcement instead of relying on the
-        // reference image alone. buildPrompt() itself and the other 3
-        // providers are untouched — this only changes the hybrid branch.
-        const hybridPrompt = `Reference image 1 is the ORIGINAL PHOTO — preserve this subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly. Reference image 2 is a pre-processed structural line-art guide for the "${style}" style at ${Math.round(intensity * 100)}% shading density — use it as a structural guide for line placement, but the final result's likeness must match reference image 1, not deviate into generic features.
-
-${STYLE_PROMPT_BLOCKS[style]}
-
-Output a single clean tattoo stencil line drawing in the exact ink color #A855F7 on a pure white background (no text, watermarks or frame), improving line quality and adding artistic detail while staying faithful to the original photo's actual identity, and strictly following the technique rules above for the "${style}" style. ${customPrompt || ""}`;
+        const hybridPrompt = `Reference image 1 is the ORIGINAL PHOTO — preserve this subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly. Reference image 2 is a pre-processed structural line-art guide for the "${style}" style at ${Math.round(intensity * 100)}% shading density — use it as a structural guide for line placement, but the final result's likeness must match reference image 1, not deviate into generic features. Output a single clean tattoo stencil line drawing on pure white background, improving line quality and adding artistic detail while staying faithful to the original photo's actual identity. ${customPrompt || ""}`;
         let hybridDataUrl: string | null = null;
-        let hybridFromAI = false;
         // Try server-side first (OpenRouter). NOTE: passes both images via an
         // `images` array — generate-stencil.ts needs to read body.images
         // (falling back to the single `image` field) and forward both to the
@@ -587,7 +530,7 @@ Output a single clean tattoo stencil line drawing in the exact ink color #A855F7
             }),
           });
           const data = await r.json();
-          if (r.ok && data.dataUrl) { hybridDataUrl = data.dataUrl; hybridFromAI = true; }
+          if (r.ok && data.dataUrl) hybridDataUrl = data.dataUrl;
         } catch (err) {
           console.error("[create] hybrid OpenRouter step failed", err);
         }
@@ -614,7 +557,6 @@ Output a single clean tattoo stencil line drawing in the exact ink color #A855F7
             if (inline?.data) {
               const outMime = inline.mimeType || inline.mime_type || "image/png";
               hybridDataUrl = `data:${outMime};base64,${inline.data}`;
-              hybridFromAI = true;
             }
           }
         }
@@ -622,7 +564,7 @@ Output a single clean tattoo stencil line drawing in the exact ink color #A855F7
           hybridDataUrl = classicalResult.dataUrl;
           toast.info("No API key set — showing Classical Pro result. Add a Gemini or OpenRouter key for AI refinement.");
         }
-        const purpleResult = await normalizeToPurpleInk(hybridDataUrl, hybridFromAI ? "coverage" : "binary");
+        const purpleResult = await normalizeToPurpleInk(hybridDataUrl);
         setStencil(purpleResult);
         scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
         // Hybrid genuinely has fresh Classical Pro intermediate data from its own
@@ -650,7 +592,7 @@ Output a single clean tattoo stencil line drawing in the exact ink color #A855F7
         const data = await r.json();
         if (!r.ok) throw new Error(data?.error || `OpenRouter AI error ${r.status}`);
         {
-          const purpleResult = await normalizeToPurpleInk(data.dataUrl, "coverage");
+          const purpleResult = await normalizeToPurpleInk(data.dataUrl);
           setStencil(purpleResult);
           scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
         }
@@ -675,7 +617,7 @@ Output a single clean tattoo stencil line drawing in the exact ink color #A855F7
         if (!imgPart) throw new Error("No image returned by Gemini");
         const outMime = imgPart.inlineData.mimeType || "image/png";
         {
-          const purpleResult = await normalizeToPurpleInk(`data:${outMime};base64,${imgPart.inlineData.data}`, "coverage");
+          const purpleResult = await normalizeToPurpleInk(`data:${outMime};base64,${imgPart.inlineData.data}`);
           setStencil(purpleResult);
           scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
         }
@@ -1435,17 +1377,9 @@ Output a single clean tattoo stencil line drawing in the exact ink color #A855F7
 }
 
 function buildPrompt(o: { style: Style; intensity: number; customPrompt?: string }) {
-  // Gemini and OpenRouter share the restored historical recipe. Keep the
-  // universal header technique-neutral to avoid the old Solid/Dotwork conflict.
-  const header = `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.
-
-HARD RULES:
-- Output a single image on PURE WHITE background.
-- All ink is the EXACT color #A855F7 (neon purple). No gray, no black, no other colors.
-- Crisp, clean, tattoo-stencil-ready ink line work (follow the STYLE section below for contour and shading technique).
-- Preserve the subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly.
-- No text, no watermarks, no signatures, no frame, no background scenery.`;
-  const base = `${header}\n\n${STYLE_PROMPT_BLOCKS[o.style]}\n\nOverall shading density: ${Math.round(o.intensity * 100)}%.`;
+  // Bake the proven "May 27" defaults into the prompt so first-shot output is
+  // gallery-grade without the user needing to touch sliders.
+  const base = `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.\n\nHARD RULES:\n- Output a single image on PURE WHITE background.\n- All ink is the EXACT color #A855F7 (neon purple). No gray, no black, no other colors.\n- Crystal-clear closed contour line work, tattoo-stencil ready.\n- Preserve the subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly.\n- For portraits: apply 3D face-mesh aware crosshatching that follows facial surface curvature (cheek, jawline, brow ridge, nose bridge). Eyes, lips and teeth crisply defined.\n- For flowers / objects: delicate parallel hatching radiating along petal curvature, soft pencil-like graduations from saturated purple in shadow folds to faint outline on outer petals.\n\nTONAL LAYERING (5 tiers via Otsu multi-level thresholding):\n1. Deep shadows — densest mark-making, 3 overlaid hatch directions.\n2. Dark mid-tones — heavy mark-making, 2 hatch directions.\n3. Mid-tones — medium single-direction hatching.\n4. Light mid-tones — sparse parallel strokes.\n5. Highlights — pure white paper.\n\nHATCH GEOMETRY: primary 45°, secondary 135°, tertiary 90°. ~3px line spacing.\n\nSTYLE: ${o.style.toUpperCase()}\n${STYLE_PROMPTS[o.style]}\n\nOverall shading density: ${Math.round(o.intensity * 100)}%.\nNo text, no watermarks, no signatures, no frame, no background scenery.`;
   const extra = o.customPrompt?.trim();
   if (!extra) return base;
   return `${base}\n\nADDITIONAL ARTIST INSTRUCTIONS (apply on top of everything above; do not violate the hard rules, ink color, white background, or tonal-layering rules above):\n${extra}`;
