@@ -1,9 +1,10 @@
 import { grayFromRGBA } from "./filters";
 import { assertLength, resampleBilinear } from "./fieldops";
 import { prepOptionsFor, prepTone } from "./tone";
-import { xdogInk, type XDoGParams } from "./xdog";
+import { DEFAULT_XDOG, xdogInk, type XDoGParams } from "./xdog";
 import { buildOrientation } from "./orientation";
 import { removeSmallComponents } from "./cleanup";
+import { assertAnalysisSize, assertExportSize } from "./limits";
 
 import {
   DEFAULT_HATCH,
@@ -58,6 +59,8 @@ export function prepareV2(
   width: number,
   height: number,
 ): V2Prepared {
+  assertAnalysisSize(width, height);
+
   const gray = grayFromRGBA(rgba, width, height);
   const prep = prepOptionsFor(gray);
   const tone = prepTone(gray, width, height, prep);
@@ -83,22 +86,35 @@ export function renderV2(
     throw new Error("This V2 candidate supports hatching only");
   }
 
+  // Every pixel-denominated quantity scales with the long edge relative to a
+  // 1024 px reference, the same convention hatch.ts uses. Without this, XDoG's
+  // fixed 1.2 px sigma draws ever-thinner lines (relative to the picture) as the
+  // analysis size grows: measured portrait contour ink 17.0% @512 -> 10.8% @1536.
+  const scale = Math.max(width, height) / 1024;
+
   const rawLines = xdogInk(
     tone,
     width,
     height,
     {
+      sigma: DEFAULT_XDOG.sigma * scale,
       epsilon: prepared.darkKeyed ? 0.02 : 0,
       ...options.xdog,
     },
     options.localContrast ?? 0.5,
+    scale,
   );
 
   const lines = removeSmallComponents(
     rawLines,
     width,
     height,
-    options.minimumContourPixels ?? 20,
+    Math.max(
+      2,
+      Math.round(
+        (options.minimumContourPixels ?? 20) * scale * scale,
+      ),
+    ),
     0.4,
   );
 
@@ -145,6 +161,8 @@ export function exportV2(
   specification: ExportSpecification,
 ): Uint8ClampedArray {
   const { width, height } = rendered.prepared;
+
+  assertExportSize(specification.width, specification.height);
 
   if (specification.exclusion) {
     assertLength(

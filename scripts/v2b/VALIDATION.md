@@ -29,3 +29,16 @@ Candidate placed in src/lib/classical-v2b/ (separate module, NOT wired into the 
   Blurred layout correlation is high (0.96 @800, 0.98 @1000, 0.995 @1280) so layout is stable; weight is not.
 - tone match to photo lower than engine-v2's current V2 (0.90 vs 0.98 portrait): lighter, different look. Not judged by eye.
 - hatching only; contours raster-based; not wired into create.tsx; no real-image visual review yet.
+
+## Round 2 (Oct 28): drift fix + input policy
+Root cause of ink drift (measured per layer): the CONTOUR layer. XDoG used a fixed 1.2 px sigma, a fixed 25/3 px
+local-contrast window and a fixed 20 px speck area, so lines got relatively thinner as analysis size grew
+(portrait combined ink 17.0% @512 -> 11.4% @1536). Hatch layer was tiny and already scale-consistent.
+Fix: scale all three by max(w,h)/1024 (same convention hatch.ts uses). After: 13.7-14.0% (portrait), 10.6-11.1% (floral)
+across 512..1536. At 1024 output is unchanged (scale = 1).
+Layout stability vs a 1600 px analysis, post-fix: 600px 0.991-0.995, 800 0.995-0.997, 1000 0.996-0.998, 1280 0.998-0.999.
+Policy (limits.ts): recommended analysis edge 1280 (v2AnalysisSize), hard limit 2400 px / 5.8 MP / min 8 px, export <= 36 MP.
+Executed pass: tsc 0 errors; vite build ok; numeric 52/52; export 24/24; policy 27/27; starter selftest; real Chrome on
+2 photos (concurrent/stale/dispose/use-after-dispose, 0 console errors); decoded PNGs strictly {0,255}, alpha 255.
+Still open: prepare ~2 s @1280 (fine) but ~16 s @2400 (now unreachable via policy); no visual/artist review;
+tone match 0.90 vs engine-v2's V2 0.98 (lighter, not judged by eye); not wired into create.tsx; C1/C2 absent.

@@ -25,7 +25,13 @@ export function xdogInk(
   height: number,
   parameters: Partial<XDoGParams> = {},
   localAmount = 0.5,
+  /** Long edge / 1024. Scales the local-contrast window so it covers the same picture area at any size. */
+  scale = 1,
 ): Float32Array {
+  if (!Number.isFinite(scale) || scale <= 0) {
+    throw new Error("Invalid XDoG scale");
+  }
+
   const q = {
     ...DEFAULT_XDOG,
     ...parameters,
@@ -66,7 +72,7 @@ export function xdogInk(
       squared,
       width,
       height,
-      25 / 3,
+      (25 / 3) * scale,
     );
 
     for (let i = 0; i < energy.length; i++) {
