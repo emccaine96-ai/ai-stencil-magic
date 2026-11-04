@@ -25,6 +25,37 @@ const MODEL_ID_RE = /^[A-Za-z0-9][\w.-]{0,63}\/[A-Za-z0-9][\w.:-]{0,63}$/;
 type Img = { mimeType: string; data: string };
 
 /**
+ * Server env keys may be used only when ALLOW_SERVER_KEY === 'true' AND the
+ * caller presents a valid signed-in user's Bearer token. Returns a Response to
+ * send back on failure, or null when the server key may be used.
+ */
+async function gateServerKey(request: Request): Promise<Response | null> {
+  if (process.env.ALLOW_SERVER_KEY !== "true") {
+    return Response.json(
+      { error: "Server AI is not enabled yet", code: "server_ai_disabled" },
+      { status: 403 },
+    );
+  }
+  const auth = request.headers.get("authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const url = process.env.SUPABASE_URL;
+  const pub = process.env.SUPABASE_PUBLISHABLE_KEY;
+  if (!token || !url || !pub) {
+    return Response.json({ error: "Sign in required", code: "auth_required" }, { status: 401 });
+  }
+  const { createClient } = await import("@supabase/supabase-js");
+  const sb = createClient(url, pub, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await sb.auth.getClaims(token);
+  if (error || !data?.claims?.sub) {
+    return Response.json({ error: "Sign in required", code: "auth_required" }, { status: 401 });
+  }
+  return null;
+}
+
+/**
  * Check for an allowed MIME type and a nonempty image data string within the size limit.
  * This checks payload shape and length; it does not decode or validate the image bytes.
  */
@@ -75,7 +106,12 @@ export const Route = createFileRoute("/api/generate-stencil")({
 
         if (provider === "openrouter") {
           // OpenRouter: use client-supplied key or server env key
-          const orKey = body.openrouterKey || process.env.OPENROUTER_API_KEY;
+          let orKey = typeof body.openrouterKey === "string" ? body.openrouterKey : "";
+          if (!orKey) {
+            const denied = await gateServerKey(request);
+            if (denied) return denied;
+            orKey = process.env.OPENROUTER_API_KEY ?? "";
+          }
           if (!orKey) {
             return Response.json(
               { error: "Missing OpenRouter API key. Add your key in Settings or set OPENROUTER_API_KEY." },
@@ -192,7 +228,9 @@ export const Route = createFileRoute("/api/generate-stencil")({
           );
         }
 
-        // Default: Gemini direct
+        // Default: Gemini direct (server key — gated)
+        const denied = await gateServerKey(request);
+        if (denied) return denied;
         const key = process.env.GEMINI_API_KEY;
         if (!key) {
           return Response.json({ error: "Missing GEMINI_API_KEY" }, { status: 500 });
