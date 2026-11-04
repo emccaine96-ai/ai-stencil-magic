@@ -104,8 +104,9 @@ function ProviderCard(props: {
       </div>
       <p className="text-sm text-muted-foreground">{props.description}</p>
       <p className="text-xs text-muted-foreground">
-        Stored only in your browser (localStorage) and sent directly to {props.title} — it never
-        touches our servers.{" "}
+        {props.title === "OpenRouter"
+          ? "Saved only in your browser. When you generate, it is sent through our server to OpenRouter and is never stored on our server. The Test button checks it directly with OpenRouter."
+          : `Stored only in your browser (localStorage) and sent directly to ${props.title} — it never touches our servers.`}{" "}
         <a href={props.helpUrl} target="_blank" rel="noreferrer" className="text-primary underline">
           {props.helpLabel}
         </a>

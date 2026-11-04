@@ -34,6 +34,20 @@ import {
   type TouchUpGenConfig,
 } from "@/lib/touch-up/session";
 import { writeHandoff } from "@/lib/touch-up/handoff";
+import { supabase } from "@/integrations/supabase/client";
+
+/** JSON headers plus the signed-in user's access token, when there is one. */
+async function apiHeaders(): Promise<Record<string, string>> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  try {
+    const { data } = await supabase.auth.getSession();
+    const t = data.session?.access_token;
+    if (t) h.Authorization = `Bearer ${t}`;
+  } catch {
+    /* signed out — send without a token */
+  }
+  return h;
+}
 
 export const Route = createFileRoute("/create")({
   head: () => ({
@@ -1294,7 +1308,7 @@ function CreatePage() {
                 ) : null}
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Used for the OpenRouter and Hybrid engines. Stored only in your browser. Get a key at{" "}
+                Used for the OpenRouter and Hybrid engines. Saved only in your browser; when you generate it is sent through our server to OpenRouter and is never stored on our server. Get a key at{" "}
                 <a
                   href="https://openrouter.ai/keys"
                   target="_blank"
