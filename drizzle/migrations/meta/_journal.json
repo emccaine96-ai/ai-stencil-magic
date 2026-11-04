@@ -8,6 +8,13 @@
       "when": 1793755984050,
       "tag": "0000_lock_cloud_documents_shared_reads",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793756002562,
+      "tag": "0001_gallery_likes_counter_secure",
+      "breakpoints": true
     }
   ]
 }
