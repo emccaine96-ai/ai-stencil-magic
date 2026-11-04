@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.18"
   }
   public: {
     Tables: {
@@ -117,6 +117,7 @@ export type Database = {
           created_at: string
           description: string | null
           doc_id: string | null
+          hidden: boolean
           id: string
           likes_count: number
           payload: Json
@@ -131,6 +132,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           doc_id?: string | null
+          hidden?: boolean
           id?: string
           likes_count?: number
           payload: Json
@@ -145,6 +147,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           doc_id?: string | null
+          hidden?: boolean
           id?: string
           likes_count?: number
           payload?: Json
@@ -171,6 +174,56 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      gallery_reports: {
+        Row: {
+          created_at: string
+          id: string
+          post_id: string
+          reason: string
+          reporter_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          post_id: string
+          reason: string
+          reporter_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          post_id?: string
+          reason?: string
+          reporter_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gallery_reports_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "gallery_posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_blocks: {
+        Row: {
+          blocked_id: string
+          blocker_id: string
+          created_at: string
+        }
+        Insert: {
+          blocked_id: string
+          blocker_id: string
+          created_at?: string
+        }
+        Update: {
+          blocked_id?: string
+          blocker_id?: string
+          created_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {
