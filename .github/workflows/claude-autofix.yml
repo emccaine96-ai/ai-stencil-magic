@@ -1,19 +1,13 @@
 name: Claude AutoFix
 
 on:
-  issues:
-    types: [opened, labeled]
-  pull_request:
-    types: [opened, synchronize]
   workflow_dispatch:
 
 jobs:
   autofix:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: read
 
     steps:
       - name: Checkout repository
