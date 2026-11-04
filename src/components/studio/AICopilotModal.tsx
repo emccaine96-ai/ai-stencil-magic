@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Loader2, Sparkles, X, Wand2 } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { supabase } from "@/integrations/supabase/client";
 
 type Preset = { id: string; label: string; prompt: string };
 const PRESETS: Preset[] = [
@@ -44,6 +46,7 @@ export function AICopilotModal({
   onClose: () => void;
   onApply: (image: string, asNewLayer: boolean) => void;
 }) {
+  const navigate = useNavigate();
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,17 +58,35 @@ export function AICopilotModal({
     setError(null);
     setResult(null);
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const { data: sess } = await supabase.auth.getSession();
+      if (sess.session?.access_token) headers.Authorization = `Bearer ${sess.session.access_token}`;
       const r = await fetch("/api/ai-copilot", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ prompt: finalPrompt, image: sourceImage }),
       });
       if (!r.ok) {
         const t = await r.text();
+        let code: string | undefined;
+        let msg: string | undefined;
+        try {
+          const j = JSON.parse(t);
+          code = j?.code;
+          msg = j?.error;
+        } catch {
+          /* non-JSON body */
+        }
+        if (code === "server_ai_disabled")
+          throw new Error("Server AI is not enabled yet. AI Copilot will be available once it's switched on.");
+        if (code === "auth_required") {
+          navigate({ to: "/auth" });
+          throw new Error("Please sign in to use AI Copilot.");
+        }
         if (r.status === 429) throw new Error("Rate limit hit — wait a moment and try again.");
         if (r.status === 402)
           throw new Error("AI credits exhausted. Add credits in workspace settings.");
-        throw new Error(t || `Request failed (${r.status})`);
+        throw new Error(msg || `Request failed (${r.status})`);
       }
       const j = await r.json();
       setResult(j.image);

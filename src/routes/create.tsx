@@ -34,6 +34,20 @@ import {
   type TouchUpGenConfig,
 } from "@/lib/touch-up/session";
 import { writeHandoff } from "@/lib/touch-up/handoff";
+import { supabase } from "@/integrations/supabase/client";
+
+/** JSON headers plus the signed-in user's access token, when there is one. */
+async function apiHeaders(): Promise<Record<string, string>> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  try {
+    const { data } = await supabase.auth.getSession();
+    const t = data.session?.access_token;
+    if (t) h.Authorization = `Bearer ${t}`;
+  } catch {
+    /* signed out — send without a token */
+  }
+  return h;
+}
 
 export const Route = createFileRoute("/create")({
   head: () => ({
@@ -516,7 +530,7 @@ function CreatePage() {
         try {
           const r = await fetch("/api/generate-stencil", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: await apiHeaders(),
             body: JSON.stringify({
               prompt: hybridPrompt,
               image: { mimeType: om, data: oB64 },
@@ -580,7 +594,7 @@ function CreatePage() {
       if (provider === "openrouter") {
         const r = await fetch("/api/generate-stencil", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await apiHeaders(),
           body: JSON.stringify({
             prompt,
             image: { mimeType, data: imgB64 },
@@ -590,6 +604,15 @@ function CreatePage() {
           }),
         });
         const data = await r.json();
+        if (r.status === 401 && data?.code === "auth_required") {
+          toast.info("Please sign in to use the server AI, or add your own OpenRouter key.");
+          navigate({ to: "/auth" });
+          setLoading(false);
+          return;
+        }
+        if (r.status === 403 && data?.code === "server_ai_disabled") {
+          throw new Error("Server AI is not enabled yet. Add your own OpenRouter or Gemini key to generate.");
+        }
         if (!r.ok) throw new Error(data?.error || `OpenRouter AI error ${r.status}`);
         {
           const purpleResult = await normalizeToPurpleInk(data.dataUrl);
@@ -1294,7 +1317,7 @@ function CreatePage() {
                 ) : null}
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Used for the OpenRouter and Hybrid engines. Stored only in your browser. Get a key at{" "}
+                Used for the OpenRouter and Hybrid engines. Saved only in your browser; when you generate it is sent through our server to OpenRouter and is never stored on our server. Get a key at{" "}
                 <a
                   href="https://openrouter.ai/keys"
                   target="_blank"
