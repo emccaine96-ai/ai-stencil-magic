@@ -530,7 +530,7 @@ function CreatePage() {
         try {
           const r = await fetch("/api/generate-stencil", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: await apiHeaders(),
             body: JSON.stringify({
               prompt: hybridPrompt,
               image: { mimeType: om, data: oB64 },
@@ -594,7 +594,7 @@ function CreatePage() {
       if (provider === "openrouter") {
         const r = await fetch("/api/generate-stencil", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await apiHeaders(),
           body: JSON.stringify({
             prompt,
             image: { mimeType, data: imgB64 },
@@ -604,6 +604,15 @@ function CreatePage() {
           }),
         });
         const data = await r.json();
+        if (r.status === 401 && data?.code === "auth_required") {
+          toast.info("Please sign in to use the server AI, or add your own OpenRouter key.");
+          navigate({ to: "/auth" });
+          setLoading(false);
+          return;
+        }
+        if (r.status === 403 && data?.code === "server_ai_disabled") {
+          throw new Error("Server AI is not enabled yet. Add your own OpenRouter or Gemini key to generate.");
+        }
         if (!r.ok) throw new Error(data?.error || `OpenRouter AI error ${r.status}`);
         {
           const purpleResult = await normalizeToPurpleInk(data.dataUrl);
