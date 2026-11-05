@@ -71,6 +71,22 @@ function AuthPage() {
     }
   }
 
+  const [info, setInfo] = useState<string | null>(null);
+  async function forgot() {
+    setError(null);
+    setInfo(null);
+    if (!email) return setError("Enter your email above first.");
+    setBusy(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + "/reset-password",
+    });
+    setBusy(false);
+    if (error) return setError("Could not send the reset email. Please try again.");
+    setInfo(
+      "If an account with a password exists for this email, a reset link is on its way. Signed up with Google? You don't have a password — just use Continue with Google.",
+    );
+  }
+
   async function google() {
     setBusy(true);
     setError(null);
@@ -105,8 +121,8 @@ function AuthPage() {
           <input
             type="password"
             required
-            minLength={6}
-            placeholder="Password"
+            minLength={8}
+            placeholder="Password (min 8 characters)"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="w-full px-3 py-2 rounded border border-border bg-background text-sm"
@@ -131,6 +147,12 @@ function AuthPage() {
         >
           Continue with Google
         </button>
+        {mode === "signin" && (
+          <button type="button" onClick={forgot} disabled={busy} className="block w-full text-center text-xs underline text-muted-foreground">
+            Forgot password?
+          </button>
+        )}
+        {info && <p className="text-xs text-muted-foreground">{info}</p>}
         {error && <p className="text-xs text-destructive">{error}</p>}
         <p className="text-xs text-muted-foreground text-center">
           {mode === "signin" ? "No account?" : "Have an account?"}{" "}

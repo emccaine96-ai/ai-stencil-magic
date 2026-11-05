@@ -16,6 +16,7 @@ import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as PluginsRouteImport } from './routes/plugins'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RetouchRouteImport } from './routes/retouch'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TouchUpRouteImport } from './routes/touch-up'
@@ -63,6 +64,11 @@ const McpRoute = McpRouteImport.update({
 const PluginsRoute = PluginsRouteImport.update({
   id: '/plugins',
   path: '/plugins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RetouchRoute = RetouchRouteImport.update({
@@ -142,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/help': typeof HelpRoute
   '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/retouch': typeof RetouchRoute
   '/settings': typeof SettingsRoute
   '/touch-up': typeof TouchUpRoute
@@ -164,6 +171,7 @@ export interface FileRoutesByTo {
   '/help': typeof HelpRoute
   '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/retouch': typeof RetouchRoute
   '/settings': typeof SettingsRoute
   '/touch-up': typeof TouchUpRoute
@@ -187,6 +195,7 @@ export interface FileRoutesById {
   '/help': typeof HelpRoute
   '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/retouch': typeof RetouchRoute
   '/settings': typeof SettingsRoute
   '/touch-up': typeof TouchUpRoute
@@ -211,6 +220,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/mcp'
     | '/plugins'
+    | '/reset-password'
     | '/retouch'
     | '/settings'
     | '/touch-up'
@@ -233,6 +243,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/mcp'
     | '/plugins'
+    | '/reset-password'
     | '/retouch'
     | '/settings'
     | '/touch-up'
@@ -255,6 +266,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/mcp'
     | '/plugins'
+    | '/reset-password'
     | '/retouch'
     | '/settings'
     | '/touch-up'
@@ -278,6 +290,7 @@ export interface RootRouteChildren {
   HelpRoute: typeof HelpRoute
   McpRoute: typeof McpRoute
   PluginsRoute: typeof PluginsRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   RetouchRoute: typeof RetouchRoute
   SettingsRoute: typeof SettingsRoute
   TouchUpRoute: typeof TouchUpRoute
@@ -341,6 +354,13 @@ declare module '@tanstack/react-router' {
       path: '/plugins'
       fullPath: '/plugins'
       preLoaderRoute: typeof PluginsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/retouch': {
@@ -456,6 +476,7 @@ const rootRouteChildren: RootRouteChildren = {
   HelpRoute: HelpRoute,
   McpRoute: McpRoute,
   PluginsRoute: PluginsRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   RetouchRoute: RetouchRoute,
   SettingsRoute: SettingsRoute,
   TouchUpRoute: TouchUpRoute,

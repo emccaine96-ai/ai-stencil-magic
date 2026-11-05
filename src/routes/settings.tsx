@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ChevronLeft, Check, Eye, EyeOff, KeyRound, Loader2, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
+import { AccountSection } from "@/components/settings/AccountSection";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -412,6 +413,7 @@ function SettingsPage() {
           placeholder="Paste your OpenRouter API key"
           onTest={testOpenRouter}
         />
+        <AccountSection />
       </main>
     </div>
   );
