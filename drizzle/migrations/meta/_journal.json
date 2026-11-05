@@ -29,6 +29,13 @@
       "when": 1793838032282,
       "tag": "0003_credits_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793838132614,
+      "tag": "0004_gallery_hidden_guard",
+      "breakpoints": true
     }
   ]
 }
