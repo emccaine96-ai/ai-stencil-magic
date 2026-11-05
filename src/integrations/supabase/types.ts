@@ -86,6 +86,36 @@ export type Database = {
         }
         Relationships: []
       }
+      credit_ledger: {
+        Row: {
+          created_at: string
+          delta: number
+          id: string
+          reason: string
+          request_id: string | null
+          store_txn_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          delta: number
+          id?: string
+          reason: string
+          request_id?: string | null
+          store_txn_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          delta?: number
+          id?: string
+          reason?: string
+          request_id?: string | null
+          store_txn_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       gallery_likes: {
         Row: {
           created_at: string
@@ -207,6 +237,57 @@ export type Database = {
           },
         ]
       }
+      generation_requests: {
+        Row: {
+          cost: number
+          created_at: string
+          model: string
+          provider: string
+          request_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cost: number
+          created_at?: string
+          model: string
+          provider: string
+          request_id: string
+          status: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cost?: number
+          created_at?: string
+          model?: string
+          provider?: string
+          request_id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          ai_consent_at: string | null
+          created_at: string
+          id: string
+        }
+        Insert: {
+          ai_consent_at?: string | null
+          created_at?: string
+          id: string
+        }
+        Update: {
+          ai_consent_at?: string | null
+          created_at?: string
+          id?: string
+        }
+        Relationships: []
+      }
       user_blocks: {
         Row: {
           blocked_id: string
@@ -230,7 +311,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      credit_balance: { Args: { p_user: string }; Returns: number }
+      grant_credits: {
+        Args: {
+          p_amount: number
+          p_reason: string
+          p_store_txn?: string
+          p_user: string
+        }
+        Returns: undefined
+      }
+      refund_request: { Args: { p_request: string }; Returns: undefined }
+      reserve_credits: {
+        Args: {
+          p_cost: number
+          p_model: string
+          p_provider: string
+          p_request: string
+          p_user: string
+        }
+        Returns: Json
+      }
+      settle_request: { Args: { p_request: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
