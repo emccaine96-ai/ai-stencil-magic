@@ -22,6 +22,13 @@
       "when": 1793756021987,
       "tag": "0002_gallery_moderation_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793838032282,
+      "tag": "0003_credits_foundation",
+      "breakpoints": true
     }
   ]
 }
