@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Heart, Sparkles, ChevronLeft, Image as ImageIcon } from "lucide-react";
+import { PostModerationActions } from "@/components/gallery/PostModerationActions";
+import { listBlocked } from "@/lib/moderation";
 import { listGallery, type GalleryListItem } from "@/lib/gallery.functions";
 
 export const Route = createFileRoute("/gallery")({
@@ -26,9 +28,10 @@ function GalleryPage() {
   useEffect(() => {
     let alive = true;
     setItems(null);
-    listGallery({ sort })
-      .then((d) => {
-        if (alive) setItems(d);
+    Promise.all([listGallery({ sort }), listBlocked().catch(() => [])])
+      .then(([d, b]) => {
+        const blocked = new Set(b.map((x) => x.blocked_id));
+        if (alive) setItems(d.filter((p) => !blocked.has(p.user_id)));
       })
       .catch(() => alive && setItems([]));
     return () => {
@@ -121,6 +124,13 @@ function GalleryPage() {
                       ))}
                     </div>
                   )}
+                  <PostModerationActions
+                    postId={p.id}
+                    authorId={p.user_id}
+                    onBlocked={(uid) =>
+                      setItems((cur) => cur?.filter((x) => x.user_id !== uid) ?? cur)
+                    }
+                  />
                 </div>
               </Link>
             ))}
