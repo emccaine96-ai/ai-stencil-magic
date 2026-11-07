@@ -1,7 +1,9 @@
 import { afterEach, expect, mock, test } from "bun:test";
+import * as React from "react";
 
 let viewerId;
 mock.module("react", () => ({
+  ...React,
   useEffect: () => {},
   useState: (initial) => [initial === undefined ? viewerId : initial, () => {}],
 }));
