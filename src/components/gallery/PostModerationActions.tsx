@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Flag, Ban, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { REPORT_REASONS, reportPost, blockUser } from "@/lib/moderation";
+import { supabase } from "@/integrations/supabase/client";
 
 export function PostModerationActions({
   postId,
@@ -16,6 +17,20 @@ export function PostModerationActions({
   const [reason, setReason] = useState<string>(REPORT_REASONS[0]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [viewerId, setViewerId] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    let alive = true;
+    let authChanged = false;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      authChanged = true;
+      if (alive) setViewerId(session?.user.id ?? null);
+    });
+    void supabase.auth.getSession().then(({ data }) => {
+      if (alive && !authChanged) setViewerId(data.session?.user.id ?? null);
+    });
+    return () => { alive = false; subscription.unsubscribe(); };
+  }, []);
 
   const stop = (e: React.SyntheticEvent) => {
     e.preventDefault();
@@ -48,6 +63,8 @@ export function PostModerationActions({
       toast.error(err.message);
     }
   }
+
+  if (viewerId === undefined || viewerId === authorId) return null;
 
   return (
     <>

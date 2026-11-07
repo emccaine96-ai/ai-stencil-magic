@@ -5,8 +5,20 @@ import { getGalleryPost, hasLiked, toggleLike, deletePost } from "@/lib/gallery.
 import { supabase } from "@/integrations/supabase/client";
 import { saveDocument, type DocumentData } from "@/lib/localDB";
 import { v4 as uuidv4 } from "uuid";
+import { PostModerationActions } from "@/components/gallery/PostModerationActions";
+import { listBlocked } from "@/lib/moderation";
 
 export const Route = createFileRoute("/gallery/$postId")({
+  head: () => ({
+    meta: [
+      { title: "Gallery Stencil — PrimalCanvas" },
+      { name: "description", content: "View and remix a community stencil in the PrimalCanvas gallery." },
+      { property: "og:title", content: "Gallery Stencil — PrimalCanvas" },
+      { property: "og:description", content: "A community stencil from the PrimalCanvas gallery." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: PostPage,
 });
 
@@ -17,18 +29,26 @@ function PostPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [liked, setLiked] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [authorBlocked, setAuthorBlocked] = useState(false);
 
   useEffect(() => {
+    let alive = true;
+    setPost(null);
+    setAuthorBlocked(false);
     (async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
       const uid = user?.id ?? null;
+      const [p, blocked] = await Promise.all([getGalleryPost(postId), listBlocked()]);
+      if (!alive) return;
       setUserId(uid);
-      const p = await getGalleryPost(postId);
+      setAuthorBlocked(!!p && blocked.some((b) => b.blocked_id === p.user_id));
       setPost(p);
-      setLiked(await hasLiked(postId, uid));
+      const isLiked = await hasLiked(postId, uid);
+      if (alive) setLiked(isLiked);
     })();
+    return () => { alive = false; };
   }, [postId]);
 
   async function onLike() {
@@ -78,6 +98,14 @@ function PostPage() {
     );
 
   const isOwner = !!userId && userId === post.user_id;
+
+  if (authorBlocked)
+    return (
+      <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center gap-3">
+        <p>You blocked this user</p>
+        <Link to="/gallery" className="text-sm text-primary hover:underline">Back to gallery</Link>
+      </div>
+    );
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -149,6 +177,11 @@ function PostPage() {
           <p className="mt-6 text-xs text-muted-foreground">
             Published {new Date(post.created_at).toLocaleDateString()}
           </p>
+          <PostModerationActions
+            postId={post.id}
+            authorId={post.user_id}
+            onBlocked={() => setAuthorBlocked(true)}
+          />
         </div>
       </div>
     </div>
