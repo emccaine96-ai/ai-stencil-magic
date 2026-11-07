@@ -7,6 +7,7 @@ mock.module("react", () => ({
 }));
 mock.module("@/integrations/supabase/client", () => ({ supabase: { auth: {} } }));
 mock.module("sonner", () => ({ toast: {} }));
+mock.module("lucide-react", () => ({ Flag: () => null, Ban: () => null, Loader2: () => null }));
 
 const { PostModerationActions } = await import("./PostModerationActions");
 
