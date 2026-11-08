@@ -1,5 +1,11 @@
 # Gallery moderation and CI verification
 
+## Plugin hardening and lazy-loading round
+- [x] Remeasure unchanged portrait export: baseline SHA-256 matches.
+- [ ] Block network access in plugin srcdoc and verify external fetch plus all built-ins.
+- [ ] Lazy-load MasterSuite tabs and optional create tools without changing generation.
+- [ ] Rerun export, typecheck, existing tests and report untouched files.
+
 ## Current optimization round
 - [x] Pin the existing typecheck command without changing dependencies or lockfiles.
 - [x] Resize icons and logo, preserving filenames and alpha; inspect results and manifest.
