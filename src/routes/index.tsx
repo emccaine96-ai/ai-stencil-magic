@@ -1,10 +1,69 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import logo from "@/assets/stencil-logo.png";
-import { TRUE_EXAMPLES } from "@/lib/example-assets";
 import { Menu, X, Upload, Palette, Download, Check, ChevronRight, ChevronLeft, ChevronsLeftRight } from "lucide-react";
 
-export const Route = createFileRoute("/")({ component: Index });
+const TRUE_EXAMPLES = [
+  {
+    id: "hibiscus",
+    title: "Hibiscus Botanical",
+    subtitle: "Dense floral forms converted to clean purple contour + hatch",
+    before: "/examples/hibiscus-before.webp",
+    after: "/examples/hibiscus-after.webp",
+    beforeLabel: "Original",
+    afterLabel: "Stencil",
+  },
+  {
+    id: "elder",
+    title: "Elder Portrait",
+    subtitle: "Deep facial structure mapped into thermal-ready linework",
+    before: "/examples/elder-before.webp",
+    after: "/examples/elder-after.webp",
+    beforeLabel: "Photo",
+    afterLabel: "Stencil",
+  },
+  {
+    id: "baby",
+    title: "Baby Portrait",
+    subtitle: "Soft features preserved as confident closed contours",
+    before: "/examples/baby-before.webp",
+    after: "/examples/baby-after.webp",
+    beforeLabel: "Photo",
+    afterLabel: "Stencil",
+  },
+  {
+    id: "aztec",
+    title: "Aztec Calendar",
+    subtitle: "Intricate ornamental detail kept printable and sharp",
+    before: "/examples/aztec-before.webp",
+    after: "/examples/aztec-after.webp",
+    beforeLabel: "Reference",
+    afterLabel: "Stencil",
+  },
+  {
+    id: "poseidon",
+    title: "Poseidon",
+    subtitle: "Mythic portrait with full trident detail in purple ink",
+    before: "/examples/poseidon-before.webp",
+    after: "/examples/poseidon-after.webp",
+    beforeLabel: "Artwork",
+    afterLabel: "Stencil",
+  },
+];
+
+export const Route = createFileRoute("/")({
+  component: Index,
+  head: () => ({
+    meta: [
+      { title: "AI Stencil Magic — Photo to Tattoo Stencil" },
+      { name: "description", content: "Create transfer-ready tattoo stencils and compare real photo-to-stencil examples with AI Stencil Magic." },
+      { property: "og:title", content: "AI Stencil Magic — Photo to Tattoo Stencil" },
+      { property: "og:description", content: "Create transfer-ready tattoo stencils and compare real photo-to-stencil examples with AI Stencil Magic." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+});
 
 function Header() {
   const [open, setOpen] = useState(false);

@@ -1,5 +1,11 @@
 # Gallery moderation and CI verification
 
+## Current optimization round
+- [x] Pin the existing typecheck command without changing dependencies or lockfiles.
+- [x] Resize icons and logo, preserving filenames and alpha; inspect results and manifest.
+- [x] Replace only home embedded examples with public image files; retain original asset modules.
+- [x] Verify baseline-identical export, home/create browser checks, typecheck and existing tests; report measurements.
+
 - [x] Update `src/routes/gallery.$postId.tsx`: reuse moderation actions and blocked-author placeholder; preserve hidden-post behavior.
 - [x] Update `src/components/gallery/PostModerationActions.tsx`: suppress actions on own posts using the current auth session.
 - [x] Update `package.json`: add the existing tsgo typechecker script (no dependency changes).
