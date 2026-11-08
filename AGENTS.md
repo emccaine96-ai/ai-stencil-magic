@@ -52,6 +52,8 @@ These rules apply regardless of which model is doing the work.
 
 ## After making changes
 
+- Plugin runner srcdoc must enforce a default-deny CSP with network access blocked; inline script and eval remain permitted for the existing synchronous plugin API.
+
 9. **Run typecheck/build and report the actual result** — not "should work," the
    actual pass/fail output.
 10. **State plainly which files were touched and which were not**, so drift between

@@ -56,7 +56,9 @@ export function runPlugin(
     iframe.sandbox.add("allow-scripts");
     iframe.style.display = "none";
     const html =
-      "<!doctype html><html><body><script>" +
+      "<!doctype html><html><head>" +
+      "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; connect-src 'none'; form-action 'none'; base-uri 'none'\">" +
+      "</head><body><script>" +
       "window.addEventListener('message', function(e){" +
       "  var d = e.data || {};" +
       "  try {" +
