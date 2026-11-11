@@ -2,9 +2,10 @@
 
 ## Plugin hardening and lazy-loading round
 - [x] Remeasure unchanged portrait export: baseline SHA-256 matches.
-- [ ] Verify all built-ins and fetch/XHR/Image/WebSocket/self-navigation isolation; navigation escape reproduced, worker fix pending verification.
-- [ ] Lazy-load MasterSuite tabs and optional create tools without changing generation.
-- [ ] Rerun export, typecheck, existing tests and report untouched files.
+- [x] Verify all 12 built-ins and fetch/XHR/Image/WebSocket/self-navigation isolation; CSP escape reproduced and worker fix verified with zero external requests.
+- [x] Lazy-load MasterSuite tabs, vectorization and Ink Style processing; browser verified all tabs, SVG export and recoloring without page errors.
+- [ ] Fully defer inspection module: blocked by its existing eager import in protected src/lib/classical-engine/index.ts; create-page call now uses dynamic import, engine unchanged.
+- [x] Rerun export (baseline hash and 1,306,582 bytes), typecheck, existing engine/gallery/metric tests; all passed, automatic build OK.
 
 ## Current optimization round
 - [x] Pin the existing typecheck command without changing dependencies or lockfiles.
