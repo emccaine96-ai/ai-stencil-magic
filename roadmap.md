@@ -2,7 +2,7 @@
 
 ## Plugin hardening and lazy-loading round
 - [x] Remeasure unchanged portrait export: baseline SHA-256 matches.
-- [ ] Block network access in plugin srcdoc and verify external fetch plus all built-ins.
+- [ ] Verify all built-ins and fetch/XHR/Image/WebSocket/self-navigation isolation; navigation escape reproduced, worker fix pending verification.
 - [ ] Lazy-load MasterSuite tabs and optional create tools without changing generation.
 - [ ] Rerun export, typecheck, existing tests and report untouched files.
 
