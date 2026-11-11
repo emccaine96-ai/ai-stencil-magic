@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { ChevronDown, Sparkles, Image as ImageIcon, Droplet, Palette, Paintbrush } from "lucide-react";
-import { Upscaler } from "./Upscaler";
-import { InkInventory } from "./InkInventory";
-import { ColorWheel } from "./ColorWheel";
+const Upscaler = lazy(() => import("./Upscaler").then((m) => ({ default: m.Upscaler })));
+const InkInventory = lazy(() => import("./InkInventory").then((m) => ({ default: m.InkInventory })));
+const ColorWheel = lazy(() => import("./ColorWheel").then((m) => ({ default: m.ColorWheel })));
 
 type Tab = "upscaler" | "ink" | "wheel";
 
@@ -48,9 +48,11 @@ export function MasterSuite({
             ))}
           </div>
           <div className="p-3 max-h-[70vh] overflow-y-auto">
+            <Suspense fallback={<div role="status" className="py-3 text-xs text-muted-foreground">Loading…</div>}>
             {tab === "upscaler" ? <Upscaler photo={photo} onReplace={onReplacePhoto} /> : null}
             {tab === "ink" ? <InkInventory photo={photo} /> : null}
             {tab === "wheel" ? <ColorWheel /> : null}
+            </Suspense>
           </div>
           <div className="border-t border-border p-2">
             <Link

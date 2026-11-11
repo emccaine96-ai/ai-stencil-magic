@@ -52,7 +52,8 @@ These rules apply regardless of which model is doing the work.
 
 ## After making changes
 
-- Plugin runner srcdoc must enforce a default-deny CSP with network access blocked; inline script and eval remain permitted for the existing synchronous plugin API.
+- Plugin runner srcdoc must enforce a default-deny CSP with network access blocked; inline script and eval remain permitted for the existing synchronous plugin API. Execute plugin code only in its CSP-inheriting worker, never the frame Window, to prevent self-navigation exfiltration.
+- Load optional Studio Suite tabs on first render and create-tool processing on demand, preserving existing generation calls and defaults.
 
 9. **Run typecheck/build and report the actual result** — not "should work," the
    actual pass/fail output.

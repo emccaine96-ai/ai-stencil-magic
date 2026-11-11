@@ -18,9 +18,7 @@ import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
 import { runPlugin, BUILTIN_PLUGINS } from "@/lib/plugins";
 import { processClassicalPro, type ClassicalProResult } from "@/lib/classical-pro-integration";
-import { computeStencilMetrics, computeTattooability, type TattooabilityResult } from "@/lib/classical-engine/inspector";
-// @ts-ignore — optional vectorization (imagetracerjs)
-import { vectorizeLineLayer } from "@/lib/classical-engine/vectorize";
+import type { TattooabilityResult } from "@/lib/classical-engine/inspector";
 // @ts-ignore — ink style panel (optional add-on, collapsed by default)
 import { InkStylePanel } from "@/components/InkStylePanel";
 // @ts-ignore — font system (self-hosted Font Squirrel fonts)
@@ -177,6 +175,7 @@ async function normalizeToPurpleInk(dataUrl: string, mode: "binary" | "coverage"
 }
 
 async function scoreStencil(dataUrl: string): Promise<TattooabilityResult> {
+  const { computeStencilMetrics, computeTattooability } = await import("@/lib/classical-engine/inspector");
   const img = new Image();
   img.crossOrigin = "anonymous";
   img.src = dataUrl;
@@ -667,6 +666,7 @@ function CreatePage() {
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0);
+      const { vectorizeLineLayer } = await import("@/lib/classical-engine/vectorize");
       const svg = await vectorizeLineLayer(canvas);
       const blob = new Blob([svg], { type: "image/svg+xml" });
       const u = URL.createObjectURL(blob);

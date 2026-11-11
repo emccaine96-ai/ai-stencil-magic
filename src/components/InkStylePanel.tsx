@@ -9,8 +9,8 @@
  */
 
 import { useState } from "react";
-import { applyInkStyle, type InkStyle } from "@/lib/classical/ink-style";
-import { recolorInkLayer, type InkColor } from "@/lib/classical/ink-color";
+import type { InkStyle } from "@/lib/classical/ink-style";
+import type { InkColor } from "@/lib/classical/ink-color";
 
 interface Props {
   primaryLines: Uint8ClampedArray;
@@ -40,7 +40,11 @@ export function InkStylePanel({ primaryLines, toneIdx, toneGray, width, height, 
   const [style, setStyle] = useState<InkStyle>("lineOnly");
   const [color, setColor] = useState<InkColor>("red");
 
-  const apply = (nextStyle: InkStyle, nextColor: InkColor) => {
+  const apply = async (nextStyle: InkStyle, nextColor: InkColor) => {
+    const [{ applyInkStyle }, { recolorInkLayer }] = await Promise.all([
+      import("@/lib/classical/ink-style"),
+      import("@/lib/classical/ink-color"),
+    ]);
     const composited = applyInkStyle(primaryLines, toneIdx, toneGray, width, height, {
       style: nextStyle,
       dash: { dashLengthPx: 4, gapLengthPx: 3 },

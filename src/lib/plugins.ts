@@ -55,11 +55,10 @@ export function runPlugin(
     const iframe = document.createElement("iframe");
     iframe.sandbox.add("allow-scripts");
     iframe.style.display = "none";
-    const html =
-      "<!doctype html><html><head>" +
-      "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; connect-src 'none'; form-action 'none'; base-uri 'none'\">" +
-      "</head><body><script>" +
-      "window.addEventListener('message', function(e){" +
+    // Only the trusted relay has a Window; plugin code runs in a worker without
+    // a navigable browsing context. The blob worker inherits this frame's CSP.
+    const workerCode =
+      "self.onmessage = function(e){" +
       "  var d = e.data || {};" +
       "  try {" +
       "    var data = new Uint8ClampedArray(d.buffer);" +
@@ -67,10 +66,25 @@ export function runPlugin(
       "    var fn = new Function('ctx', d.code);" +
       "    var start = Date.now();" +
       "    fn(ctx);" +
-      "    parent.postMessage({ id: d.id, ok: true, buffer: data.buffer, ms: Date.now()-start }, '*', [data.buffer]);" +
+      "    self.postMessage({ id: d.id, ok: true, buffer: data.buffer, ms: Date.now()-start }, [data.buffer]);" +
       "  } catch (err) {" +
-      "    parent.postMessage({ id: d.id, ok: false, error: String(err && err.message || err) }, '*');" +
+      "    self.postMessage({ id: d.id, ok: false, error: String(err && err.message || err) });" +
       "  }" +
+      "};";
+    const html =
+      "<!doctype html><html><head>" +
+      "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; worker-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'\">" +
+      "</head><body><script>" +
+      "var url = URL.createObjectURL(new Blob([" + JSON.stringify(workerCode) + "], { type: 'text/javascript' }));" +
+      "var worker = new Worker(url);" +
+      "URL.revokeObjectURL(url);" +
+      "worker.onmessage = function(e){ parent.postMessage(e.data, '*', e.data.buffer ? [e.data.buffer] : []); worker.terminate(); };" +
+      "worker.onerror = function(e){ parent.postMessage({ id: currentId, ok: false, error: e.message || 'plugin error' }, '*'); worker.terminate(); };" +
+      "var currentId;" +
+      "window.addEventListener('message', function(e){" +
+      "  if (e.source !== parent) return;" +
+      "  currentId = e.data.id;" +
+      "  worker.postMessage(e.data, [e.data.buffer]);" +
       "});" +
       "parent.postMessage({ ready: true }, '*');" +
       "</script></body></html>";
@@ -93,7 +107,9 @@ export function runPlugin(
       const msg: any = ev.data;
       if (msg?.ready) {
         const copy = new Uint8ClampedArray(image.data);
-        iframe.contentWindow!.postMessage(
+        const target = iframe.contentWindow;
+        if (!target) return;
+        target.postMessage(
           {
             id,
             width: image.width,
