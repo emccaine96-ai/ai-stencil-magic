@@ -11,10 +11,10 @@ import { listBlocked } from "@/lib/moderation";
 export const Route = createFileRoute("/gallery/$postId")({
   head: () => ({
     meta: [
-      { title: "Gallery Stencil — PrimalCanvas" },
-      { name: "description", content: "View and remix a community stencil in the PrimalCanvas gallery." },
-      { property: "og:title", content: "Gallery Stencil — PrimalCanvas" },
-      { property: "og:description", content: "A community stencil from the PrimalCanvas gallery." },
+      { title: "Gallery Stencil — AI Stencil Magic" },
+      { name: "description", content: "View and remix a community stencil in the AI Stencil Magic gallery." },
+      { property: "og:title", content: "Gallery Stencil — AI Stencil Magic" },
+      { property: "og:description", content: "A community stencil from the AI Stencil Magic gallery." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],

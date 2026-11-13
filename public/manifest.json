@@ -1,6 +1,6 @@
 {
-  "name": "PrimalPrint AI",
-  "short_name": "PrimalPrint",
+  "name": "AI Stencil Magic",
+  "short_name": "Stencil Magic",
   "description": "Turn any photo into a perfect tattoo stencil",
   "start_url": "/",
   "display": "standalone",

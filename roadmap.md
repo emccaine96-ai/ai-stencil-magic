@@ -1,5 +1,10 @@
 # Gallery moderation and CI verification
 
+## Product-name cleanup
+- [x] List and replace 14 visible legacy-name occurrences; preserve internal identifiers and hard limits.
+- [x] Verify typecheck, existing tests, baseline export hash and home/create browser errors; automatic build OK.
+- [ ] Verify a populated gallery post: no public posts available; post URL metadata checked with no page errors, but missing-post navigation returned to empty gallery.
+
 ## Plugin hardening and lazy-loading round
 - [x] Remeasure unchanged portrait export: baseline SHA-256 matches.
 - [x] Verify all 12 built-ins and fetch/XHR/Image/WebSocket/self-navigation isolation; CSP escape reproduced and worker fix verified with zero external requests.

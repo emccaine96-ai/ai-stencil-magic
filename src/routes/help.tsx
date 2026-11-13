@@ -27,11 +27,11 @@ import {
 export const Route = createFileRoute("/help")({
   head: () => ({
     meta: [
-      { title: "Help & Instructions — PrimalCanvas 2.0" },
+      { title: "Help & Instructions — AI Stencil Magic 2.0" },
       {
         name: "description",
         content:
-          "Complete guide to every tool, brush, gesture and pro feature in PrimalCanvas 2.0 — the Procreate-class stencil studio for Android.",
+          "Complete guide to every tool, brush, gesture and pro feature in AI Stencil Magic 2.0 — the Procreate-class stencil studio for Android.",
       },
     ],
   }),
@@ -55,7 +55,7 @@ const SECTIONS: Section[] = [
     body: (
       <div className="space-y-3">
         <p>
-          PrimalCanvas 2.0 is a full painting studio tailored for Android tablets and phones, with
+          AI Stencil Magic 2.0 is a full painting studio tailored for Android tablets and phones, with
           Apple-Pencil-class pressure and tilt handling on any compatible stylus (S-Pen, USI 2.0,
           Wacom, capacitive).
         </p>
@@ -425,7 +425,7 @@ function HelpPage() {
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <h1 className="font-semibold">Help & Instructions</h1>
-          <span className="text-xs text-muted-foreground hidden sm:inline">— PrimalCanvas 2.0</span>
+          <span className="text-xs text-muted-foreground hidden sm:inline">— AI Stencil Magic 2.0</span>
           <div className="flex-1" />
           <div className="relative">
             <Search className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -443,7 +443,7 @@ function HelpPage() {
         <section className="space-y-3">
           <h2 className="text-3xl font-bold">A Procreate-class studio, tailored for Android.</h2>
           <p className="text-muted-foreground">
-            PrimalCanvas 2.0 ships a full painting pipeline — pressure & tilt input, 27 hand-tuned
+            AI Stencil Magic 2.0 ships a full painting pipeline — pressure & tilt input, 27 hand-tuned
             brushes, unlimited layers with 16 blend modes, vector node editing, AI copilot,
             collaboration and pro export. This guide walks you through every feature.
           </p>

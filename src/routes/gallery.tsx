@@ -8,13 +8,13 @@ import { listGallery, type GalleryListItem } from "@/lib/gallery.functions";
 export const Route = createFileRoute("/gallery")({
   head: () => ({
     meta: [
-      { title: "Community Gallery — PrimalCanvas" },
+      { title: "Community Gallery — AI Stencil Magic" },
       {
         name: "description",
         content:
-          "Browse stencils published by the PrimalCanvas community. Like, remix, and download.",
+          "Browse stencils published by the AI Stencil Magic community. Like, remix, and download.",
       },
-      { property: "og:title", content: "Community Gallery — PrimalCanvas" },
+      { property: "og:title", content: "Community Gallery — AI Stencil Magic" },
       { property: "og:description", content: "Public stencils from artists worldwide." },
     ],
   }),
