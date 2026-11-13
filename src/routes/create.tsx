@@ -18,6 +18,11 @@ import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
 import { runPlugin, BUILTIN_PLUGINS } from "@/lib/plugins";
 import { processClassicalPro, type ClassicalProResult } from "@/lib/classical-pro-integration";
+import { useHectographEngineV3, STENCIL_V3_PRESETS, type StencilPresetId } from "@/lib/classical-v3/useHectographEngineV3";
+import { type HectographV3Config } from "@/lib/classical-v3/engine-api";
+import { photoToImageData, imageDataToPngUrl } from "@/lib/classical-v3/prepare-input";
+import { stencilToInkLayer } from "@/lib/classical-v3/to-ink-layer";
+import { HectographV3Controls } from "@/components/stencil/HectographV3Controls";
 import type { TattooabilityResult } from "@/lib/classical-engine/inspector";
 // @ts-ignore — ink style panel (optional add-on, collapsed by default)
 import { InkStylePanel } from "@/components/InkStylePanel";
@@ -77,7 +82,7 @@ const KEY_STORAGE = "stencilmagic.gemini.key";
 const OR_KEY_STORAGE = "stencilmagic.openrouter.key";
 const PROVIDER_STORAGE = "stencilmagic.provider"; // 'openrouter' | 'gemini'
 const OR_MODEL_STORAGE = "stencilmagic.openrouter.model";
-type Provider = "openrouter" | "gemini" | "classical" | "hybrid";
+type Provider = "openrouter" | "gemini" | "classical" | "hybrid" | "hectograph";
 const STYLE_PROMPTS: Record<Style, string> = {
   hatching:
     "Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable. Transitions from bright light areas to dark shade must be gradual and smooth: let hatch density fade out and strokes taper off progressively across the transition, so the tone blends like a soft gradient. Never draw a line, outline or hard edge where light and shadow meet, and never add lines that are not real edges of the subject in the photo.",
@@ -218,6 +223,10 @@ function CreatePage() {
   const [keyDraft, setKeyDraft] = useState("");
   const [orKeyDraft, setOrKeyDraft] = useState("");
   const [provider, setProvider] = useState<Provider>("openrouter");
+  // Hectograph V3 (opt-in local worker engine). Independent state: nothing here touches the Classical Pro path.
+  const hecto = useHectographEngineV3();
+  const [v3PresetId, setV3PresetId] = useState<StencilPresetId | null>("tattoo-clean");
+  const [v3Config, setV3Config] = useState<HectographV3Config>(STENCIL_V3_PRESETS["tattoo-clean"].config);
   const [originalStencil, setOriginalStencil] = useState<string | null>(null);
   const [pluginProcessing, setPluginProcessing] = useState<string | null>(null);
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
@@ -303,7 +312,7 @@ function CreatePage() {
     const orm = localStorage.getItem(OR_MODEL_STORAGE);
     if (orm) setOrModel(orm);
     const p = localStorage.getItem(PROVIDER_STORAGE) as Provider | null;
-    if (p === "openrouter" || p === "gemini" || p === "classical" || p === "hybrid") setProvider(p);
+    if (p === "openrouter" || p === "gemini" || p === "classical" || p === "hybrid" || p === "hectograph") setProvider(p);
     // Hand-off from Vault: open a saved entry directly in the editor.
     try {
       const raw = sessionStorage.getItem("primalprint.editor.load");
@@ -474,7 +483,8 @@ function CreatePage() {
     setStencil(null);
     setInkStyleData(null);
     lastGenRef.current = {
-      engine: provider,
+      // Touch-up's engine type predates V3 and nothing branches on it; V3 runs are recorded as local-engine runs.
+      engine: provider === "hectograph" ? "classical" : provider,
       style,
       intensity,
       useRetinex,
@@ -482,6 +492,20 @@ function CreatePage() {
       useAdvancedPipeline,
     };
     try {
+      if (provider === "hectograph") {
+        const t0 = performance.now();
+        const input = await photoToImageData(photo);
+        const rendered = await hecto.renderStencilV3(input, { config: v3Config });
+        // The app stores a stencil as ink-in-alpha on transparent. Convert V3's paper-white render to that
+        // WITHOUT flattening the tones, so the multi-tone look survives and the tattooability scorer works.
+        const inkResult = imageDataToPngUrl(stencilToInkLayer(rendered));
+        setStencil(inkResult);
+        scoreStencil(inkResult).then(setTattooability).catch(() => setTattooability(null));
+        setInkStyleData(null);
+        toast.success(`Hectograph V3 (${Math.round(performance.now() - t0)}ms)`);
+        setLoading(false);
+        return;
+      }
       if (provider === "classical") {
         const result = await processClassicalPro(photo, {
           style,
@@ -730,15 +754,17 @@ function CreatePage() {
       ? orKey
         ? "OpenRouter ✓"
         : "OpenRouter key"
-      : provider === "classical"
-        ? "Classical Pro"
-        : provider === "hybrid"
-          ? orKey || apiKey
-            ? "Hybrid ✓"
-            : "Hybrid key"
-          : apiKey
-            ? "Gemini key"
-            : "Set key";
+      : provider === "hectograph"
+        ? "Hectograph V3"
+        : provider === "classical"
+          ? "Classical Pro"
+          : provider === "hybrid"
+            ? orKey || apiKey
+              ? "Hybrid ✓"
+              : "Hybrid key"
+            : apiKey
+              ? "Gemini key"
+              : "Set key";
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -794,7 +820,7 @@ function CreatePage() {
                   (provider === "gemini" && apiKey) ||
                   (provider === "hybrid" && (orKey || apiKey))
                     ? "text-primary"
-                    : provider === "classical"
+                    : provider === "classical" || provider === "hectograph"
                       ? "text-muted-foreground"
                       : "text-destructive"
                 }`}
@@ -813,7 +839,7 @@ function CreatePage() {
               Engine
             </h2>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             <button
               onClick={() => selectProvider("openrouter")}
               className={`p-3 rounded-2xl border text-left transition ${provider === "openrouter" ? "border-primary bg-gradient-primary text-primary-foreground shadow-glow" : "border-border bg-card hover:border-primary/50"}`}
@@ -866,7 +892,30 @@ function CreatePage() {
                 Classical then AI refine
               </div>
             </button>
+            <button
+              onClick={() => selectProvider("hectograph")}
+              className={`p-3 rounded-2xl border text-left transition ${provider === "hectograph" ? "border-primary bg-gradient-primary text-primary-foreground shadow-glow" : "border-border bg-card hover:border-primary/50"}`}
+            >
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <Sparkles size={14} /> Hectograph V3
+              </div>
+              <div
+                className={`text-[10px] mt-1 ${provider === "hectograph" ? "opacity-90" : "text-muted-foreground"}`}
+              >
+                Flow engraving, runs locally
+              </div>
+            </button>
           </div>
+          {provider === "hectograph" ? (
+            <HectographV3Controls
+              config={v3Config}
+              onConfigChange={(next) => { setV3Config(next); setV3PresetId(null); }}
+              presetId={v3PresetId}
+              onPresetChange={(id) => { setV3PresetId(id); setV3Config(STENCIL_V3_PRESETS[id].config); }}
+              lastDurationMs={hecto.lastDurationMs}
+              disabled={loading}
+            />
+          ) : null}
           {provider === "classical" ? (
             <div className="mt-3 p-4 rounded-2xl border border-border bg-card space-y-2">
               <p className="text-[11px] text-muted-foreground">
