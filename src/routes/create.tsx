@@ -18,7 +18,7 @@ import { saveStencil } from "@/lib/vault";
 import { MasterSuite } from "@/components/master-suite/MasterSuite";
 import { runPlugin, BUILTIN_PLUGINS } from "@/lib/plugins";
 import { processClassicalPro, type ClassicalProResult } from "@/lib/classical-pro-integration";
-import { useHectographEngineV3, STENCIL_V3_PRESETS, type StencilPresetId } from "@/lib/classical-v3/useHectographEngineV3";
+import { useHectographEngineV3, STENCIL_V3_PRESETS, isV3Superseded, type StencilPresetId } from "@/lib/classical-v3/useHectographEngineV3";
 import { type HectographV3Config } from "@/lib/classical-v3/engine-api";
 import { photoToImageData, imageDataToPngUrl } from "@/lib/classical-v3/prepare-input";
 import { stencilToInkLayer } from "@/lib/classical-v3/to-ink-layer";
@@ -491,6 +491,7 @@ function CreatePage() {
       backgroundMode,
       useAdvancedPipeline,
     };
+    let wasSuperseded = false;
     try {
       if (provider === "hectograph") {
         const t0 = performance.now();
@@ -669,9 +670,14 @@ function CreatePage() {
         }
       }
     } catch (e) {
+      // A V3 render replaced by a newer one is not an error; the newer render owns the loading state.
+      if (isV3Superseded(e)) {
+        wasSuperseded = true;
+        return;
+      }
       setError(e instanceof Error ? e.message : "Failed to generate");
     } finally {
-      setLoading(false);
+      if (!wasSuperseded) setLoading(false);
     }
   }
 
