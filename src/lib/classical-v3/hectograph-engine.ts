@@ -46,6 +46,29 @@ export interface HectographV3Config {
   thin?: boolean;
   /** Target stroke width in px after thinning (1 to 5, default 3). Only used when `thin` is true. */
   thinWidth?: number;
+  /**
+   * Multiplies the Hessian ridge gates and the step-edge gates that feed the anchor layer (default 1 = unchanged).
+   * Above 1 only stronger ridges and edges become anchor lines, which cuts the broad saturated texture response.
+   */
+  anchorGateScale?: number;
+  /** Weight of the sigma 1.9 Hessian anchor source (default 1 = unchanged). */
+  hessianSigma19Weight?: number;
+  /**
+   * How strongly a Hessian response must look like a LINE rather than a blob: ridgeNess = lambda1 - k * |lambda2|.
+   * Default 0.35 (unchanged). Larger values reject filled regions, where both curvatures are similar.
+   */
+  ridgeAnisotropy?: number;
+  /**
+   * Also remove tiny components judged on STRONG ink (255 - min(R,G,B) >= 90, the scorer's definition), however
+   * long they are. Default 0 (off). Set to a pixel count, e.g. 12, to drop strong-ink components smaller than that.
+   */
+  strongSpeckPixels?: number;
+  /** Add a finer sigma 1.2 Hessian anchor scale (default false). */
+  hessianSigma12?: boolean;
+  /** Diagnostics only: receives the four layers just before compositing. Never set by the app. */
+  debugAnchorSource?: (a: Float32Array) => void;
+  debugAnchorSource2?: (a: Float32Array) => void;
+  debugLayers?: (l: { anchorLines: Float32Array; detailLines: Float32Array; coreDarkPin: Float32Array; smoothShading: Float32Array; width: number; height: number }) => void;
   /** Optional neural line-art probability map [0..1] from ONNX Informative-Drawings worker */
   neuralEdgeMap?: Float32Array;
 }
@@ -63,6 +86,11 @@ export const DEFAULT_HECTOGRAPH_V3_CONFIG: HectographV3Config = {
   hessianSigma32: true,
   thin: false,
   thinWidth: 3,
+  ridgeAnisotropy: 0.35,
+  strongSpeckPixels: 0,
+  anchorGateScale: 1,
+  hessianSigma19Weight: 1,
+  hessianSigma12: false,
 };
 
 /**
@@ -471,6 +499,9 @@ function extractCleanLinesAndVeins(
   const blurBroad = config.broadDoG === false ? blurMedium : gaussianBlurFloat(normLum, width, height, 4.8);
 
   const gateScale = scene.noiseGateBoost;
+  // Extra multiplier on the anchor ridge/edge gates; non-finite or non-positive values mean 'unchanged'.
+  const aniso = Number.isFinite(config.ridgeAnisotropy) && (config.ridgeAnisotropy as number) >= 0 ? (config.ridgeAnisotropy as number) : 0.35;
+  const agScale = Number.isFinite(config.anchorGateScale) && (config.anchorGateScale as number) > 0 ? (config.anchorGateScale as number) : 1;
 
   for (let i = 0; i < N; i++) {
     // Dark crease / line response (where pixel is darker than its immediate neighborhood)
@@ -497,17 +528,26 @@ function extractCleanLinesAndVeins(
       weight: 0.85 * config.fineDetailGain * scene.fineScaleWeight,
       target: 'detail' as const,
     },
+    ...(config.hessianSigma12 === true
+      ? [{
+          sigma: 1.2,
+          lowGate: 0.015 * gateScale * agScale,
+          highGate: 0.065 * gateScale * agScale,
+          weight: 1.0 * config.anchorWeight * scene.portraitFocusBoost,
+          target: 'anchor' as const,
+        }]
+      : []),
     {
       sigma: 1.9,
-      lowGate: 0.014 * gateScale,
-      highGate: 0.062 * gateScale,
-      weight: 1.15 * config.anchorWeight * scene.portraitFocusBoost,
+      lowGate: 0.014 * gateScale * agScale,
+      highGate: 0.062 * gateScale * agScale,
+      weight: 1.15 * (Number.isFinite(config.hessianSigma19Weight) ? Math.max(0, config.hessianSigma19Weight as number) : 1) * config.anchorWeight * scene.portraitFocusBoost,
       target: 'anchor' as const,
     },
     {
       sigma: 3.2,
-      lowGate: 0.012 * gateScale,
-      highGate: 0.055 * gateScale,
+      lowGate: 0.012 * gateScale * agScale,
+      highGate: 0.055 * gateScale * agScale,
       weight: 0.95 * config.anchorWeight * scene.portraitFocusBoost,
       target: 'anchor' as const,
     },
@@ -542,7 +582,7 @@ function extractCleanLinesAndVeins(
         const lambda2 = 0.5 * (trace - disc) * normFactor;
 
         // Require tubular/ridge anisotropy (lambda1 >> |lambda2|) so flat isotropic noise is ignored
-        const ridgeNess = lambda1 - 0.35 * Math.abs(lambda2);
+        const ridgeNess = lambda1 - aniso * Math.abs(lambda2);
         if (ridgeNess > s.lowGate) {
           const gatedVal = smoothstep(s.lowGate, s.highGate, ridgeNess) * s.weight;
           if (s.target === 'detail') {
@@ -557,10 +597,11 @@ function extractCleanLinesAndVeins(
     }
   }
 
+  if (config.debugAnchorSource2) config.debugAnchorSource2(anchorLines.slice());
   // 3. Crisp NMS Step-Edges (for sharp outer boundaries like Hibiscus petal edges & Trident silhouette)
   const smoothGrad = gaussianBlurFloat(gradMag, width, height, 0.85);
-  const gradLow = 0.025 * gateScale;
-  const gradHigh = 0.095 * gateScale;
+  const gradLow = 0.025 * gateScale * agScale;
+  const gradHigh = 0.095 * gateScale * agScale;
 
   for (let y = 1; y < height - 1; y++) {
     const r1 = y * width;
@@ -582,6 +623,8 @@ function extractCleanLinesAndVeins(
       }
     }
   }
+
+  if (config.debugAnchorSource) config.debugAnchorSource(anchorLines.slice());
 
   // 4. Streamline Integration along Edge Tangent Flow (connects lines smoothly like a pulled needle)
   const smoothedAnchor = new Float32Array(N);
@@ -710,6 +753,58 @@ const SPECKLE_MIN_PIXELS = 14;
 const SPECKLE_KEEP_EXTENT = 12;
 const SPECKLE_INK_BELOW = 235;
 
+/**
+ * Whitens connected components (8-neighbour) of STRONG ink smaller than `minPixels`, whatever their length.
+ * Strong ink = 255 - min(R,G,B) >= 90. Faint pixels around a component are left alone, so only the tiny
+ * strong core is removed and its faint halo is cleaned up with it when it has no strong neighbour left.
+ */
+export function removeStrongSpecks(out: ImageData, minPixels: number): void {
+  const { width, height, data } = out;
+  const N = width * height;
+  const strong = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    const p = i * 4;
+    if (255 - Math.min(data[p], data[p + 1], data[p + 2]) >= 90) strong[i] = 1;
+  }
+  const seen = new Uint8Array(N);
+  const stack = new Int32Array(N);
+  const members = new Int32Array(N);
+  for (let start = 0; start < N; start++) {
+    if (!strong[start] || seen[start]) continue;
+    let sp = 0;
+    let count = 0;
+    stack[sp++] = start;
+    seen[start] = 1;
+    while (sp > 0) {
+      const idx = stack[--sp];
+      members[count++] = idx;
+      const x = idx % width;
+      const y = (idx / width) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= height) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          if (nx < 0 || nx >= width || (dx === 0 && dy === 0)) continue;
+          const q = ny * width + nx;
+          if (strong[q] && !seen[q]) {
+            seen[q] = 1;
+            stack[sp++] = q;
+          }
+        }
+      }
+    }
+    if (count < minPixels) {
+      for (let k = 0; k < count; k++) {
+        const p = members[k] * 4;
+        data[p] = 255;
+        data[p + 1] = 255;
+        data[p + 2] = 255;
+      }
+    }
+  }
+}
+
 function removeSpeckle(out: ImageData): void {
   const { width, height, data } = out;
   const N = width * height;
@@ -833,6 +928,7 @@ export function renderHectographStencilV3(
 
   // Pass 1: the raw combined ink of every pixel, before any paper gate.
   const rawInk = new Float32Array(N);
+  if (config.debugLayers) config.debugLayers({ anchorLines, detailLines, coreDarkPin, smoothShading, width, height });
   for (let i = 0; i < N; i++) {
     const aLine = anchorLines[i];
     const dLine = detailLines[i] * 0.72;
@@ -904,6 +1000,7 @@ export function renderHectographStencilV3(
 
   // 8. Clear stray specks. Skipped for the 1-bit mode, where dithered dots are intentionally small.
   if (config.outputMode !== 'thermal-binary') removeSpeckle(out);
+  if (config.outputMode !== 'thermal-binary' && (config.strongSpeckPixels ?? 0) > 0) removeStrongSpecks(out, config.strongSpeckPixels as number);
 
   return out;
 }
