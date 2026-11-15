@@ -27,6 +27,74 @@ export interface HectographV3Config {
   localContrastBoost: number;
   /** White halo buffer around primary anchor lines so shading never muddies edges (0 - 4px, default 1.5) */
   haloProtection: number;
+  /**
+   * Largest share of the page allowed to carry ink (0..1, default 0.30). The paper gate is raised just enough
+   * that no more than this fraction of pixels stay inked. It never lowers the gate below 0.035, so a sparse
+   * image is left exactly as it was.
+   */
+  inkBudget?: number;
+  /** Highest paper gate the ink budget may use (0.035 to 0.95, default 0.5). Raise it so dense images can meet the budget. */
+  inkFloorCap?: number;
+  /** Use the broad (sigma 4.8 minus 2.2) difference of Gaussians as an anchor-line source. Default true. */
+  broadDoG?: boolean;
+  /** Use the sigma 3.2 Hessian scale as an anchor-line source. Default true. */
+  hessianSigma32?: boolean;
+  /**
+   * Thin the anchor-line layer before compositing: keep only the local maximum across each line (non-maximum
+   * suppression along the edge-flow normal), then widen to `thinWidth`. Default false, so output is unchanged.
+   */
+  thin?: boolean;
+  /** Target stroke width in px after thinning (1 to 5, default 3). Only used when `thin` is true. */
+  thinWidth?: number;
+  /**
+   * Multiplies the Hessian ridge gates and the step-edge gates that feed the anchor layer (default 1 = unchanged).
+   * Above 1 only stronger ridges and edges become anchor lines, which cuts the broad saturated texture response.
+   */
+  anchorGateScale?: number;
+  /** Weight of the sigma 1.9 Hessian anchor source (default 1 = unchanged). */
+  hessianSigma19Weight?: number;
+  /**
+   * How strongly a Hessian response must look like a LINE rather than a blob: ridgeNess = lambda1 - k * |lambda2|.
+   * Default 0.35 (unchanged). Larger values reject filled regions, where both curvatures are similar.
+   */
+  ridgeAnisotropy?: number;
+  /**
+   * Also remove tiny components judged on STRONG ink (255 - min(R,G,B) >= 90, the scorer's definition), however
+   * long they are. Default 0 (off). Set to a pixel count, e.g. 12, to drop strong-ink components smaller than that.
+   */
+  strongSpeckPixels?: number;
+  /**
+   * Largest additive ink boost the composite may add on top of the strongest layer (default 0.22 = unchanged).
+   * The boost is `min(boostCap, anchor * 0.25 + corePin * 0.2)`; lowering it thins the strongest strokes.
+   */
+  boostCap?: number;
+  /**
+   * Scene-adaptive parameters (default false = every other option behaves exactly as set). When true, edge density is
+   * measured on a 512 px long-edge bilinear copy, mapped to t in [0,1] (0 sparse, 1 dense), and the parameters below
+   * are interpolated by t, then OVERRIDE the corresponding manual options for that render.
+   */
+  adaptive?: boolean;
+  /** Diagnostics only: leave one source out of the composite so its effect on the REAL output can be measured. */
+  debugDropLayer?: 'anchor' | 'detail' | 'pin' | 'shading' | 'boost';
+  /** Diagnostics only: receives the adaptive parameters chosen for this render. */
+  debugAdaptive?: (a: AdaptiveParams) => void;
+  /** Internal: continuous weights resolved by `adaptive`. Left undefined, each source is simply on or off as before. */
+  _sigma32Weight?: number;
+  _broadDoGWeight?: number;
+  _sigma12Weight?: number;
+  _inkGain?: number;
+  /**
+   * Strength kept in the INTERIOR of a filled dark-core pin (0..1, default 1 = unchanged). The pin saturates across the whole
+   * interior of any dark region, which makes blobs 5 to 7 px thick. Lower values keep the rim and thin the filled centre,
+   * so dark features read as outlined shapes. Applied only where the pin is surrounded by pin.
+   */
+  pinInterior?: number;
+  /** Add a finer sigma 1.2 Hessian anchor scale (default false). */
+  hessianSigma12?: boolean;
+  /** Diagnostics only: receives the four layers just before compositing. Never set by the app. */
+  debugAnchorSource?: (a: Float32Array) => void;
+  debugAnchorSource2?: (a: Float32Array) => void;
+  debugLayers?: (l: { anchorLines: Float32Array; detailLines: Float32Array; coreDarkPin: Float32Array; smoothShading: Float32Array; width: number; height: number; boostCap: number; inkGain: number }) => void;
   /** Optional neural line-art probability map [0..1] from ONNX Informative-Drawings worker */
   neuralEdgeMap?: Float32Array;
 }
@@ -38,7 +106,127 @@ export const DEFAULT_HECTOGRAPH_V3_CONFIG: HectographV3Config = {
   flowShadingStrength: 0.60,
   localContrastBoost: 0.70,
   haloProtection: 1.5,
+  inkBudget: 0.30,
+  inkFloorCap: 0.5,
+  broadDoG: true,
+  hessianSigma32: true,
+  thin: false,
+  thinWidth: 3,
+  ridgeAnisotropy: 0.35,
+  boostCap: 0.22,
+  pinInterior: 1,
+  adaptive: false,
+  strongSpeckPixels: 0,
+  anchorGateScale: 1,
+  hessianSigma19Weight: 1,
+  hessianSigma12: false,
 };
+
+/**
+ * Deterministic line thinning. Keeps a pixel only if it is a local maximum of `layer` across the line normal
+ * (the perpendicular to the tangent field tx,ty), within +-1 px, then widens the surviving centreline to about
+ * `width` px with a max filter of that footprint (so the value on a line stays the line's own strength).
+ * Ties are broken one-sided (>= on the negative side, > on the positive side), so a flat-topped stroke keeps
+ * exactly one centre pixel instead of vanishing. No randomness, no time dependence.
+ */
+export function thinLayer(
+  layer: Float32Array,
+  tx: Float32Array,
+  ty: Float32Array,
+  width: number,
+  height: number,
+  targetWidth: number
+): Float32Array {
+  const N = width * height;
+  const spine = new Float32Array(N);
+  const floor = 1e-4;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      const v = layer[i];
+      if (v <= floor) continue;
+      // normal = (ty, -tx); snap each +-1 px neighbour to the pixel grid
+      const nx = ty[i];
+      const ny = -tx[i];
+      const xa = Math.min(width - 1, Math.max(0, Math.round(x + nx)));
+      const ya = Math.min(height - 1, Math.max(0, Math.round(y + ny)));
+      const xb = Math.min(width - 1, Math.max(0, Math.round(x - nx)));
+      const yb = Math.min(height - 1, Math.max(0, Math.round(y - ny)));
+      if (v >= layer[ya * width + xa] && v > layer[yb * width + xb]) spine[i] = v;
+    }
+  }
+  // A non-finite width (NaN, Infinity) falls back to the default of 3 rather than silently erasing every line.
+  const w = Number.isFinite(targetWidth) ? Math.max(1, Math.min(5, Math.round(targetWidth))) : 3;
+  if (w <= 1) return spine;
+  // Widen to ~w px: a (w x w) max filter would be ~w px across a straight line but makes diagonals w*sqrt(2).
+  // A separable max over r = floor(w/2) in x and y, with a one-pixel trim for even widths, keeps it close to w.
+  const r = Math.floor(w / 2);
+  const tmp = new Float32Array(N);
+  const out = new Float32Array(N);
+  const lo = r;
+  const hi = w % 2 === 0 ? r - 1 : r; // even width: asymmetric window of w px
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    for (let x = 0; x < width; x++) {
+      let m = 0;
+      const a = Math.max(0, x - lo);
+      const b = Math.min(width - 1, x + hi);
+      for (let k = a; k <= b; k++) if (spine[row + k] > m) m = spine[row + k];
+      tmp[row + x] = m;
+    }
+  }
+  for (let x = 0; x < width; x++) {
+    for (let y = 0; y < height; y++) {
+      let m = 0;
+      const a = Math.max(0, y - lo);
+      const b = Math.min(height - 1, y + hi);
+      for (let k = a; k <= b; k++) if (tmp[k * width + x] > m) m = tmp[k * width + x];
+      out[y * width + x] = m;
+    }
+  }
+  return out;
+}
+
+/** The fixed paper gate: raw ink under this is always blank paper. */
+export const PAPER_GATE = 0.035;
+/** The budget can raise the gate, but never past this. */
+export const MAX_INK_FLOOR = 0.5;
+const INK_HIST_BINS = 200;
+
+/**
+ * Smallest floor >= PAPER_GATE (capped at MAX_INK_FLOOR) such that no more than `budget` of the pixels have
+ * raw ink >= floor. Uses a 200-bin histogram over [0,1], so the floor is quantised to 1/200 and is
+ * deterministic. A budget >= 1 (or non-finite) disables the budget and returns PAPER_GATE.
+ */
+export function computeInkFloor(rawInk: Float32Array, budget: number, cap: number = MAX_INK_FLOOR): number {
+  // A bad cap falls back to the default; the cap is kept between the paper gate and just under 1.
+  const capV = Number.isFinite(cap) ? Math.min(0.95, Math.max(PAPER_GATE, cap)) : MAX_INK_FLOOR;
+  const n = rawInk.length;
+  if (n === 0 || !Number.isFinite(budget) || budget >= 1) return PAPER_GATE;
+  const b = Math.max(0, budget);
+  const hist = new Uint32Array(INK_HIST_BINS + 1);
+  for (let i = 0; i < n; i++) {
+    const v = rawInk[i];
+    const bin = v <= 0 ? 0 : v >= 1 ? INK_HIST_BINS : Math.floor(v * INK_HIST_BINS);
+    hist[bin]++;
+  }
+  // suffix[k] = number of pixels whose bin is >= k. A floor at the lower edge of bin k keeps exactly suffix[k] pixels.
+  const allowed = b * n;
+  let suffix = 0;
+  const startBin = Math.ceil(PAPER_GATE * INK_HIST_BINS); // first bin whose lower edge is >= PAPER_GATE
+  const endBin = Math.floor(capV * INK_HIST_BINS);
+  // accumulate everything above endBin first
+  for (let k = INK_HIST_BINS; k > endBin; k--) suffix += hist[k];
+  let floorBin = endBin;
+  for (let k = endBin; k >= startBin; k--) {
+    suffix += hist[k];
+    if (suffix > allowed) break;
+    floorBin = k;
+  }
+  // floorBin is the lowest bin we can start at while staying within budget; if even startBin fits, use PAPER_GATE
+  const floor = floorBin <= startBin ? PAPER_GATE : floorBin / INK_HIST_BINS;
+  return Math.min(capV, Math.max(PAPER_GATE, floor));
+}
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - edge0) / Math.max(1e-5, edge1 - edge0)));
@@ -48,7 +236,7 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 /**
  * Fast separable 1D Gaussian blur (O(N))
  */
-function gaussianBlurFloat(src: Float32Array, width: number, height: number, sigma: number): Float32Array {
+export function gaussianBlurFloat(src: Float32Array, width: number, height: number, sigma: number): Float32Array {
   if (sigma <= 0.05) return new Float32Array(src);
   const radius = Math.max(1, Math.ceil(sigma * 2.5));
   const kernel = new Float32Array(radius * 2 + 1);
@@ -108,6 +296,121 @@ interface SceneProfile {
  * Inspects the uploaded image so soft portraits (Baby), botanicals (Hibiscus), and dense carvings (Aztec)
  * each get ideal contrast stretching, noise gating, and line-weight balance automatically.
  */
+/**
+ * Scales down the INTERIOR of saturated regions of `pin` in place. A pixel is interior when the pin, blurred at sigma 2.5,
+ * is still close to full strength (sigma 3.5), i.e. the pin is saturated all around it. Rim pixels and thin pins are untouched.
+ * The factor ramps smoothly from 1 (rim) to `keep` (deep interior), so there is no hard edge. Deterministic.
+ */
+export function thinPinInterior(pin: Float32Array, width: number, height: number, keep: number): void {
+  const N = width * height;
+  const sat = new Float32Array(N);
+  for (let i = 0; i < N; i++) sat[i] = pin[i] >= 0.6 ? 1 : 0;
+  const around = gaussianBlurFloat(sat, width, height, 3.5);
+  for (let i = 0; i < N; i++) {
+    if (pin[i] <= 0) continue;
+    const interior = smoothstep(0.55, 0.97, around[i]) * (sat[i] > 0 ? 1 : 0);
+    pin[i] *= 1 - (1 - keep) * interior;
+  }
+}
+
+/** Density at which the scene counts as fully sparse / fully dense. Derived from the nine shipped photos (in-sample). */
+export const ADAPTIVE_DENSITY_LO = 0.04;
+export const ADAPTIVE_DENSITY_HI = 0.10;
+/** Long edge of the copy the adaptive density is measured on, so the input size cannot change the class. */
+export const ADAPTIVE_MEASURE_EDGE = 512;
+
+/** What `adaptive` decides for one photo. Every field is applied to the render; none is informational only. */
+export interface AdaptiveParams {
+  t: number;
+  ridgeAnisotropy: number;
+  strongSpeckPixels: number;
+  inkFloorCap: number;
+  sigma32Weight: number;
+  broadDoGWeight: number;
+  sigma12Weight: number;
+  inkGain: number;
+}
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/** Continuous mapping from density to t, clamped. A NaN density counts as the middle of the range. */
+export function densityToT(density: number): number {
+  if (!Number.isFinite(density)) return 0.5;
+  return Math.min(1, Math.max(0, (density - ADAPTIVE_DENSITY_LO) / (ADAPTIVE_DENSITY_HI - ADAPTIVE_DENSITY_LO)));
+}
+
+/**
+ * Parameters from t. Sparse (t=0) keeps fine detail: finer ridge scale, relaxed anisotropy and speck removal, a small
+ * bounded gain, and the broad scales on. Dense (t=1) suppresses texture: broad scales off, stricter anisotropy and
+ * speck removal, and a higher paper-floor cap so the ink budget can bite. Everything interpolates linearly in t.
+ */
+export function adaptiveParams(density: number): AdaptiveParams {
+  const t = densityToT(density);
+  return {
+    t,
+    ridgeAnisotropy: lerp(1.0, 4.0, t),
+    strongSpeckPixels: Math.round(lerp(0, 8, t)),
+    inkFloorCap: lerp(0.5, 0.8, t),
+    sigma32Weight: lerp(1, 0, t),
+    broadDoGWeight: lerp(1, 0, t),
+    sigma12Weight: lerp(1, 0, t),
+    inkGain: lerp(1.12, 1.0, t),
+  };
+}
+
+/** Density of a photo measured the adaptive way: on a copy with a 512 px long edge (never upscaled), bilinear. */
+export function adaptiveDensity(rawLum: Float32Array, width: number, height: number): number {
+  const long = Math.max(width, height);
+  if (long <= ADAPTIVE_MEASURE_EDGE) return measureEdgeDensity(rawLum, width, height);
+  const s = ADAPTIVE_MEASURE_EDGE / long;
+  const dw = Math.max(2, Math.round(width * s));
+  const dh = Math.max(2, Math.round(height * s));
+  return measureEdgeDensity(resizeLumBilinear(rawLum, width, height, dw, dh), dw, dh);
+}
+
+/** Bilinear resize of a single-channel float image (pixel-centre aligned). Pure and deterministic. */
+export function resizeLumBilinear(src: Float32Array, sw: number, sh: number, dw: number, dh: number): Float32Array {
+  const out = new Float32Array(dw * dh);
+  const fx = sw / dw;
+  const fy = sh / dh;
+  for (let y = 0; y < dh; y++) {
+    const sy = Math.min(sh - 1, Math.max(0, (y + 0.5) * fy - 0.5));
+    const y0 = Math.floor(sy);
+    const y1 = Math.min(sh - 1, y0 + 1);
+    const wy = sy - y0;
+    for (let x = 0; x < dw; x++) {
+      const sx = Math.min(sw - 1, Math.max(0, (x + 0.5) * fx - 0.5));
+      const x0 = Math.floor(sx);
+      const x1 = Math.min(sw - 1, x0 + 1);
+      const wx = sx - x0;
+      const a = src[y0 * sw + x0] * (1 - wx) + src[y0 * sw + x1] * wx;
+      const b = src[y1 * sw + x0] * (1 - wx) + src[y1 * sw + x1] * wx;
+      out[y * dw + x] = a * (1 - wy) + b * wy;
+    }
+  }
+  return out;
+}
+
+/**
+ * Mean gradient magnitude of the sigma 1.2 smoothed luminance, sampled on every second pixel. This is the
+ * engine's original edge-density measurement, exposed so it can be evaluated at any working size.
+ */
+export function measureEdgeDensity(rawLum: Float32Array, width: number, height: number): number {
+  const smooth = gaussianBlurFloat(rawLum, width, height, 1.2);
+  let gradSum = 0;
+  let count = 0;
+  for (let y = 1; y < height - 1; y += 2) {
+    const r = y * width;
+    for (let x = 1; x < width - 1; x += 2) {
+      const dx = smooth[r + x + 1] - smooth[r + x - 1];
+      const dy = smooth[r + width + x] - smooth[r - width + x];
+      gradSum += Math.hypot(dx, dy);
+      count++;
+    }
+  }
+  return count > 0 ? gradSum / count : 0.08;
+}
+
 function analyzeSceneProfile(rawLum: Float32Array, width: number, height: number): SceneProfile {
   const N = rawLum.length;
   const hist = new Uint32Array(256);
@@ -337,9 +640,12 @@ function extractCleanLinesAndVeins(
   // 1. Flow-aligned Difference of Gaussians (XDoG) for crisp structural edges & facial features
   const blurTight = gaussianBlurFloat(detailLum, width, height, 0.9);
   const blurMedium = gaussianBlurFloat(detailLum, width, height, 2.2);
-  const blurBroad = gaussianBlurFloat(normLum, width, height, 4.8);
+  const blurBroad = config.broadDoG === false ? blurMedium : gaussianBlurFloat(normLum, width, height, 4.8);
 
   const gateScale = scene.noiseGateBoost;
+  // Extra multiplier on the anchor ridge/edge gates; non-finite or non-positive values mean 'unchanged'.
+  const aniso = Number.isFinite(config.ridgeAnisotropy) && (config.ridgeAnisotropy as number) >= 0 ? (config.ridgeAnisotropy as number) : 0.35;
+  const agScale = Number.isFinite(config.anchorGateScale) && (config.anchorGateScale as number) > 0 ? (config.anchorGateScale as number) : 1;
 
   for (let i = 0; i < N; i++) {
     // Dark crease / line response (where pixel is darker than its immediate neighborhood)
@@ -348,7 +654,10 @@ function extractCleanLinesAndVeins(
 
     // Deadzone gate eliminates purple fuzz on smooth petals & baby cheeks
     const fineLine = smoothstep(0.012 * gateScale, 0.055 * gateScale, dogFine) * scene.fineScaleWeight;
-    const structuralLine = smoothstep(0.018 * gateScale, 0.085 * gateScale, dogBroad) * scene.portraitFocusBoost;
+    const structuralLine =
+      config.broadDoG === false
+        ? 0
+        : smoothstep(0.018 * gateScale, 0.085 * gateScale, dogBroad) * scene.portraitFocusBoost * (config._broadDoGWeight ?? 1);
 
     detailLines[i] = Math.min(1, fineLine * config.fineDetailGain);
     anchorLines[i] = Math.min(1, structuralLine * config.anchorWeight);
@@ -363,23 +672,35 @@ function extractCleanLinesAndVeins(
       weight: 0.85 * config.fineDetailGain * scene.fineScaleWeight,
       target: 'detail' as const,
     },
+    ...(config.hessianSigma12 === true
+      ? [{
+          sigma: 1.2,
+          lowGate: 0.015 * gateScale * agScale,
+          highGate: 0.065 * gateScale * agScale,
+          weight: 1.0 * config.anchorWeight * scene.portraitFocusBoost,
+          target: 'anchor' as const,
+        }]
+      : []),
     {
       sigma: 1.9,
-      lowGate: 0.014 * gateScale,
-      highGate: 0.062 * gateScale,
-      weight: 1.15 * config.anchorWeight * scene.portraitFocusBoost,
+      lowGate: 0.014 * gateScale * agScale,
+      highGate: 0.062 * gateScale * agScale,
+      weight: 1.15 * (Number.isFinite(config.hessianSigma19Weight) ? Math.max(0, config.hessianSigma19Weight as number) : 1) * config.anchorWeight * scene.portraitFocusBoost,
       target: 'anchor' as const,
     },
     {
       sigma: 3.2,
-      lowGate: 0.012 * gateScale,
-      highGate: 0.055 * gateScale,
+      lowGate: 0.012 * gateScale * agScale,
+      highGate: 0.055 * gateScale * agScale,
       weight: 0.95 * config.anchorWeight * scene.portraitFocusBoost,
       target: 'anchor' as const,
     },
   ];
 
   for (const s of scales) {
+    if (s.sigma === 3.2 && config.hessianSigma32 === false) continue;
+    const scaleWeight = s.sigma === 3.2 ? (config._sigma32Weight ?? 1) : s.sigma === 1.2 ? (config._sigma12Weight ?? 1) : 1;
+    if (scaleWeight <= 0) continue;
     const blurred = gaussianBlurFloat(detailLum, width, height, s.sigma);
     const normFactor = Math.pow(s.sigma, 1.55);
 
@@ -407,9 +728,9 @@ function extractCleanLinesAndVeins(
         const lambda2 = 0.5 * (trace - disc) * normFactor;
 
         // Require tubular/ridge anisotropy (lambda1 >> |lambda2|) so flat isotropic noise is ignored
-        const ridgeNess = lambda1 - 0.35 * Math.abs(lambda2);
+        const ridgeNess = lambda1 - aniso * Math.abs(lambda2);
         if (ridgeNess > s.lowGate) {
-          const gatedVal = smoothstep(s.lowGate, s.highGate, ridgeNess) * s.weight;
+          const gatedVal = smoothstep(s.lowGate, s.highGate, ridgeNess) * s.weight * scaleWeight;
           if (s.target === 'detail') {
             // Weight fine veins by structure tensor coherence so only true directional striations pass
             const cohBoost = 0.45 + 0.55 * coherence[idx];
@@ -422,10 +743,11 @@ function extractCleanLinesAndVeins(
     }
   }
 
+  if (config.debugAnchorSource2) config.debugAnchorSource2(anchorLines.slice());
   // 3. Crisp NMS Step-Edges (for sharp outer boundaries like Hibiscus petal edges & Trident silhouette)
   const smoothGrad = gaussianBlurFloat(gradMag, width, height, 0.85);
-  const gradLow = 0.025 * gateScale;
-  const gradHigh = 0.095 * gateScale;
+  const gradLow = 0.025 * gateScale * agScale;
+  const gradHigh = 0.095 * gateScale * agScale;
 
   for (let y = 1; y < height - 1; y++) {
     const r1 = y * width;
@@ -447,6 +769,8 @@ function extractCleanLinesAndVeins(
       }
     }
   }
+
+  if (config.debugAnchorSource) config.debugAnchorSource(anchorLines.slice());
 
   // 4. Streamline Integration along Edge Tangent Flow (connects lines smoothly like a pulled needle)
   const smoothedAnchor = new Float32Array(N);
@@ -484,7 +808,13 @@ function extractCleanLinesAndVeins(
     }
   }
 
-  return { anchorLines: smoothedAnchor, detailLines: smoothedDetail };
+  // 6. Optional thinning of the anchor layer (default off): one centre pixel per line, then a fixed width.
+  const finalAnchor =
+    config.thin === true
+      ? thinLayer(smoothedAnchor, tx, ty, width, height, config.thinWidth ?? 3)
+      : smoothedAnchor;
+
+  return { anchorLines: finalAnchor, detailLines: smoothedDetail };
 }
 
 /**
@@ -556,6 +886,10 @@ function computeCleanTonalAndCoreShading(
     smoothShading[i] = Math.min(1, rawShade * directionalSheen);
   }
 
+  // Optional: keep the rim of each filled pin and thin its centre (default pinInterior 1 = unchanged).
+  const keep = Number.isFinite(config.pinInterior) ? Math.max(0, Math.min(1, config.pinInterior as number)) : 1;
+  if (keep < 1) thinPinInterior(coreDarkPin, width, height, keep);
+
   return { coreDarkPin, smoothShading };
 }
 
@@ -568,6 +902,58 @@ function computeCleanTonalAndCoreShading(
 const SPECKLE_MIN_PIXELS = 14;
 const SPECKLE_KEEP_EXTENT = 12;
 const SPECKLE_INK_BELOW = 235;
+
+/**
+ * Whitens connected components (8-neighbour) of STRONG ink smaller than `minPixels`, whatever their length.
+ * Strong ink = 255 - min(R,G,B) >= 90. Faint pixels around a component are left alone, so only the tiny
+ * strong core is removed and its faint halo is cleaned up with it when it has no strong neighbour left.
+ */
+export function removeStrongSpecks(out: ImageData, minPixels: number): void {
+  const { width, height, data } = out;
+  const N = width * height;
+  const strong = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    const p = i * 4;
+    if (255 - Math.min(data[p], data[p + 1], data[p + 2]) >= 90) strong[i] = 1;
+  }
+  const seen = new Uint8Array(N);
+  const stack = new Int32Array(N);
+  const members = new Int32Array(N);
+  for (let start = 0; start < N; start++) {
+    if (!strong[start] || seen[start]) continue;
+    let sp = 0;
+    let count = 0;
+    stack[sp++] = start;
+    seen[start] = 1;
+    while (sp > 0) {
+      const idx = stack[--sp];
+      members[count++] = idx;
+      const x = idx % width;
+      const y = (idx / width) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= height) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          if (nx < 0 || nx >= width || (dx === 0 && dy === 0)) continue;
+          const q = ny * width + nx;
+          if (strong[q] && !seen[q]) {
+            seen[q] = 1;
+            stack[sp++] = q;
+          }
+        }
+      }
+    }
+    if (count < minPixels) {
+      for (let k = 0; k < count; k++) {
+        const p = members[k] * 4;
+        data[p] = 255;
+        data[p + 1] = 255;
+        data[p + 2] = 255;
+      }
+    }
+  }
+}
 
 function removeSpeckle(out: ImageData): void {
   const { width, height, data } = out;
@@ -648,6 +1034,27 @@ export function renderHectographStencilV3(
   // 2. Profile image characteristics (Soft Portrait vs Botanical vs Dense Aztec Carving)
   const scene = analyzeSceneProfile(rawLum, width, height);
 
+  // 2b. Scene-adaptive parameters (opt-in). Measured on a 512 px copy so the input size cannot change the class.
+  let activeConfig: HectographV3Config = config;
+  if (config.adaptive === true) {
+    const a = adaptiveParams(adaptiveDensity(rawLum, width, height));
+    activeConfig = {
+      ...config,
+      ridgeAnisotropy: a.ridgeAnisotropy,
+      strongSpeckPixels: a.strongSpeckPixels,
+      inkFloorCap: a.inkFloorCap,
+      _sigma32Weight: a.sigma32Weight,
+      _broadDoGWeight: a.broadDoGWeight,
+      _sigma12Weight: a.sigma12Weight,
+      _inkGain: a.inkGain,
+      // the weights replace the on/off switches, so they must not also be switched off by hand
+      broadDoG: true,
+      hessianSigma32: true,
+      hessianSigma12: a.sigma12Weight > 0,
+    };
+    if (config.debugAdaptive) config.debugAdaptive(a);
+  }
+
   // 3. Noise-Gated Local Contrast & Dynamic Range Stretch
   const { normLum, detailEnhancedLum, localMeanLarge } = normalizeToneAndDetail(
     rawLum,
@@ -670,7 +1077,7 @@ export function renderHectographStencilV3(
     ty,
     width,
     height,
-    config,
+    activeConfig,
     scene
   );
 
@@ -682,7 +1089,7 @@ export function renderHectographStencilV3(
     anchorLines,
     width,
     height,
-    config,
+    activeConfig,
     scene
   );
 
@@ -690,21 +1097,33 @@ export function renderHectographStencilV3(
   const out = new ImageData(width, height);
   const dst = out.data;
 
+  // Pass 1: the raw combined ink of every pixel, before any paper gate.
+  const boostCap = Number.isFinite(activeConfig.boostCap) ? Math.max(0, Math.min(0.5, activeConfig.boostCap as number)) : 0.22;
+  const inkGain = Number.isFinite(activeConfig._inkGain) ? Math.max(1, Math.min(1.12, activeConfig._inkGain as number)) : 1;
+  const rawInk = new Float32Array(N);
+  if (config.debugLayers) config.debugLayers({ anchorLines, detailLines, coreDarkPin, smoothShading, width, height, boostCap, inkGain });
+  const drop = config.debugDropLayer;
+  for (let i = 0; i < N; i++) {
+    const aLine = drop === 'anchor' ? 0 : anchorLines[i];
+    const dLine = drop === 'detail' ? 0 : detailLines[i] * 0.72;
+    const cPin = drop === 'pin' ? 0 : coreDarkPin[i] * 0.88;
+    const sShade = drop === 'shading' ? 0 : smoothShading[i] * 0.52;
+    // Combine structural lines, dark feature pins, fine veins, and soft tonal shading
+    const boostAdd = drop === 'boost' ? 0 : Math.min(boostCap, aLine * 0.25 + cPin * 0.2);
+    rawInk[i] = (Math.max(aLine, cPin, dLine, sShade) + boostAdd) * inkGain;
+  }
+
+  // The ink budget raises the paper gate just enough to keep inked pixels within `inkBudget` of the page.
+  const inkFloor = computeInkFloor(rawInk, activeConfig.inkBudget ?? 0.30, activeConfig.inkFloorCap ?? MAX_INK_FLOOR);
+
+  // Pass 2: gate, rescale, then colour.
   for (let i = 0; i < N; i++) {
     const aLine = anchorLines[i];
-    const dLine = detailLines[i] * 0.72;
     const cPin = coreDarkPin[i] * 0.88;
-    const sShade = smoothShading[i] * 0.52;
 
-    // Combine structural lines, dark feature pins, fine veins, and soft tonal shading
-    let totalInk = Math.max(aLine, cPin, dLine, sShade) + Math.min(0.22, aLine * 0.25 + cPin * 0.2);
-
-    // Final clean paper gate: anything under 0.035 is snapped to 0.0 (100% pure #FFFFFF paper)
-    if (totalInk < 0.035) {
-      totalInk = 0;
-    } else {
-      totalInk = Math.min(1, (totalInk - 0.035) / 0.965);
-    }
+    // Anything under the floor is snapped to 0.0 (100% pure #FFFFFF paper)
+    const raw = rawInk[i];
+    const totalInk = raw < inkFloor ? 0 : Math.min(1, (raw - inkFloor) / (1 - inkFloor));
 
     const p = i * 4;
     if (config.outputMode === 'hectograph-purple') {
@@ -756,6 +1175,7 @@ export function renderHectographStencilV3(
 
   // 8. Clear stray specks. Skipped for the 1-bit mode, where dithered dots are intentionally small.
   if (config.outputMode !== 'thermal-binary') removeSpeckle(out);
+  if (config.outputMode !== 'thermal-binary' && (activeConfig.strongSpeckPixels ?? 0) > 0) removeStrongSpecks(out, activeConfig.strongSpeckPixels as number);
 
   return out;
 }

@@ -92,6 +92,20 @@ export const STENCIL_V3_PRESETS: Record<
   },
 };
 
+/** Thrown (as a rejection) when a render is replaced by a newer one or the component goes away. */
+export class V3SupersededError extends Error {
+  readonly superseded = true;
+  constructor(message = 'Superseded by a newer render') {
+    super(message);
+    this.name = 'V3SupersededError';
+  }
+}
+
+/** True for the rejection of a render that was superseded or cancelled. Callers should ignore it quietly. */
+export function isV3Superseded(err: unknown): boolean {
+  return err instanceof V3SupersededError || (typeof err === 'object' && err !== null && (err as { superseded?: unknown }).superseded === true);
+}
+
 export interface RenderStencilV3Options {
   config?: Partial<HectographV3Config>;
 }
@@ -135,8 +149,20 @@ export function useHectographEngineV3() {
           return;
         }
 
-        // a newer render supersedes any one still running
-        cancelInFlightRef.current?.('Superseded by a newer render');
+        // A newer render supersedes any one still running. Rejecting the old promise is not enough: the worker
+        // is single-threaded, so the old job would keep running and the new one would queue behind it. Kill the
+        // worker so the stale job stops, and start a fresh one for this render.
+        if (cancelInFlightRef.current) {
+          cancelInFlightRef.current('Superseded by a newer render');
+          workerRef.current?.terminate();
+          workerRef.current = null;
+          try {
+            worker = getWorker();
+          } catch (e) {
+            reject(e instanceof Error ? e : new Error('Stencil worker could not start'));
+            return;
+          }
+        }
 
         const jobId = ++latestJobIdRef.current;
         setIsRendering(true);
@@ -153,7 +179,7 @@ export function useHectographEngineV3() {
 
         const cancel = (reason: string) => {
           cleanup();
-          reject(new Error(reason));
+          reject(new V3SupersededError(reason));
         };
         cancelInFlightRef.current = cancel;
 
