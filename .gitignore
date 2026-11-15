@@ -53,3 +53,5 @@ dist-ssr
 .sweepc.mjs
 .sweepb.out
 .pp.out
+.cache/
+.run-*.mjs

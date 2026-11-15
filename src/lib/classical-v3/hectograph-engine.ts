@@ -74,6 +74,8 @@ export interface HectographV3Config {
    * are interpolated by t, then OVERRIDE the corresponding manual options for that render.
    */
   adaptive?: boolean;
+  /** Diagnostics only: leave one source out of the composite so its effect on the REAL output can be measured. */
+  debugDropLayer?: 'anchor' | 'detail' | 'pin' | 'shading' | 'boost';
   /** Diagnostics only: receives the adaptive parameters chosen for this render. */
   debugAdaptive?: (a: AdaptiveParams) => void;
   /** Internal: continuous weights resolved by `adaptive`. Left undefined, each source is simply on or off as before. */
@@ -81,12 +83,18 @@ export interface HectographV3Config {
   _broadDoGWeight?: number;
   _sigma12Weight?: number;
   _inkGain?: number;
+  /**
+   * Strength kept in the INTERIOR of a filled dark-core pin (0..1, default 1 = unchanged). The pin saturates across the whole
+   * interior of any dark region, which makes blobs 5 to 7 px thick. Lower values keep the rim and thin the filled centre,
+   * so dark features read as outlined shapes. Applied only where the pin is surrounded by pin.
+   */
+  pinInterior?: number;
   /** Add a finer sigma 1.2 Hessian anchor scale (default false). */
   hessianSigma12?: boolean;
   /** Diagnostics only: receives the four layers just before compositing. Never set by the app. */
   debugAnchorSource?: (a: Float32Array) => void;
   debugAnchorSource2?: (a: Float32Array) => void;
-  debugLayers?: (l: { anchorLines: Float32Array; detailLines: Float32Array; coreDarkPin: Float32Array; smoothShading: Float32Array; width: number; height: number }) => void;
+  debugLayers?: (l: { anchorLines: Float32Array; detailLines: Float32Array; coreDarkPin: Float32Array; smoothShading: Float32Array; width: number; height: number; boostCap: number; inkGain: number }) => void;
   /** Optional neural line-art probability map [0..1] from ONNX Informative-Drawings worker */
   neuralEdgeMap?: Float32Array;
 }
@@ -106,6 +114,7 @@ export const DEFAULT_HECTOGRAPH_V3_CONFIG: HectographV3Config = {
   thinWidth: 3,
   ridgeAnisotropy: 0.35,
   boostCap: 0.22,
+  pinInterior: 1,
   adaptive: false,
   strongSpeckPixels: 0,
   anchorGateScale: 1,
@@ -287,6 +296,23 @@ interface SceneProfile {
  * Inspects the uploaded image so soft portraits (Baby), botanicals (Hibiscus), and dense carvings (Aztec)
  * each get ideal contrast stretching, noise gating, and line-weight balance automatically.
  */
+/**
+ * Scales down the INTERIOR of saturated regions of `pin` in place. A pixel is interior when the pin, blurred at sigma 2.5,
+ * is still close to full strength (sigma 3.5), i.e. the pin is saturated all around it. Rim pixels and thin pins are untouched.
+ * The factor ramps smoothly from 1 (rim) to `keep` (deep interior), so there is no hard edge. Deterministic.
+ */
+export function thinPinInterior(pin: Float32Array, width: number, height: number, keep: number): void {
+  const N = width * height;
+  const sat = new Float32Array(N);
+  for (let i = 0; i < N; i++) sat[i] = pin[i] >= 0.6 ? 1 : 0;
+  const around = gaussianBlurFloat(sat, width, height, 3.5);
+  for (let i = 0; i < N; i++) {
+    if (pin[i] <= 0) continue;
+    const interior = smoothstep(0.55, 0.97, around[i]) * (sat[i] > 0 ? 1 : 0);
+    pin[i] *= 1 - (1 - keep) * interior;
+  }
+}
+
 /** Density at which the scene counts as fully sparse / fully dense. Derived from the nine shipped photos (in-sample). */
 export const ADAPTIVE_DENSITY_LO = 0.04;
 export const ADAPTIVE_DENSITY_HI = 0.10;
@@ -860,6 +886,10 @@ function computeCleanTonalAndCoreShading(
     smoothShading[i] = Math.min(1, rawShade * directionalSheen);
   }
 
+  // Optional: keep the rim of each filled pin and thin its centre (default pinInterior 1 = unchanged).
+  const keep = Number.isFinite(config.pinInterior) ? Math.max(0, Math.min(1, config.pinInterior as number)) : 1;
+  if (keep < 1) thinPinInterior(coreDarkPin, width, height, keep);
+
   return { coreDarkPin, smoothShading };
 }
 
@@ -1071,14 +1101,16 @@ export function renderHectographStencilV3(
   const boostCap = Number.isFinite(activeConfig.boostCap) ? Math.max(0, Math.min(0.5, activeConfig.boostCap as number)) : 0.22;
   const inkGain = Number.isFinite(activeConfig._inkGain) ? Math.max(1, Math.min(1.12, activeConfig._inkGain as number)) : 1;
   const rawInk = new Float32Array(N);
-  if (config.debugLayers) config.debugLayers({ anchorLines, detailLines, coreDarkPin, smoothShading, width, height });
+  if (config.debugLayers) config.debugLayers({ anchorLines, detailLines, coreDarkPin, smoothShading, width, height, boostCap, inkGain });
+  const drop = config.debugDropLayer;
   for (let i = 0; i < N; i++) {
-    const aLine = anchorLines[i];
-    const dLine = detailLines[i] * 0.72;
-    const cPin = coreDarkPin[i] * 0.88;
-    const sShade = smoothShading[i] * 0.52;
+    const aLine = drop === 'anchor' ? 0 : anchorLines[i];
+    const dLine = drop === 'detail' ? 0 : detailLines[i] * 0.72;
+    const cPin = drop === 'pin' ? 0 : coreDarkPin[i] * 0.88;
+    const sShade = drop === 'shading' ? 0 : smoothShading[i] * 0.52;
     // Combine structural lines, dark feature pins, fine veins, and soft tonal shading
-    rawInk[i] = (Math.max(aLine, cPin, dLine, sShade) + Math.min(boostCap, aLine * 0.25 + cPin * 0.2)) * inkGain;
+    const boostAdd = drop === 'boost' ? 0 : Math.min(boostCap, aLine * 0.25 + cPin * 0.2);
+    rawInk[i] = (Math.max(aLine, cPin, dLine, sShade) + boostAdd) * inkGain;
   }
 
   // The ink budget raises the paper gate just enough to keep inked pixels within `inkBudget` of the page.
