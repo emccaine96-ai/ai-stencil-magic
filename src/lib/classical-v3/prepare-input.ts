@@ -7,7 +7,7 @@
  */
 
 /** default longest-edge cap for V3 rendering */
-export const V3_MAX_EDGE = 1280;
+export const V3_MAX_EDGE = 1024;
 
 /** Pure sizing rule, exported so it can be tested without a DOM. Never upscales, never returns 0. */
 export function fitWithin(srcW: number, srcH: number, maxEdge: number): { width: number; height: number } {
