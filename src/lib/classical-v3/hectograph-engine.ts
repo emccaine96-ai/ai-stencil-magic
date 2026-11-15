@@ -33,6 +33,8 @@ export interface HectographV3Config {
    * image is left exactly as it was.
    */
   inkBudget?: number;
+  /** Highest paper gate the ink budget may use (0.035 to 0.95, default 0.5). Raise it so dense images can meet the budget. */
+  inkFloorCap?: number;
   /** Use the broad (sigma 4.8 minus 2.2) difference of Gaussians as an anchor-line source. Default true. */
   broadDoG?: boolean;
   /** Use the sigma 3.2 Hessian scale as an anchor-line source. Default true. */
@@ -56,6 +58,7 @@ export const DEFAULT_HECTOGRAPH_V3_CONFIG: HectographV3Config = {
   localContrastBoost: 0.70,
   haloProtection: 1.5,
   inkBudget: 0.30,
+  inkFloorCap: 0.5,
   broadDoG: true,
   hessianSigma32: true,
   thin: false,
@@ -138,7 +141,9 @@ const INK_HIST_BINS = 200;
  * raw ink >= floor. Uses a 200-bin histogram over [0,1], so the floor is quantised to 1/200 and is
  * deterministic. A budget >= 1 (or non-finite) disables the budget and returns PAPER_GATE.
  */
-export function computeInkFloor(rawInk: Float32Array, budget: number): number {
+export function computeInkFloor(rawInk: Float32Array, budget: number, cap: number = MAX_INK_FLOOR): number {
+  // A bad cap falls back to the default; the cap is kept between the paper gate and just under 1.
+  const capV = Number.isFinite(cap) ? Math.min(0.95, Math.max(PAPER_GATE, cap)) : MAX_INK_FLOOR;
   const n = rawInk.length;
   if (n === 0 || !Number.isFinite(budget) || budget >= 1) return PAPER_GATE;
   const b = Math.max(0, budget);
@@ -152,7 +157,7 @@ export function computeInkFloor(rawInk: Float32Array, budget: number): number {
   const allowed = b * n;
   let suffix = 0;
   const startBin = Math.ceil(PAPER_GATE * INK_HIST_BINS); // first bin whose lower edge is >= PAPER_GATE
-  const endBin = Math.floor(MAX_INK_FLOOR * INK_HIST_BINS);
+  const endBin = Math.floor(capV * INK_HIST_BINS);
   // accumulate everything above endBin first
   for (let k = INK_HIST_BINS; k > endBin; k--) suffix += hist[k];
   let floorBin = endBin;
@@ -163,7 +168,7 @@ export function computeInkFloor(rawInk: Float32Array, budget: number): number {
   }
   // floorBin is the lowest bin we can start at while staying within budget; if even startBin fits, use PAPER_GATE
   const floor = floorBin <= startBin ? PAPER_GATE : floorBin / INK_HIST_BINS;
-  return Math.min(MAX_INK_FLOOR, Math.max(PAPER_GATE, floor));
+  return Math.min(capV, Math.max(PAPER_GATE, floor));
 }
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -838,7 +843,7 @@ export function renderHectographStencilV3(
   }
 
   // The ink budget raises the paper gate just enough to keep inked pixels within `inkBudget` of the page.
-  const inkFloor = computeInkFloor(rawInk, config.inkBudget ?? 0.30);
+  const inkFloor = computeInkFloor(rawInk, config.inkBudget ?? 0.30, config.inkFloorCap ?? MAX_INK_FLOOR);
 
   // Pass 2: gate, rescale, then colour.
   for (let i = 0; i < N; i++) {

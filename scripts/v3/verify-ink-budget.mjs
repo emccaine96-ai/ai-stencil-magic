@@ -33,6 +33,22 @@ t('deterministic', E.computeInkFloor(ramp2, 0.3) === E.computeInkFloor(ramp2, 0.
 const heavy = arr(10000, (i) => 0.4 + (i / 10000) * 0.1);  // all pixels inked, 0.40..0.50
 const fh = E.computeInkFloor(heavy, 0.30); t('all-inked page: floor rises to cut ink to the budget', fh > 0.4 && share(heavy, fh) <= 0.31, `${fh} share ${share(heavy, fh).toFixed(3)}`);
 
+// --- floor cap parameter
+const dense = arr(10000, (i) => 0.55 + (i / 10000) * 0.4);   // every pixel is above 0.5
+t('cap 0.5: dense page cannot reach the budget (floor pinned at 0.5)', E.computeInkFloor(dense, 0.30, 0.5) === 0.5 && share(dense, 0.5) === 1);
+const f8 = E.computeInkFloor(dense, 0.30, 0.8);
+// dense runs 0.55..0.95 uniformly, so the share at floor f is (0.95 - f) / 0.40 and a 0.30 budget needs f = 0.83.
+t('cap 0.8 binds when the budget needs more (0.83): floor is the cap', f8 === 0.8 && Math.abs(share(dense, f8) - 0.375) < 0.01, `${f8} share ${share(dense, f8).toFixed(3)}`);
+const mid = arr(10000, (i) => 0.55 + (i / 10000) * 0.25);    // 0.55..0.80, a 0.30 budget needs f = 0.725
+const fm = E.computeInkFloor(mid, 0.30, 0.8);
+t('cap 0.8: a page whose answer is under the cap meets the budget', fm > 0.5 && fm < 0.8 && share(mid, fm) <= 0.30 + 1 / 200 * 2, `${fm} share ${share(mid, fm).toFixed(3)}`);
+t('cap 0.5 on that same page is stuck at 0.5 and over budget', E.computeInkFloor(mid, 0.30, 0.5) === 0.5 && share(mid, 0.5) === 1);
+t('default cap is 0.5 (old behaviour unchanged)', E.computeInkFloor(dense, 0.30) === E.computeInkFloor(dense, 0.30, 0.5));
+t('NaN cap falls back to 0.5', E.computeInkFloor(dense, 0.30, NaN) === 0.5);
+t('cap above 0.95 is clamped to 0.95', E.computeInkFloor(arr(1000, () => 0.99), 0, 5) <= 0.95);
+t('cap below the paper gate cannot go under the gate', E.computeInkFloor(dense, 0.30, 0.001) === E.PAPER_GATE);
+t('a higher cap never gives a lower floor', E.computeInkFloor(dense, 0.30, 0.8) >= E.computeInkFloor(dense, 0.30, 0.5));
+
 // --- engine wiring on a synthetic photo (smooth gradient + a dark disc + stripes) ---
 const W = 160, H = 160, img = new ImageData(W, H);
 for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; let v = 40 + (x / W) * 180; if ((x - 80) ** 2 + (y - 80) ** 2 < 900) v = 20; if (x % 16 < 3) v -= 60; v = Math.max(0, Math.min(255, v)); img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; }
