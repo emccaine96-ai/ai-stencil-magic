@@ -27,6 +27,16 @@ export interface HectographV3Config {
   localContrastBoost: number;
   /** White halo buffer around primary anchor lines so shading never muddies edges (0 - 4px, default 1.5) */
   haloProtection: number;
+  /**
+   * Largest share of the page allowed to carry ink (0..1, default 0.30). The paper gate is raised just enough
+   * that no more than this fraction of pixels stay inked. It never lowers the gate below 0.035, so a sparse
+   * image is left exactly as it was.
+   */
+  inkBudget?: number;
+  /** Use the broad (sigma 4.8 minus 2.2) difference of Gaussians as an anchor-line source. Default true. */
+  broadDoG?: boolean;
+  /** Use the sigma 3.2 Hessian scale as an anchor-line source. Default true. */
+  hessianSigma32?: boolean;
   /** Optional neural line-art probability map [0..1] from ONNX Informative-Drawings worker */
   neuralEdgeMap?: Float32Array;
 }
@@ -38,7 +48,49 @@ export const DEFAULT_HECTOGRAPH_V3_CONFIG: HectographV3Config = {
   flowShadingStrength: 0.60,
   localContrastBoost: 0.70,
   haloProtection: 1.5,
+  inkBudget: 0.30,
+  broadDoG: true,
+  hessianSigma32: true,
 };
+
+/** The fixed paper gate: raw ink under this is always blank paper. */
+export const PAPER_GATE = 0.035;
+/** The budget can raise the gate, but never past this. */
+export const MAX_INK_FLOOR = 0.5;
+const INK_HIST_BINS = 200;
+
+/**
+ * Smallest floor >= PAPER_GATE (capped at MAX_INK_FLOOR) such that no more than `budget` of the pixels have
+ * raw ink >= floor. Uses a 200-bin histogram over [0,1], so the floor is quantised to 1/200 and is
+ * deterministic. A budget >= 1 (or non-finite) disables the budget and returns PAPER_GATE.
+ */
+export function computeInkFloor(rawInk: Float32Array, budget: number): number {
+  const n = rawInk.length;
+  if (n === 0 || !Number.isFinite(budget) || budget >= 1) return PAPER_GATE;
+  const b = Math.max(0, budget);
+  const hist = new Uint32Array(INK_HIST_BINS + 1);
+  for (let i = 0; i < n; i++) {
+    const v = rawInk[i];
+    const bin = v <= 0 ? 0 : v >= 1 ? INK_HIST_BINS : Math.floor(v * INK_HIST_BINS);
+    hist[bin]++;
+  }
+  // suffix[k] = number of pixels whose bin is >= k. A floor at the lower edge of bin k keeps exactly suffix[k] pixels.
+  const allowed = b * n;
+  let suffix = 0;
+  const startBin = Math.ceil(PAPER_GATE * INK_HIST_BINS); // first bin whose lower edge is >= PAPER_GATE
+  const endBin = Math.floor(MAX_INK_FLOOR * INK_HIST_BINS);
+  // accumulate everything above endBin first
+  for (let k = INK_HIST_BINS; k > endBin; k--) suffix += hist[k];
+  let floorBin = endBin;
+  for (let k = endBin; k >= startBin; k--) {
+    suffix += hist[k];
+    if (suffix > allowed) break;
+    floorBin = k;
+  }
+  // floorBin is the lowest bin we can start at while staying within budget; if even startBin fits, use PAPER_GATE
+  const floor = floorBin <= startBin ? PAPER_GATE : floorBin / INK_HIST_BINS;
+  return Math.min(MAX_INK_FLOOR, Math.max(PAPER_GATE, floor));
+}
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - edge0) / Math.max(1e-5, edge1 - edge0)));
@@ -337,7 +389,7 @@ function extractCleanLinesAndVeins(
   // 1. Flow-aligned Difference of Gaussians (XDoG) for crisp structural edges & facial features
   const blurTight = gaussianBlurFloat(detailLum, width, height, 0.9);
   const blurMedium = gaussianBlurFloat(detailLum, width, height, 2.2);
-  const blurBroad = gaussianBlurFloat(normLum, width, height, 4.8);
+  const blurBroad = config.broadDoG === false ? blurMedium : gaussianBlurFloat(normLum, width, height, 4.8);
 
   const gateScale = scene.noiseGateBoost;
 
@@ -348,7 +400,10 @@ function extractCleanLinesAndVeins(
 
     // Deadzone gate eliminates purple fuzz on smooth petals & baby cheeks
     const fineLine = smoothstep(0.012 * gateScale, 0.055 * gateScale, dogFine) * scene.fineScaleWeight;
-    const structuralLine = smoothstep(0.018 * gateScale, 0.085 * gateScale, dogBroad) * scene.portraitFocusBoost;
+    const structuralLine =
+      config.broadDoG === false
+        ? 0
+        : smoothstep(0.018 * gateScale, 0.085 * gateScale, dogBroad) * scene.portraitFocusBoost;
 
     detailLines[i] = Math.min(1, fineLine * config.fineDetailGain);
     anchorLines[i] = Math.min(1, structuralLine * config.anchorWeight);
@@ -380,6 +435,7 @@ function extractCleanLinesAndVeins(
   ];
 
   for (const s of scales) {
+    if (s.sigma === 3.2 && config.hessianSigma32 === false) continue;
     const blurred = gaussianBlurFloat(detailLum, width, height, s.sigma);
     const normFactor = Math.pow(s.sigma, 1.55);
 
@@ -690,21 +746,28 @@ export function renderHectographStencilV3(
   const out = new ImageData(width, height);
   const dst = out.data;
 
+  // Pass 1: the raw combined ink of every pixel, before any paper gate.
+  const rawInk = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     const aLine = anchorLines[i];
     const dLine = detailLines[i] * 0.72;
     const cPin = coreDarkPin[i] * 0.88;
     const sShade = smoothShading[i] * 0.52;
-
     // Combine structural lines, dark feature pins, fine veins, and soft tonal shading
-    let totalInk = Math.max(aLine, cPin, dLine, sShade) + Math.min(0.22, aLine * 0.25 + cPin * 0.2);
+    rawInk[i] = Math.max(aLine, cPin, dLine, sShade) + Math.min(0.22, aLine * 0.25 + cPin * 0.2);
+  }
 
-    // Final clean paper gate: anything under 0.035 is snapped to 0.0 (100% pure #FFFFFF paper)
-    if (totalInk < 0.035) {
-      totalInk = 0;
-    } else {
-      totalInk = Math.min(1, (totalInk - 0.035) / 0.965);
-    }
+  // The ink budget raises the paper gate just enough to keep inked pixels within `inkBudget` of the page.
+  const inkFloor = computeInkFloor(rawInk, config.inkBudget ?? 0.30);
+
+  // Pass 2: gate, rescale, then colour.
+  for (let i = 0; i < N; i++) {
+    const aLine = anchorLines[i];
+    const cPin = coreDarkPin[i] * 0.88;
+
+    // Anything under the floor is snapped to 0.0 (100% pure #FFFFFF paper)
+    const raw = rawInk[i];
+    const totalInk = raw < inkFloor ? 0 : Math.min(1, (raw - inkFloor) / (1 - inkFloor));
 
     const p = i * 4;
     if (config.outputMode === 'hectograph-purple') {
