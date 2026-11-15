@@ -37,6 +37,13 @@ export interface HectographV3Config {
   broadDoG?: boolean;
   /** Use the sigma 3.2 Hessian scale as an anchor-line source. Default true. */
   hessianSigma32?: boolean;
+  /**
+   * Thin the anchor-line layer before compositing: keep only the local maximum across each line (non-maximum
+   * suppression along the edge-flow normal), then widen to `thinWidth`. Default false, so output is unchanged.
+   */
+  thin?: boolean;
+  /** Target stroke width in px after thinning (1 to 5, default 3). Only used when `thin` is true. */
+  thinWidth?: number;
   /** Optional neural line-art probability map [0..1] from ONNX Informative-Drawings worker */
   neuralEdgeMap?: Float32Array;
 }
@@ -51,7 +58,74 @@ export const DEFAULT_HECTOGRAPH_V3_CONFIG: HectographV3Config = {
   inkBudget: 0.30,
   broadDoG: true,
   hessianSigma32: true,
+  thin: false,
+  thinWidth: 3,
 };
+
+/**
+ * Deterministic line thinning. Keeps a pixel only if it is a local maximum of `layer` across the line normal
+ * (the perpendicular to the tangent field tx,ty), within +-1 px, then widens the surviving centreline to about
+ * `width` px with a max filter of that footprint (so the value on a line stays the line's own strength).
+ * Ties are broken one-sided (>= on the negative side, > on the positive side), so a flat-topped stroke keeps
+ * exactly one centre pixel instead of vanishing. No randomness, no time dependence.
+ */
+export function thinLayer(
+  layer: Float32Array,
+  tx: Float32Array,
+  ty: Float32Array,
+  width: number,
+  height: number,
+  targetWidth: number
+): Float32Array {
+  const N = width * height;
+  const spine = new Float32Array(N);
+  const floor = 1e-4;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      const v = layer[i];
+      if (v <= floor) continue;
+      // normal = (ty, -tx); snap each +-1 px neighbour to the pixel grid
+      const nx = ty[i];
+      const ny = -tx[i];
+      const xa = Math.min(width - 1, Math.max(0, Math.round(x + nx)));
+      const ya = Math.min(height - 1, Math.max(0, Math.round(y + ny)));
+      const xb = Math.min(width - 1, Math.max(0, Math.round(x - nx)));
+      const yb = Math.min(height - 1, Math.max(0, Math.round(y - ny)));
+      if (v >= layer[ya * width + xa] && v > layer[yb * width + xb]) spine[i] = v;
+    }
+  }
+  // A non-finite width (NaN, Infinity) falls back to the default of 3 rather than silently erasing every line.
+  const w = Number.isFinite(targetWidth) ? Math.max(1, Math.min(5, Math.round(targetWidth))) : 3;
+  if (w <= 1) return spine;
+  // Widen to ~w px: a (w x w) max filter would be ~w px across a straight line but makes diagonals w*sqrt(2).
+  // A separable max over r = floor(w/2) in x and y, with a one-pixel trim for even widths, keeps it close to w.
+  const r = Math.floor(w / 2);
+  const tmp = new Float32Array(N);
+  const out = new Float32Array(N);
+  const lo = r;
+  const hi = w % 2 === 0 ? r - 1 : r; // even width: asymmetric window of w px
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    for (let x = 0; x < width; x++) {
+      let m = 0;
+      const a = Math.max(0, x - lo);
+      const b = Math.min(width - 1, x + hi);
+      for (let k = a; k <= b; k++) if (spine[row + k] > m) m = spine[row + k];
+      tmp[row + x] = m;
+    }
+  }
+  for (let x = 0; x < width; x++) {
+    for (let y = 0; y < height; y++) {
+      let m = 0;
+      const a = Math.max(0, y - lo);
+      const b = Math.min(height - 1, y + hi);
+      for (let k = a; k <= b; k++) if (tmp[k * width + x] > m) m = tmp[k * width + x];
+      out[y * width + x] = m;
+    }
+  }
+  return out;
+}
 
 /** The fixed paper gate: raw ink under this is always blank paper. */
 export const PAPER_GATE = 0.035;
@@ -540,7 +614,13 @@ function extractCleanLinesAndVeins(
     }
   }
 
-  return { anchorLines: smoothedAnchor, detailLines: smoothedDetail };
+  // 6. Optional thinning of the anchor layer (default off): one centre pixel per line, then a fixed width.
+  const finalAnchor =
+    config.thin === true
+      ? thinLayer(smoothedAnchor, tx, ty, width, height, config.thinWidth ?? 3)
+      : smoothedAnchor;
+
+  return { anchorLines: finalAnchor, detailLines: smoothedDetail };
 }
 
 /**
