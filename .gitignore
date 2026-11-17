@@ -30,3 +30,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# local test runner bundles
+.test-shim/out-*.mjs
+node_modules
