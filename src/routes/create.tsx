@@ -38,6 +38,7 @@ import {
 } from "@/lib/touch-up/session";
 import { writeHandoff } from "@/lib/touch-up/handoff";
 import { supabase } from "@/integrations/supabase/client";
+import { saveBlob, canvasToBlob } from "@/lib/save-file";
 
 /** JSON headers plus the signed-in user's access token, when there is one. */
 async function apiHeaders(): Promise<Record<string, string>> {
@@ -693,12 +694,7 @@ function CreatePage() {
       const { vectorizeLineLayer } = await import("@/lib/classical-engine/vectorize");
       const svg = await vectorizeLineLayer(canvas);
       const blob = new Blob([svg], { type: "image/svg+xml" });
-      const u = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = u;
-      a.download = "stencil-vector.svg";
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(u), 1000);
+      saveBlob(blob, "stencil-vector.svg");
       toast.success("SVG exported");
     } catch (e) {
       // FIXED 2026-09-05: imagetracerjs IS installed (confirmed via direct
@@ -735,13 +731,8 @@ function CreatePage() {
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const blob: Blob = await new Promise((res) => canvas.toBlob((b) => res(b!), "image/png"));
-      const u = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = u;
-      a.download = `stencil-${size}px.png`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(u), 1000);
+      const blob = await canvasToBlob(canvas, "image/png");
+      saveBlob(blob, `stencil-${size}px.png`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Export failed");
     } finally {
