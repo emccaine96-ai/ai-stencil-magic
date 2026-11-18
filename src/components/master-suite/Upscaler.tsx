@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Download, Zap } from "lucide-react";
+import { saveBlob, dataUrlToBlob } from "@/lib/save-file";
 
 type Props = {
   photo: string | null;
@@ -83,10 +84,11 @@ export function Upscaler({ photo, onReplace }: Props) {
 
   function download() {
     if (!resultUrl) return;
-    const a = document.createElement("a");
-    a.href = resultUrl;
-    a.download = `upscaled-${resultSize?.w ?? "img"}px.png`;
-    a.click();
+    try {
+      saveBlob(dataUrlToBlob(resultUrl), `upscaled-${resultSize?.w ?? "img"}px.png`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Download failed");
+    }
   }
 
   return (

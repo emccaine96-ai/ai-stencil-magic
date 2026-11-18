@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { saveBlob, canvasToBlob, REVOKE_DELAY_MS, type SaveEnv } from "./save-file";
+import { saveBlob, canvasToBlob, dataUrlToBlob, extensionForBlob, REVOKE_DELAY_MS, type SaveEnv } from "./save-file";
 
 function fakeEnv() {
   const log: string[] = [];
@@ -74,4 +74,41 @@ test("canvasToBlob turns a thrown toBlob into a rejection", async () => {
   const canvas = { toBlob: () => { throw new Error("SecurityError: tainted canvas"); } } as unknown as HTMLCanvasElement;
   let msg = ""; try { await canvasToBlob(canvas); } catch (e) { msg = (e as Error).message; }
   expect(msg).toContain("tainted");
+});
+
+test("dataUrlToBlob round-trips a 5 MB base64 PNG byte for byte", async () => {
+  const src = new Uint8Array(5 * 1024 * 1024);
+  src.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  for (let i = 8; i < src.length; i++) src[i] = (i * 31) & 255;
+  const url = "data:image/png;base64," + Buffer.from(src).toString("base64");
+  const b = dataUrlToBlob(url);
+  expect(b.type).toBe("image/png");
+  const out = new Uint8Array(await b.arrayBuffer());
+  expect(out.length).toBe(src.length);
+  expect(Array.from(out.slice(0, 8))).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  expect(Buffer.compare(Buffer.from(out), Buffer.from(src))).toBe(0);
+});
+
+test("dataUrlToBlob decodes a non-base64 text URL", async () => {
+  expect(await dataUrlToBlob("data:text/plain,hello%20world").text()).toBe("hello world");
+});
+
+test("dataUrlToBlob defaults the type when the mime is empty", () => {
+  expect(dataUrlToBlob("data:;base64,QUJD").type).toBe("application/octet-stream");
+});
+
+test("dataUrlToBlob throws on malformed input", () => {
+  for (const bad of ["", "nodata", "http://x/y", "data:image/png;base64", "data:image/png;base64,", "data:image/png;base64,@@@"]) {
+    let threw = false;
+    try { dataUrlToBlob(bad); } catch { threw = true; }
+    expect(threw).toBe(true);
+  }
+});
+
+test("extensionForBlob matches the real type", () => {
+  expect(extensionForBlob(new Blob([], { type: "image/jpeg" }))).toBe("jpg");
+  expect(extensionForBlob(new Blob([], { type: "image/webp" }))).toBe("webp");
+  expect(extensionForBlob(new Blob([], { type: "image/svg+xml" }))).toBe("svg");
+  expect(extensionForBlob(new Blob([], { type: "image/png" }))).toBe("png");
+  expect(extensionForBlob(new Blob([], { type: "application/zip" }))).toBe("png");
 });

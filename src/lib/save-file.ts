@@ -52,3 +52,37 @@ export function canvasToBlob(canvas: HTMLCanvasElement, type = "image/png"): Pro
     }
   });
 }
+
+/** Decode a data: URL ('data:<mime>;base64,<payload>' or the percent-encoded form) into a Blob. Throws a clear error on malformed input or an empty result. Used so large files are downloaded from a Blob instead of a data: URL link. */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const bad = () => new Error("That file could not be read for download.");
+  if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) throw bad();
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) throw bad();
+  const parts = dataUrl.slice(5, comma).split(";");
+  const mime = parts[0] || "application/octet-stream";
+  const isBase64 = parts.slice(1).some((p) => p.trim().toLowerCase() === "base64");
+  const payload = dataUrl.slice(comma + 1);
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    if (isBase64) {
+      const bin = atob(payload);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    } else {
+      bytes = new Uint8Array(new TextEncoder().encode(decodeURIComponent(payload)));
+    }
+  } catch {
+    throw bad();
+  }
+  if (bytes.length === 0) throw new Error("Nothing to save: the file came out empty.");
+  return new Blob([bytes], { type: mime });
+}
+
+/** File extension that matches a blob's real type, so a JPEG thumbnail is not saved as .png. */
+export function extensionForBlob(blob: Blob): string {
+  if (blob.type === "image/jpeg") return "jpg";
+  if (blob.type === "image/webp") return "webp";
+  if (blob.type === "image/svg+xml") return "svg";
+  return "png";
+}

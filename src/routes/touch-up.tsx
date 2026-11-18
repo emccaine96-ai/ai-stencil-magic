@@ -29,6 +29,7 @@ import {
   Plus,
 } from "lucide-react";
 import { toast } from "sonner";
+import { saveBlob, canvasToBlob } from "@/lib/save-file";
 import { TouchUpCanvasEngine, type StrokeConfig } from "@/lib/touch-up/canvas-engine";
 import { INK_COLORS, tintInkMask, sampleInkHex } from "@/lib/touch-up/ink-lab";
 import {
@@ -582,12 +583,13 @@ function TouchUpPage() {
     return out;
   }
 
-  function downloadPNG() {
-    const out = exportCanvas(mirror);
-    const a = document.createElement("a");
-    a.href = out.toDataURL("image/png");
-    a.download = "touched-up-stencil.png";
-    a.click();
+  async function downloadPNG() {
+    try {
+      const blob = await canvasToBlob(exportCanvas(mirror), "image/png");
+      saveBlob(blob, "touched-up-stencil.png");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not download the PNG.");
+    }
   }
 
   function handlePrint() {

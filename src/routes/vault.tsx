@@ -19,6 +19,7 @@ import {
   Pencil,
 } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
+import { saveBlob, dataUrlToBlob, extensionForBlob } from "@/lib/save-file";
 import {
   listDocuments,
   listFolders,
@@ -141,10 +142,12 @@ function VaultPage() {
   }
 
   function download(d: DocumentData) {
-    const a = document.createElement("a");
-    a.href = bestExportUrl(d);
-    a.download = `${d.name.replace(/\s+/g, "-")}.png`;
-    a.click();
+    try {
+      const blob = dataUrlToBlob(bestExportUrl(d));
+      saveBlob(blob, `${d.name.replace(/\s+/g, "-")}.${extensionForBlob(blob)}`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not download that stencil.");
+    }
   }
 
   function openInStudio(d: DocumentData) {
@@ -157,13 +160,13 @@ function VaultPage() {
   }
 
   async function onExport() {
-    const bundle = await exportBackup();
-    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `stencilmagic-library-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    try {
+      const bundle = await exportBackup();
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+      saveBlob(blob, `stencilmagic-library-${new Date().toISOString().slice(0, 10)}.json`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not export the library.");
+    }
   }
 
   async function onImport(e: React.ChangeEvent<HTMLInputElement>) {
