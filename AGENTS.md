@@ -63,6 +63,8 @@ These rules apply regardless of which model is doing the work.
     correct, say so and stop — do not make an unnecessary change just to have
     produced output.**
 
+- Server-key AI generation goes only through `generateStencil` with credits; all pricing/limits/models live in `src/lib/ai-server/ai-config.ts`.
+
 ## A note on free/low-cost models specifically
 
 If you are a smaller or free-tier model (e.g., a compact coding-agent model) being
