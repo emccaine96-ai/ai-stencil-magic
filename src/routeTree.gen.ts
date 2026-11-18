@@ -12,10 +12,12 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as CreateRouteImport } from './routes/create'
+import { Route as CreditsRouteImport } from './routes/credits'
 import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as PluginsRouteImport } from './routes/plugins'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RetouchRouteImport } from './routes/retouch'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -46,6 +48,11 @@ const CreateRoute = CreateRouteImport.update({
   path: '/create',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CreditsRoute = CreditsRouteImport.update({
+  id: '/credits',
+  path: '/credits',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GalleryRoute = GalleryRouteImport.update({
   id: '/gallery',
   path: '/gallery',
@@ -64,6 +71,11 @@ const McpRoute = McpRouteImport.update({
 const PluginsRoute = PluginsRouteImport.update({
   id: '/plugins',
   path: '/plugins',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -144,10 +156,12 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
+  '/credits': typeof CreditsRoute
   '/gallery': typeof GalleryRouteWithChildren
   '/help': typeof HelpRoute
   '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
+  '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/retouch': typeof RetouchRoute
   '/settings': typeof SettingsRoute
@@ -167,10 +181,12 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
+  '/credits': typeof CreditsRoute
   '/gallery': typeof GalleryRouteWithChildren
   '/help': typeof HelpRoute
   '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
+  '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/retouch': typeof RetouchRoute
   '/settings': typeof SettingsRoute
@@ -191,10 +207,12 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/create': typeof CreateRoute
+  '/credits': typeof CreditsRoute
   '/gallery': typeof GalleryRouteWithChildren
   '/help': typeof HelpRoute
   '/mcp': typeof McpRoute
   '/plugins': typeof PluginsRoute
+  '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/retouch': typeof RetouchRoute
   '/settings': typeof SettingsRoute
@@ -216,10 +234,12 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/create'
+    | '/credits'
     | '/gallery'
     | '/help'
     | '/mcp'
     | '/plugins'
+    | '/privacy'
     | '/reset-password'
     | '/retouch'
     | '/settings'
@@ -239,10 +259,12 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/create'
+    | '/credits'
     | '/gallery'
     | '/help'
     | '/mcp'
     | '/plugins'
+    | '/privacy'
     | '/reset-password'
     | '/retouch'
     | '/settings'
@@ -262,10 +284,12 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/create'
+    | '/credits'
     | '/gallery'
     | '/help'
     | '/mcp'
     | '/plugins'
+    | '/privacy'
     | '/reset-password'
     | '/retouch'
     | '/settings'
@@ -286,10 +310,12 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
   CreateRoute: typeof CreateRoute
+  CreditsRoute: typeof CreditsRoute
   GalleryRoute: typeof GalleryRouteWithChildren
   HelpRoute: typeof HelpRoute
   McpRoute: typeof McpRoute
   PluginsRoute: typeof PluginsRoute
+  PrivacyRoute: typeof PrivacyRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   RetouchRoute: typeof RetouchRoute
   SettingsRoute: typeof SettingsRoute
@@ -328,6 +354,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CreateRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/credits': {
+      id: '/credits'
+      path: '/credits'
+      fullPath: '/credits'
+      preLoaderRoute: typeof CreditsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/gallery': {
       id: '/gallery'
       path: '/gallery'
@@ -354,6 +387,13 @@ declare module '@tanstack/react-router' {
       path: '/plugins'
       fullPath: '/plugins'
       preLoaderRoute: typeof PluginsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reset-password': {
@@ -472,10 +512,12 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   CreateRoute: CreateRoute,
+  CreditsRoute: CreditsRoute,
   GalleryRoute: GalleryRouteWithChildren,
   HelpRoute: HelpRoute,
   McpRoute: McpRoute,
   PluginsRoute: PluginsRoute,
+  PrivacyRoute: PrivacyRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   RetouchRoute: RetouchRoute,
   SettingsRoute: SettingsRoute,
