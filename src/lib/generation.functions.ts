@@ -4,7 +4,7 @@ import { GenerateStencilInput } from "@/lib/server/generation-schema";
 
 /**
  * Server-key AI generation, paid for with credits. The ONLY entry point for generating with the server's OpenRouter key.
- * All pricing, limits and the model live in src/lib/server/ai-config.ts. All decisions live in the tested generate-core.ts;
+ * All pricing, limits and the model live in src/lib/ai-server/ai-config.ts. All decisions live in the tested generate-core.ts;
  * this file only wires real dependencies (database, OpenRouter) into it.
  *
  * Secrets are read here, inside the handler, and nowhere else: OPENROUTER_API_KEY, DAILY_BUDGET_CREDITS (optional).
@@ -18,7 +18,7 @@ export const generateStencil = createServerFn({ method: "POST" })
     const [{ supabaseAdmin }, core, cfgMod, promptsMod, orMod] = await Promise.all([
       import("@/integrations/supabase/client.server"),
       import("@/lib/server/generate-core"),
-      import("@/lib/server/ai-config"),
+      import("@/lib/ai-server/ai-config"),
       import("@/lib/server/prompts"),
       import("@/lib/server/openrouter-call"),
     ]);

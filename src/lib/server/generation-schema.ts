@@ -4,7 +4,7 @@
  * Limits come from ai-config.ts, which copies the existing /api/generate-stencil limits.
  */
 import { z } from "zod";
-import { ALLOWED_MIME, MAX_CUSTOM_NOTE_CHARS, MAX_IMAGES, MAX_IMAGE_B64_CHARS, STYLES } from "./ai-config";
+import { ALLOWED_MIME, MAX_CUSTOM_NOTE_CHARS, MAX_IMAGES, MAX_IMAGE_B64_CHARS, STYLES } from "../ai-server/ai-config";
 
 /** Base64 payload only (no "data:" prefix). Allows standard base64 with optional padding; rejects anything else. */
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;

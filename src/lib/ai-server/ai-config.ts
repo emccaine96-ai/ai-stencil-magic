@@ -1,4 +1,4 @@
-// src/lib/server/ai-config.ts
+// src/lib/ai-server/ai-config.ts
 /**
  * The ONE place for server-key AI generation settings: provider, model, price, grants, limits, timeouts and image limits.
  * Change a number here and nowhere else. Server modules (generate-core, generation.functions) import it directly.

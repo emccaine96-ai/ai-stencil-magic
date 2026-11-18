@@ -3,7 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 /**
  * Credits, consent and first-sign-in setup for server-key AI generation.
- * Amounts, reasons and idempotency keys all come from src/lib/server/ai-config.ts and the verified token, never from the client.
+ * Amounts, reasons and idempotency keys all come from src/lib/ai-server/ai-config.ts and the verified token, never from the client.
  */
 
 export type LedgerRow = { id: string; created_at: string; delta: number; reason: string };
@@ -34,7 +34,7 @@ export const recordAiConsent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { userId, supabase } = context;
-    const { CONSENT_VERSION } = await import("@/lib/server/ai-config");
+    const { CONSENT_VERSION } = await import("@/lib/ai-server/ai-config");
     // ai_consent_version is added by migration 20261117190000; the generated types do not list it until then.
     const patch = { ai_consent_at: new Date().toISOString(), ai_consent_version: CONSENT_VERSION } as unknown as { ai_consent_at: string };
     const { data, error } = await supabase.from("profiles").update(patch).eq("id", userId).select("id");
@@ -61,7 +61,7 @@ export const ensureProfile = createServerFn({ method: "POST" })
     const { userId } = context;
     const [{ supabaseAdmin }, { SIGNUP_GRANT }] = await Promise.all([
       import("@/integrations/supabase/client.server"),
-      import("@/lib/server/ai-config"),
+      import("@/lib/ai-server/ai-config"),
     ]);
     const ins = await supabaseAdmin.from("profiles").upsert({ id: userId }, { onConflict: "id", ignoreDuplicates: true });
     if (ins.error) {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { GenerateStencilInput } from "./generation-schema";
-import { MAX_IMAGE_B64_CHARS } from "./ai-config";
+import { MAX_IMAGE_B64_CHARS } from "../ai-server/ai-config";
 
 const UUID = "3f2b8c1e-5a47-4d0e-9b61-2c7a1f0e8d11";
 const img = (over: Record<string, unknown> = {}) => ({ mimeType: "image/jpeg", data: "QUJDREVGR0g=", ...over });
