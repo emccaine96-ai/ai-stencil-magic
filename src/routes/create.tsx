@@ -12,6 +12,7 @@ import {
   Archive,
   Zap,
   Paintbrush,
+  Coins,
 } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
 import { saveStencil } from "@/lib/vault";
@@ -39,6 +40,7 @@ import {
 import { writeHandoff } from "@/lib/touch-up/handoff";
 import { supabase } from "@/integrations/supabase/client";
 import { saveBlob, canvasToBlob } from "@/lib/save-file";
+import { useCloudGenerate } from "@/hooks/use-cloud-generate";
 
 /** JSON headers plus the signed-in user's access token, when there is one. */
 async function apiHeaders(): Promise<Record<string, string>> {
@@ -214,6 +216,7 @@ function CreatePage() {
   const [pos, setPos] = useState(50);
   const fileRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const { cloudGenerate, dialog: cloudConsentDialog } = useCloudGenerate();
   const lastGenRef = useRef<TouchUpGenConfig | null>(null);
 
   // API keys
@@ -474,11 +477,8 @@ function CreatePage() {
       setKeyOpen(true);
       return;
     }
-    if (provider === "openrouter" && !orKey) {
-      // Still allow generate — server may have OPENROUTER_API_KEY env fallback
-      // but surface the modal so user can supply their own key.
-      setKeyOpen(true);
-    }
+    // With no OpenRouter key of their own, the user generates with server credits (see cloudGenerate below),
+    // so the key modal is no longer forced open here. Their own key, when set, still takes the original path.
     setLoading(true);
     setError(null);
     setStencil(null);
@@ -615,7 +615,17 @@ function CreatePage() {
       }
       const { mimeType, data: imgB64 } = dataUrlToInline(photo);
       const prompt = buildPrompt({ style, intensity, customPrompt });
-      if (provider === "openrouter") {
+      if (provider === "openrouter" && !orKey) {
+        // No key of their own: generate on the server with credits. null means nothing was produced and the user was told why.
+        const cloudUrl = await cloudGenerate({ photo, style, intensity, customPrompt });
+        if (!cloudUrl) {
+          setLoading(false);
+          return;
+        }
+        const purpleResult = await normalizeToPurpleInk(cloudUrl);
+        setStencil(purpleResult);
+        scoreStencil(purpleResult).then(setTattooability).catch(() => setTattooability(null));
+      } else if (provider === "openrouter") {
         const r = await fetch("/api/generate-stencil", {
           method: "POST",
           headers: await apiHeaders(),
@@ -759,6 +769,7 @@ function CreatePage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {cloudConsentDialog}
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
         <div className="mx-auto max-w-3xl px-4 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2 text-sm">
@@ -784,6 +795,14 @@ function CreatePage() {
             >
               <Paintbrush size={14} />
               <span className="hidden sm:inline">Touch-Up</span>
+            </Link>
+            <Link
+              to="/credits"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              aria-label="Credits"
+            >
+              <Coins size={14} />
+              <span className="hidden sm:inline">Credits</span>
             </Link>
             <MasterSuite
               photo={photo}
