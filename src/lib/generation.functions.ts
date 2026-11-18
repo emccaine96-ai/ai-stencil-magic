@@ -29,6 +29,7 @@ export const generateStencil = createServerFn({ method: "POST" })
       return { ok: false as const, code: "provider_error" as const };
     }
     const dailyBudget = cfgMod.resolveDailyBudget(process.env.DAILY_BUDGET_CREDITS);
+    const ownerIds = cfgMod.parseOwnerIds(process.env.OWNER_USER_IDS);
 
     // Built with the server copy of the prompts (byte-identical to create.tsx; see prompts.test.ts).
     const prompt = promptsMod.buildPrompt({ style: data.style, intensity: data.intensity, customPrompt: data.customNote });
@@ -93,6 +94,7 @@ export const generateStencil = createServerFn({ method: "POST" })
         perDayLimit: cfgMod.PER_DAY_LIMIT,
         dailyBudget,
         timeoutMs: cfgMod.UPSTREAM_TIMEOUT_MS,
+        ownerIds,
       },
       deps,
     );

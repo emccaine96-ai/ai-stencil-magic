@@ -309,3 +309,58 @@ test("money conservation: after any mix of outcomes, balance + credits held by d
   expect(w.balance + spent).toBe(10);
   expect(w.rows.filter((r) => r.status === "reserved")).toHaveLength(0);
 });
+
+// ---- owner accounts: never served from the server key ----
+import { parseOwnerIds, isOwner } from "../ai-server/ai-config";
+
+const OWNER = "3f2b8c1e-5a47-4d0e-9b61-2c7a1f0e8d11";
+
+test("owner: refused before consent, limits, reserve or provider (nothing is touched or counted)", async () => {
+  const { w, deps } = makeWorld({ consent: false, balance: 0 });
+  w.seedRows(OWNER, 100, new Date("2026-11-17T01:00:00Z"));
+  const r = await generate(input("o-1", OWNER), { ...CFG, ownerIds: new Set([OWNER]) }, deps);
+  expect(r).toEqual({ ok: false, code: "owner_use_own_key" });
+  expect(w.calls.reserve).toBe(0);
+  expect(w.calls.provider).toBe(0);
+  expect(w.calls.refund).toBe(0);
+  expect(w.balance).toBe(0);
+});
+
+test("owner match ignores letter case of the user id", async () => {
+  const { w, deps } = makeWorld();
+  const r = await generate(input("o-2", OWNER.toUpperCase()), { ...CFG, ownerIds: new Set([OWNER]) }, deps);
+  expect(r).toEqual({ ok: false, code: "owner_use_own_key" });
+  expect(w.calls.provider).toBe(0);
+});
+
+test("a normal user is unaffected when an owner list is set", async () => {
+  const { w, deps } = makeWorld({ balance: 3 });
+  const r = await generate(input("n-1", "someone-else"), { ...CFG, ownerIds: new Set([OWNER]) }, deps);
+  expect(r.ok).toBe(true);
+  expect(w.calls.provider).toBe(1);
+});
+
+test("an empty or missing owner list exempts nobody", async () => {
+  for (const ownerIds of [undefined, new Set<string>()]) {
+    const { deps } = makeWorld({ balance: 3 });
+    expect((await generate(input("e-1", OWNER), { ...CFG, ownerIds }, deps)).ok).toBe(true);
+  }
+});
+
+test("parseOwnerIds accepts uuids separated by commas, spaces or semicolons and lowercases them", () => {
+  const set = parseOwnerIds(` ${OWNER.toUpperCase()} , 11111111-2222-4333-8444-555555555555;aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee `);
+  expect(set.size).toBe(3);
+  expect(set.has(OWNER)).toBe(true);
+});
+
+test("parseOwnerIds drops anything that is not a uuid, so a typo or a wildcard exempts nobody", () => {
+  for (const raw of [undefined, "", "   ", "*", "all", "true", "1", "user@example.com", "not-a-uuid"]) {
+    expect(parseOwnerIds(raw).size).toBe(0);
+  }
+});
+
+test("isOwner is case-insensitive and false for non-members", () => {
+  const set = parseOwnerIds(OWNER);
+  expect(isOwner(OWNER.toUpperCase(), set)).toBe(true);
+  expect(isOwner("11111111-2222-4333-8444-555555555555", set)).toBe(false);
+});

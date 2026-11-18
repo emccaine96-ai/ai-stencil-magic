@@ -21,7 +21,8 @@ export type GenerateCode =
   | "duplicate_request"
   | "provider_error"
   | "timeout"
-  | "invalid_model";
+  | "invalid_model"
+  | "owner_use_own_key";
 
 export type GenerateResult =
   | { ok: true; image: string; balance: number }
@@ -74,6 +75,8 @@ export interface GenerateConfig {
   perDayLimit: number;
   dailyBudget: number;
   timeoutMs: number;
+  /** User ids that must never be served from the server key. Optional so existing callers and tests are unaffected. */
+  ownerIds?: ReadonlySet<string>;
 }
 
 export interface GenerateInput {
@@ -93,6 +96,9 @@ const truncate = (v: unknown, n = 300) => String((v as { message?: string })?.me
 export async function generate(input: GenerateInput, cfg: GenerateConfig, deps: GenerateDeps): Promise<GenerateResult> {
   const { userId, requestId } = input;
   const model = input.model ?? cfg.model;
+
+  // 0. owner accounts never use the server key (checked first: nothing is counted, reserved or called for them)
+  if (cfg.ownerIds?.has(userId.toLowerCase())) return { ok: false, code: "owner_use_own_key" };
 
   // 1. consent
   if (!(await deps.hasConsent(userId))) return { ok: false, code: "consent_required" };

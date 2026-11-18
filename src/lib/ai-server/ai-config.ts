@@ -39,3 +39,22 @@ export function resolveDailyBudget(raw: string | undefined): number {
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_DAILY_BUDGET;
 }
+
+/**
+ * Owner accounts. Read from the OWNER_USER_IDS environment variable (comma separated Supabase user ids) so no id is stored in
+ * the code. An owner is NEVER served from the server key: cloud generation is refused with `owner_use_own_key`, so a bug or a
+ * lost local key can never spend the server's OpenRouter key on the creator's behalf. Owners generate with their own keys.
+ */
+export function parseOwnerIds(raw: string | undefined): ReadonlySet<string> {
+  if (!raw) return new Set();
+  return new Set(
+    raw
+      .split(/[\s,;]+/)
+      .map((v) => v.trim().toLowerCase())
+      .filter((v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v)),
+  );
+}
+
+export function isOwner(userId: string, owners: ReadonlySet<string>): boolean {
+  return owners.has(userId.toLowerCase());
+}

@@ -1006,7 +1006,7 @@ function CreatePage() {
           ) : null}
           {provider === "openrouter" && !orKey ? (
             <div className="mt-3 p-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 text-[11px] text-amber-200">
-              No OpenRouter key set. Tap the key icon in the header to add your key (or the server env key will be used if configured).
+              No OpenRouter key set. Tap the key icon in the header to add your own key (free to you), or sign in to use cloud credits.
             </div>
           ) : null}
         </section>

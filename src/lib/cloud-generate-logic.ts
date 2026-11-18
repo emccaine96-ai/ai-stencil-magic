@@ -13,7 +13,8 @@ export type CloudCode =
   | "duplicate_request"
   | "provider_error"
   | "timeout"
-  | "invalid_model";
+  | "invalid_model"
+  | "owner_use_own_key";
 
 /** What the user is told for each failure. Never includes upstream text. */
 export const CODE_MESSAGES: Record<CloudCode, string> = {
@@ -26,6 +27,7 @@ export const CODE_MESSAGES: Record<CloudCode, string> = {
   provider_error: "The AI service could not make your stencil. You were not charged. Please try again.",
   timeout: "The AI service took too long. You were not charged. Please try again.",
   invalid_model: "That model is not available.",
+  owner_use_own_key: "This account uses its own API keys. Add your OpenRouter or Gemini key in Settings.",
 };
 
 export const FALLBACK_MESSAGE = "Something went wrong. You were not charged. Please try again.";
@@ -35,7 +37,7 @@ export function messageForCode(code: unknown): string {
 }
 
 /** Codes after which the credit was refunded or never taken, so the next attempt must use a NEW request id. */
-const NEEDS_NEW_ID = new Set<string>(["provider_error", "timeout", "rate_limited_minute", "rate_limited_day", "busy", "insufficient_credits", "consent_required", "invalid_model"]);
+const NEEDS_NEW_ID = new Set<string>(["provider_error", "timeout", "rate_limited_minute", "rate_limited_day", "busy", "insufficient_credits", "consent_required", "invalid_model", "owner_use_own_key"]);
 
 /**
  * Keeps one request id for an in-flight attempt (so a double tap is deduplicated by the server) and issues a fresh one

@@ -65,6 +65,8 @@ These rules apply regardless of which model is doing the work.
 
 - Server-key AI generation goes only through `generateStencil` with credits; all pricing/limits/models live in `src/lib/ai-server/ai-config.ts`.
 
+- Owner accounts listed in the `OWNER_USER_IDS` secret are never served from the server key (`owner_use_own_key`); the creator always generates with their own keys. Never remove this check.
+
 ## A note on free/low-cost models specifically
 
 If you are a smaller or free-tier model (e.g., a compact coding-agent model) being

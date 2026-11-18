@@ -10,6 +10,7 @@
 - [ ] Add `OPENROUTER_API_KEY` (and optionally `DAILY_BUDGET_CREDITS`) in Lovable Cloud: owner action.
 - [ ] Live checks not run: signup grant applied twice gives 3 credits once, rollback SQL, signed-in browser flow, live OpenRouter call, `refund_request` behaviour on an already-settled row (function bodies are not in the repo).
 - [ ] Classical Pro export SHA-256 `e936c116...2d03f6c` not re-measured here (needs a browser; the recipe is not in the repo). Source is unchanged: no `src/lib/classical*` file is edited.
+- [ ] Add `OWNER_USER_IDS` (your Supabase user id, comma separated if several) in Lovable Cloud so the creator is never served from the server key. Owner action; the id is not a key but is kept out of the code.
 - Known gap (not fixed): limit counts run just before `reserve_credits`, so truly simultaneous requests can exceed a limit by a few.
 
 # Gallery moderation and CI verification
