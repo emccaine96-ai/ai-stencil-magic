@@ -112,3 +112,42 @@ test("extensionForBlob matches the real type", () => {
   expect(extensionForBlob(new Blob([], { type: "image/png" }))).toBe("png");
   expect(extensionForBlob(new Blob([], { type: "application/zip" }))).toBe("png");
 });
+
+import { saveImageToDevice, type ShareEnv } from "./save-file";
+function shareEnv(over: Partial<ShareEnv> = {}) {
+  const calls: string[] = [];
+  const env: ShareEnv = { isTouchDevice: () => true, canShareFiles: () => true, share: async () => { calls.push("share"); }, ...over };
+  return { env, calls };
+}
+test("on a phone that can share files, an image opens the share sheet and is not also downloaded", async () => {
+  const { env, calls } = shareEnv(); const f = fakeEnv();
+  expect(await saveImageToDevice(blob(), "a.png", env, f.env)).toBe("shared");
+  expect(calls).toEqual(["share"]); expect(f.log).toEqual([]);
+});
+test("on a desktop, an image is downloaded and the share sheet is never opened", async () => {
+  const { env, calls } = shareEnv({ isTouchDevice: () => false }); const f = fakeEnv();
+  expect(await saveImageToDevice(blob(), "a.png", env, f.env)).toBe("downloaded");
+  expect(calls).toEqual([]); expect(f.log).toContain("click-attached");
+});
+test("when the browser cannot share files, it falls back to a download", async () => {
+  const { env } = shareEnv({ canShareFiles: () => false }); const f = fakeEnv();
+  expect(await saveImageToDevice(blob(), "a.png", env, f.env)).toBe("downloaded");
+});
+test("closing the share sheet is not an error and does not download", async () => {
+  const { env } = shareEnv({ share: async () => { const e = new Error("x"); e.name = "AbortError"; throw e; } }); const f = fakeEnv();
+  expect(await saveImageToDevice(blob(), "a.png", env, f.env)).toBe("cancelled");
+  expect(f.log).toEqual([]);
+});
+test("any other share failure falls back to a download", async () => {
+  const { env } = shareEnv({ share: async () => { throw new Error("boom"); } }); const f = fakeEnv();
+  expect(await saveImageToDevice(blob(), "a.png", env, f.env)).toBe("downloaded");
+});
+test("a non-image file is never sent to the share sheet", async () => {
+  const { env, calls } = shareEnv(); const f = fakeEnv();
+  expect(await saveImageToDevice(new Blob(["x"], { type: "application/json" }), "a.json", env, f.env)).toBe("downloaded");
+  expect(calls).toEqual([]);
+});
+test("an empty blob is a clear error", async () => {
+  let msg = ""; try { await saveImageToDevice(new Blob([], { type: "image/png" }), "a.png", shareEnv().env); } catch (e) { msg = (e as Error).message; }
+  expect(msg).toContain("Nothing to save");
+});

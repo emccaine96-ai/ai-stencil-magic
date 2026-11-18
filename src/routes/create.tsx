@@ -39,7 +39,7 @@ import {
 } from "@/lib/touch-up/session";
 import { writeHandoff } from "@/lib/touch-up/handoff";
 import { supabase } from "@/integrations/supabase/client";
-import { saveBlob, canvasToBlob } from "@/lib/save-file";
+import { saveBlob, saveImageToDevice, canvasToBlob } from "@/lib/save-file";
 import { useCloudGenerate } from "@/hooks/use-cloud-generate";
 
 /** JSON headers plus the signed-in user's access token, when there is one. */
@@ -742,8 +742,9 @@ function CreatePage() {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       const blob = await canvasToBlob(canvas, "image/png");
-      saveBlob(blob, `stencil-${size}px.png`);
-      toast.success(`Saved stencil-${size}px.png. Check your Downloads folder.`);
+      const how = await saveImageToDevice(blob, `stencil-${size}px.png`);
+      if (how === "shared") toast.success("Choose Save Image in the share sheet to add it to Photos.");
+      else if (how === "downloaded") toast.success(`Saved stencil-${size}px.png. Check your Downloads folder.`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Export failed";
       setError(msg);

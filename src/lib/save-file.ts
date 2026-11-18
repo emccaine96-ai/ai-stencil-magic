@@ -86,3 +86,43 @@ export function extensionForBlob(blob: Blob): string {
   if (blob.type === "image/svg+xml") return "svg";
   return "png";
 }
+
+export interface ShareEnv {
+  canShareFiles: (files: File[]) => boolean;
+  share: (data: { files: File[]; title?: string }) => Promise<void>;
+  isTouchDevice: () => boolean;
+}
+
+const browserShareEnv = (): ShareEnv => ({
+  canShareFiles: (files) => typeof navigator !== "undefined" && typeof navigator.canShare === "function" && navigator.canShare({ files }),
+  share: (data) => navigator.share(data),
+  isTouchDevice: () => typeof navigator !== "undefined" && (navigator.maxTouchPoints ?? 0) > 0 && /android|iphone|ipad|ipod/i.test(navigator.userAgent),
+});
+
+/**
+ * Saves an image to the device. On a phone or tablet that supports it, opens the share sheet so "Save Image" puts it in Photos.
+ * Everywhere else, or if the share sheet is unavailable, it falls back to a normal download. Returns how it was saved.
+ * The user closing the share sheet is not an error and does not trigger a second download.
+ */
+export async function saveImageToDevice(
+  blob: Blob | null | undefined,
+  filename: string,
+  env: ShareEnv = browserShareEnv(),
+  saveEnv?: SaveEnv,
+): Promise<"shared" | "cancelled" | "downloaded"> {
+  if (!blob || blob.size === 0) throw new Error("Nothing to save: the file came out empty. Try a smaller export size.");
+  if (blob.type.startsWith("image/") && env.isTouchDevice()) {
+    try {
+      const file = new File([blob], filename, { type: blob.type });
+      if (env.canShareFiles([file])) {
+        await env.share({ files: [file], title: filename });
+        return "shared";
+      }
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") return "cancelled";
+      // any other share failure: fall through to a normal download
+    }
+  }
+  saveBlob(blob, filename, saveEnv);
+  return "downloaded";
+}

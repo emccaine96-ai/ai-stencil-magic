@@ -19,7 +19,7 @@ import {
   Pencil,
 } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
-import { saveBlob, dataUrlToBlob, extensionForBlob } from "@/lib/save-file";
+import { saveBlob, saveImageToDevice, dataUrlToBlob, extensionForBlob } from "@/lib/save-file";
 import {
   listDocuments,
   listFolders,
@@ -141,10 +141,10 @@ function VaultPage() {
     refresh();
   }
 
-  function download(d: DocumentData) {
+  async function download(d: DocumentData) {
     try {
       const blob = dataUrlToBlob(bestExportUrl(d));
-      saveBlob(blob, `${d.name.replace(/\s+/g, "-")}.${extensionForBlob(blob)}`);
+      await saveImageToDevice(blob, `${d.name.replace(/\s+/g, "-")}.${extensionForBlob(blob)}`);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Could not download that stencil.");
     }
