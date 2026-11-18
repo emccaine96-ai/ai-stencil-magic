@@ -91,11 +91,20 @@ function AuthPage() {
     setBusy(true);
     setError(null);
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      // Ask for the sign-in URL first (without navigating) and check it, so a provider that is switched off in the
+      // project shows a readable message here instead of sending the user to a raw JSON error page.
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: returnUrl ?? window.location.origin + "/vault" },
+        options: { redirectTo: returnUrl ?? window.location.origin + "/vault", skipBrowserRedirect: true },
       });
       if (error) throw error;
+      if (!data?.url) throw new Error("Google sign-in did not return a link.");
+      const probe = await fetch(data.url, { method: "GET", redirect: "manual" }).catch(() => null);
+      // A working provider answers with a redirect (an opaque response in the browser) or a page; a disabled one answers JSON 400.
+      if (probe && probe.type !== "opaqueredirect" && probe.status === 400) {
+        throw new Error("Google sign-in is not turned on for this app yet. Please sign in with your email and password.");
+      }
+      window.location.assign(data.url);
     } catch (e: any) {
       setError(e.message ?? String(e));
       setBusy(false);
