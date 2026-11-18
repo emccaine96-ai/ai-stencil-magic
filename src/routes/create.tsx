@@ -743,8 +743,11 @@ function CreatePage() {
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       const blob = await canvasToBlob(canvas, "image/png");
       saveBlob(blob, `stencil-${size}px.png`);
+      toast.success(`Saved stencil-${size}px.png. Check your Downloads folder.`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Export failed");
+      const msg = e instanceof Error ? e.message : "Export failed";
+      setError(msg);
+      toast.error(`Download failed: ${msg}`);
     } finally {
       setExporting(false);
     }
