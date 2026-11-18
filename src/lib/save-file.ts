@@ -4,7 +4,7 @@
  *
  * Why not just `a.click()` on a detached link: some mobile browsers (iOS Safari in particular) ignore a click on a link that is
  * not in the page, so the download silently does nothing. The link is attached before the click and removed after. The object URL is
- * kept alive for 30 seconds so a large file is not cut off while the browser is still reading it.
+ * kept alive for 2 seconds (not revoked immediately) so the browser can start reading the file first.
  */
 export interface SaveEnv {
   createObjectURL: (blob: Blob) => string;
@@ -14,7 +14,7 @@ export interface SaveEnv {
   setTimeout: (fn: () => void, ms: number) => unknown;
 }
 
-export const REVOKE_DELAY_MS = 30_000;
+export const REVOKE_DELAY_MS = 2_000;
 
 const browserEnv = (): SaveEnv => ({
   createObjectURL: (b) => URL.createObjectURL(b),
@@ -91,25 +91,34 @@ export interface ShareEnv {
   canShareFiles: (files: File[]) => boolean;
   share: (data: { files: File[]; title?: string }) => Promise<void>;
   isTouchDevice: () => boolean;
+  /** True when a link with a download attribute can work in this browser. */
+  canDownloadLink: () => boolean;
 }
 
 const browserShareEnv = (): ShareEnv => ({
-  canShareFiles: (files) => typeof navigator !== "undefined" && typeof navigator.canShare === "function" && navigator.canShare({ files }),
+  canShareFiles: (files) => typeof navigator !== "undefined" && typeof navigator.canShare === "function" && typeof navigator.share === "function" && navigator.canShare({ files }),
   share: (data) => navigator.share(data),
   isTouchDevice: () => typeof navigator !== "undefined" && (navigator.maxTouchPoints ?? 0) > 0 && /android|iphone|ipad|ipod/i.test(navigator.userAgent),
+  canDownloadLink: () => typeof document !== "undefined" && "download" in document.createElement("a"),
 });
 
+/** How a save ended. "shared" = the share sheet accepted the file. "cancelled" = the user closed the share sheet.
+ * "downloaded" = a download link was clicked (browsers give no further confirmation). "manual" = nothing automatic works here, so show the image to press and hold. */
+export type SaveResult = "shared" | "cancelled" | "downloaded" | "manual";
+
 /**
- * Saves an image to the device. On a phone or tablet that supports it, opens the share sheet so "Save Image" puts it in Photos.
- * Everywhere else, or if the share sheet is unavailable, it falls back to a normal download. Returns how it was saved.
- * The user closing the share sheet is not an error and does not trigger a second download.
+ * Saves an image to the device, trying in order:
+ *  1. the share sheet (phones: "Save Image" / "Save to Files"), when the browser can share this file;
+ *  2. a download link added to the page, clicked, with the object URL released after a short delay;
+ *  3. "manual": the caller shows the image full-screen with "Press and hold the image to save".
+ * Never reports success before the share promise resolves. The user closing the share sheet returns "cancelled", not an error.
  */
 export async function saveImageToDevice(
   blob: Blob | null | undefined,
   filename: string,
   env: ShareEnv = browserShareEnv(),
   saveEnv?: SaveEnv,
-): Promise<"shared" | "cancelled" | "downloaded"> {
+): Promise<SaveResult> {
   if (!blob || blob.size === 0) throw new Error("Nothing to save: the file came out empty. Try a smaller export size.");
   if (blob.type.startsWith("image/") && env.isTouchDevice()) {
     try {
@@ -120,9 +129,25 @@ export async function saveImageToDevice(
       }
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") return "cancelled";
-      // any other share failure: fall through to a normal download
+      // any other share failure: fall through to the download link
     }
   }
-  saveBlob(blob, filename, saveEnv);
+  if (!env.canDownloadLink()) return "manual";
+  try {
+    saveBlob(blob, filename, saveEnv);
+  } catch {
+    return "manual";
+  }
   return "downloaded";
+}
+
+/** Loads an image from a data: or blob: URL (or a remote one, requested as anonymous CORS) so drawing it never taints the canvas. */
+export function loadImageForExport(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    if (!src.startsWith("data:") && !src.startsWith("blob:")) img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("The stencil image could not be loaded for export."));
+    img.src = src;
+  });
 }

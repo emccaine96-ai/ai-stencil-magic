@@ -19,7 +19,8 @@ import {
   Pencil,
 } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
-import { saveBlob, saveImageToDevice, dataUrlToBlob, extensionForBlob } from "@/lib/save-file";
+import { saveBlob, dataUrlToBlob, extensionForBlob } from "@/lib/save-file";
+import { useSaveImage } from "@/lib/use-save-image";
 import {
   listDocuments,
   listFolders,
@@ -56,6 +57,7 @@ type SortKey = "newest" | "oldest" | "name";
 type ViewMode = "grid" | "list";
 
 function VaultPage() {
+  const { saveImage, modal: saveModal } = useSaveImage();
   const [docs, setDocs] = useState<DocumentData[] | null>(null);
   const [editing, setEditing] = useState<DocumentData | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -144,7 +146,7 @@ function VaultPage() {
   async function download(d: DocumentData) {
     try {
       const blob = dataUrlToBlob(bestExportUrl(d));
-      await saveImageToDevice(blob, `${d.name.replace(/\s+/g, "-")}.${extensionForBlob(blob)}`);
+      await saveImage(blob, `${d.name.replace(/\s+/g, "-")}.${extensionForBlob(blob)}`);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Could not download that stencil.");
     }
@@ -227,6 +229,7 @@ function VaultPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {saveModal}
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
         <div className="mx-auto max-w-7xl px-4 h-16 flex items-center justify-between gap-3">
           <Link to="/" className="flex items-center gap-2 text-sm shrink-0">

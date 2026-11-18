@@ -29,7 +29,8 @@ import {
   Plus,
 } from "lucide-react";
 import { toast } from "sonner";
-import { saveImageToDevice, canvasToBlob } from "@/lib/save-file";
+import { canvasToBlob } from "@/lib/save-file";
+import { useSaveImage } from "@/lib/use-save-image";
 import { TouchUpCanvasEngine, type StrokeConfig } from "@/lib/touch-up/canvas-engine";
 import { INK_COLORS, tintInkMask, sampleInkHex } from "@/lib/touch-up/ink-lab";
 import {
@@ -115,6 +116,7 @@ const CURVE_LABELS: Record<string, string> = {
 };
 
 function TouchUpPage() {
+  const { saveImage, modal: saveModal } = useSaveImage();
   const [sourceStencil, setSourceStencil] = useState<string | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [genConfig, setGenConfig] = useState<TouchUpGenConfig | null>(null);
@@ -586,7 +588,7 @@ function TouchUpPage() {
   async function downloadPNG() {
     try {
       const blob = await canvasToBlob(exportCanvas(mirror), "image/png");
-      await saveImageToDevice(blob, "touched-up-stencil.png");
+      await saveImage(blob, "touched-up-stencil.png");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not download the PNG.");
     }
@@ -729,6 +731,7 @@ function TouchUpPage() {
 
   return (
     <div ref={containerRef} className="fixed inset-0 bg-[#0d0d0f] text-white overflow-hidden select-none">
+      {saveModal}
       {/* Canvas stage — 100% of the viewport, UI floats above it */}
       <div
         ref={stageRef}

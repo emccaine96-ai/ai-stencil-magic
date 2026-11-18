@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Download, Zap } from "lucide-react";
-import { saveImageToDevice, dataUrlToBlob } from "@/lib/save-file";
+import { dataUrlToBlob } from "@/lib/save-file";
+import { useSaveImage } from "@/lib/use-save-image";
 
 type Props = {
   photo: string | null;
@@ -8,6 +9,7 @@ type Props = {
 };
 
 export function Upscaler({ photo, onReplace }: Props) {
+  const { saveImage, modal: saveModal } = useSaveImage();
   const [target, setTarget] = useState<2048 | 3840>(2048);
   const [progress, setProgress] = useState<number | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
@@ -85,7 +87,7 @@ export function Upscaler({ photo, onReplace }: Props) {
   async function download() {
     if (!resultUrl) return;
     try {
-      await saveImageToDevice(dataUrlToBlob(resultUrl), `upscaled-${resultSize?.w ?? "img"}px.png`);
+      await saveImage(dataUrlToBlob(resultUrl), `upscaled-${resultSize?.w ?? "img"}px.png`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Download failed");
     }
@@ -93,6 +95,7 @@ export function Upscaler({ photo, onReplace }: Props) {
 
   return (
     <div className="space-y-3 text-sm">
+      {saveModal}
       <div className="grid grid-cols-2 gap-2">
         {[2048, 3840].map((s) => (
           <button

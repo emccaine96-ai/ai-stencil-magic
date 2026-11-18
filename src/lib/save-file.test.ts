@@ -30,12 +30,13 @@ test("filename and url are set on the link", () => {
   expect(anchor.href).toBe("blob:fake");
 });
 
-test("the object URL is revoked only after the delay, so a large file is not cut off", () => {
+test("the object URL is revoked only after a 1-2 second delay, not immediately", () => {
   const { env, log, timers } = fakeEnv();
   saveBlob(blob(), "a.png", env);
   expect(timers).toHaveLength(1);
   expect(timers[0].ms).toBe(REVOKE_DELAY_MS);
-  expect(REVOKE_DELAY_MS).toBeGreaterThanOrEqual(10_000);
+  expect(REVOKE_DELAY_MS).toBeGreaterThanOrEqual(1_000);
+  expect(REVOKE_DELAY_MS).toBeLessThanOrEqual(2_000);
   expect(log).not.toContain("revoke blob:fake");
   timers[0].fn();
   expect(log).toContain("revoke blob:fake");
@@ -116,7 +117,7 @@ test("extensionForBlob matches the real type", () => {
 import { saveImageToDevice, type ShareEnv } from "./save-file";
 function shareEnv(over: Partial<ShareEnv> = {}) {
   const calls: string[] = [];
-  const env: ShareEnv = { isTouchDevice: () => true, canShareFiles: () => true, share: async () => { calls.push("share"); }, ...over };
+  const env: ShareEnv = { isTouchDevice: () => true, canShareFiles: () => true, canDownloadLink: () => true, share: async () => { calls.push("share"); }, ...over };
   return { env, calls };
 }
 test("on a phone that can share files, an image opens the share sheet and is not also downloaded", async () => {
@@ -150,4 +151,41 @@ test("a non-image file is never sent to the share sheet", async () => {
 test("an empty blob is a clear error", async () => {
   let msg = ""; try { await saveImageToDevice(new Blob([], { type: "image/png" }), "a.png", shareEnv().env); } catch (e) { msg = (e as Error).message; }
   expect(msg).toContain("Nothing to save");
+});
+
+test("success is not reported until the share promise resolves", async () => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => { release = r; });
+  const { env } = shareEnv({ share: () => gate }); const f = fakeEnv();
+  let result: string | null = null;
+  const pending = saveImageToDevice(blob(), "a.png", env, f.env).then((r) => { result = r; });
+  await Promise.resolve(); await Promise.resolve();
+  expect(result).toBe(null);
+  release(); await pending;
+  expect(result).toBe("shared");
+});
+test("the object URL is released after 2 seconds, not immediately", async () => {
+  const { env } = shareEnv({ isTouchDevice: () => false }); const f = fakeEnv();
+  await saveImageToDevice(blob(), "a.png", env, f.env);
+  expect(f.timers.length).toBe(1);
+  expect(f.timers[0].ms).toBe(REVOKE_DELAY_MS);
+  expect(REVOKE_DELAY_MS).toBeGreaterThanOrEqual(1000);
+  expect(REVOKE_DELAY_MS).toBeLessThanOrEqual(2000);
+  expect(f.log).not.toContain("revoke blob:fake");
+});
+test("when neither sharing nor download links work, it returns manual so the press-and-hold modal opens", async () => {
+  const { env } = shareEnv({ canShareFiles: () => false, canDownloadLink: () => false }); const f = fakeEnv();
+  expect(await saveImageToDevice(blob(), "a.png", env, f.env)).toBe("manual");
+  expect(f.log).toEqual([]);
+});
+test("if the download link itself throws, it returns manual instead of claiming a download", async () => {
+  const { env } = shareEnv({ isTouchDevice: () => false });
+  const f = fakeEnv();
+  f.env.createObjectURL = () => { throw new Error("blocked"); };
+  expect(await saveImageToDevice(blob(), "a.png", env, f.env)).toBe("manual");
+});
+test("a real share failure (not a cancel) falls back to the download link", async () => {
+  const { env } = shareEnv({ share: async () => { throw new Error("NotAllowedError-ish"); } }); const f = fakeEnv();
+  expect(await saveImageToDevice(blob(), "a.png", env, f.env)).toBe("downloaded");
+  expect(f.log).toContain("click-attached");
 });

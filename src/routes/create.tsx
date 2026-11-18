@@ -39,7 +39,8 @@ import {
 } from "@/lib/touch-up/session";
 import { writeHandoff } from "@/lib/touch-up/handoff";
 import { supabase } from "@/integrations/supabase/client";
-import { saveBlob, saveImageToDevice, canvasToBlob } from "@/lib/save-file";
+import { saveBlob, saveImageToDevice, canvasToBlob, loadImageForExport } from "@/lib/save-file";
+import { SaveImageModal } from "@/components/SaveImageModal";
 import { useCloudGenerate } from "@/hooks/use-cloud-generate";
 
 /** JSON headers plus the signed-in user's access token, when there is one. */
@@ -235,6 +236,7 @@ function CreatePage() {
   const [pluginProcessing, setPluginProcessing] = useState<string | null>(null);
   const [exportSize, setExportSize] = useState<1024 | 2048 | 4096 | 7680>(2048);
   const [exporting, setExporting] = useState(false);
+  const [manualSaveUrl, setManualSaveUrl] = useState<string | null>(null);
   const [customPrompt, setCustomPrompt] = useState("");
   // Ink style panel intermediate data (from classical engine)
   const [inkStyleData, setInkStyleData] = useState<{
@@ -723,13 +725,7 @@ function CreatePage() {
     if (!source) return;
     setExporting(true);
     try {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.src = source;
-      await new Promise((res, rej) => {
-        img.onload = res;
-        img.onerror = rej;
-      });
+      const img = await loadImageForExport(source);
       const size = exportSize;
       const canvas = document.createElement("canvas");
       const ratio = img.width / img.height || 1;
@@ -743,8 +739,9 @@ function CreatePage() {
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       const blob = await canvasToBlob(canvas, "image/png");
       const how = await saveImageToDevice(blob, `stencil-${size}px.png`);
-      if (how === "shared") toast.success("Choose Save Image in the share sheet to add it to Photos.");
-      else if (how === "downloaded") toast.success(`Saved stencil-${size}px.png. Check your Downloads folder.`);
+      if (how === "shared") toast.success("Shared. If you chose Save Image, it is in your Photos.");
+      else if (how === "downloaded") toast.success(`Download started: stencil-${size}px.png. Check your Downloads folder.`);
+      else if (how === "manual") setManualSaveUrl(URL.createObjectURL(blob));
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Export failed";
       setError(msg);
@@ -774,6 +771,13 @@ function CreatePage() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {cloudConsentDialog}
+      <SaveImageModal
+        url={manualSaveUrl}
+        onClose={() => {
+          if (manualSaveUrl) URL.revokeObjectURL(manualSaveUrl);
+          setManualSaveUrl(null);
+        }}
+      />
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
         <div className="mx-auto max-w-3xl px-4 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2 text-sm">
