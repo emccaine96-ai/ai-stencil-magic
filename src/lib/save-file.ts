@@ -87,6 +87,40 @@ export function extensionForBlob(blob: Blob): string {
   return "png";
 }
 
+/**
+ * True on a phone or tablet, including the cases a user-agent check alone misses:
+ *  - an iPad (iPadOS 13+) and any iPhone/iPad using "Request Desktop Site" report themselves as a Mac, but a Mac has no touch screen;
+ *  - Android Chrome with "Desktop site" ticked reports a Linux desktop.
+ * Touch points are the tie-breaker: a real Mac or Linux desktop reports 0 (or 1 with some trackpads), a touch device reports 5 or more.
+ */
+export function isPhoneOrTablet(nav: { maxTouchPoints?: number; userAgent?: string; platform?: string } | undefined): boolean {
+  if (!nav) return false;
+  const touch = nav.maxTouchPoints ?? 0;
+  const ua = nav.userAgent ?? "";
+  if (touch > 0 && /android|iphone|ipad|ipod/i.test(ua)) return true;
+  if (touch >= 2 && /macintosh|mac os x|x11|linux/i.test(ua) && !/windows/i.test(ua)) return true;
+  return false;
+}
+
+/**
+ * iOS Safari refuses canvases above 16,777,216 pixels (4096 x 4096): toBlob returns null or the page reloads.
+ * Android Chrome and desktop browsers allow far more, so the cap only applies on a phone or tablet.
+ */
+export const MOBILE_CANVAS_MAX_PIXELS = 16_777_216;
+
+/**
+ * The largest export width that fits the device, for an image of the given aspect ratio (width / height).
+ * Returns `requested` unchanged on a desktop, or when it already fits. Never returns less than 256.
+ */
+export function maxExportWidth(requested: number, aspect: number, mobile: boolean): number {
+  if (!mobile || !(requested > 0)) return requested;
+  const ratio = aspect > 0 && Number.isFinite(aspect) ? aspect : 1;
+  const height = requested / ratio;
+  if (requested * height <= MOBILE_CANVAS_MAX_PIXELS) return requested;
+  // width * (width / ratio) <= max  =>  width <= sqrt(max * ratio); floor a little so rounding of the height cannot push it over
+  return Math.max(256, Math.floor(Math.sqrt(MOBILE_CANVAS_MAX_PIXELS * ratio) * 0.995));
+}
+
 export interface ShareEnv {
   canShareFiles: (files: File[]) => boolean;
   share: (data: { files: File[]; title?: string }) => Promise<void>;
@@ -98,7 +132,7 @@ export interface ShareEnv {
 const browserShareEnv = (): ShareEnv => ({
   canShareFiles: (files) => typeof navigator !== "undefined" && typeof navigator.canShare === "function" && typeof navigator.share === "function" && navigator.canShare({ files }),
   share: (data) => navigator.share(data),
-  isTouchDevice: () => typeof navigator !== "undefined" && (navigator.maxTouchPoints ?? 0) > 0 && /android|iphone|ipad|ipod/i.test(navigator.userAgent),
+  isTouchDevice: () => isPhoneOrTablet(typeof navigator !== "undefined" ? navigator : undefined),
   canDownloadLink: () => typeof document !== "undefined" && "download" in document.createElement("a"),
 });
 
@@ -109,8 +143,9 @@ export type SaveResult = "shared" | "cancelled" | "downloaded" | "manual";
 /**
  * Saves an image to the device, trying in order:
  *  1. the share sheet (phones: "Save Image" / "Save to Files"), when the browser can share this file;
- *  2. a download link added to the page, clicked, with the object URL released after a short delay;
- *  3. "manual": the caller shows the image full-screen with "Press and hold the image to save".
+ *  2. on a phone or tablet, if sharing is unavailable or fails: "manual" (a download link would go to Files, not Photos);
+ *  3. on a desktop: a download link added to the page, clicked, with the object URL released after a short delay;
+ *  4. "manual": the caller shows the image full-screen with "Press and hold the image to save".
  * Never reports success before the share promise resolves. The user closing the share sheet returns "cancelled", not an error.
  */
 export async function saveImageToDevice(
@@ -120,7 +155,8 @@ export async function saveImageToDevice(
   saveEnv?: SaveEnv,
 ): Promise<SaveResult> {
   if (!blob || blob.size === 0) throw new Error("Nothing to save: the file came out empty. Try a smaller export size.");
-  if (blob.type.startsWith("image/") && env.isTouchDevice()) {
+  const phone = blob.type.startsWith("image/") && env.isTouchDevice();
+  if (phone) {
     try {
       const file = new File([blob], filename, { type: blob.type });
       if (env.canShareFiles([file])) {
@@ -129,8 +165,11 @@ export async function saveImageToDevice(
       }
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") return "cancelled";
-      // any other share failure: fall through to the download link
+      // any other share failure: handled below
     }
+    // On a phone a download link saves to the Files app (Downloads), not the Photos gallery, and the user is told it worked.
+    // The only route that reliably reaches Photos from here is the press-and-hold image, so show that instead.
+    return "manual";
   }
   if (!env.canDownloadLink()) return "manual";
   try {

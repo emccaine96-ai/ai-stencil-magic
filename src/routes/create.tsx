@@ -39,7 +39,7 @@ import {
 } from "@/lib/touch-up/session";
 import { writeHandoff } from "@/lib/touch-up/handoff";
 import { supabase } from "@/integrations/supabase/client";
-import { saveBlob, saveImageToDevice, canvasToBlob, loadImageForExport } from "@/lib/save-file";
+import { saveBlob, saveImageToDevice, canvasToBlob, loadImageForExport, isPhoneOrTablet, maxExportWidth } from "@/lib/save-file";
 import { SaveImageModal } from "@/components/SaveImageModal";
 import { useCloudGenerate } from "@/hooks/use-cloud-generate";
 
@@ -726,9 +726,11 @@ function CreatePage() {
     setExporting(true);
     try {
       const img = await loadImageForExport(source);
-      const size = exportSize;
-      const canvas = document.createElement("canvas");
       const ratio = img.width / img.height || 1;
+      // Phones cap canvas size (iOS Safari: 16.7 million pixels), so 4K/8K would fail outright there. Use the largest size that fits.
+      const size = maxExportWidth(exportSize, ratio, isPhoneOrTablet(navigator));
+      if (size < exportSize) toast.info(`Your phone can't make a ${exportSize}px image, so this one is ${size}px.`);
+      const canvas = document.createElement("canvas");
       canvas.width = size;
       canvas.height = Math.round(size / ratio);
       const ctx = canvas.getContext("2d")!;
