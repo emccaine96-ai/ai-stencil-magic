@@ -22,6 +22,8 @@ import {
   printCanvas,
 } from "@/lib/touch-up/print";
 import { saveStencil } from "@/lib/vault";
+import { canvasToBlob } from "@/lib/save-file";
+import { useSaveImage } from "@/lib/use-save-image";
 import { RetouchSheet } from "./RetouchSheet";
 
 export interface ExportSheetProps {
@@ -37,6 +39,7 @@ export function ExportSheet({ getCanvas, photo, onClose }: ExportSheetProps) {
   const [paperId, setPaperId] = useState("letter");
   const [mirror, setMirror] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const { saveImage, modal } = useSaveImage();
 
   const canvas = getCanvas();
   const paper = PAPER_SIZES.find((p) => p.id === paperId) ?? PAPER_SIZES[0];
@@ -80,13 +83,15 @@ export function ExportSheet({ getCanvas, photo, onClose }: ExportSheetProps) {
     }
   }
 
-  function handleDownload() {
+  async function handleDownload() {
     const out = exportCanvas(mirror);
     if (!out) return;
-    const a = document.createElement("a");
-    a.href = out.toDataURL("image/png");
-    a.download = "retouched-stencil.png";
-    a.click();
+    try {
+      const blob = await canvasToBlob(out, "image/png");
+      await saveImage(blob, "retouched-stencil.png");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not download the PNG.");
+    }
   }
 
   function handlePrint() {
@@ -97,7 +102,7 @@ export function ExportSheet({ getCanvas, photo, onClose }: ExportSheetProps) {
   }
 
   return (
-    <RetouchSheet title="Save, export & print" onClose={onClose}>
+    <><RetouchSheet title="Save, export & print" onClose={onClose}>
       {!canvas ? (
         <p className="text-[11px] text-destructive">No stencil is loaded yet, so there is nothing to export.</p>
       ) : null}
@@ -167,6 +172,9 @@ export function ExportSheet({ getCanvas, photo, onClose }: ExportSheetProps) {
         </button>
       </div>
     </RetouchSheet>
+    {/* Outside RetouchSheet on purpose: its backdrop-blur would trap this fixed, full-screen modal inside the sheet. */}
+    {modal}
+    </>
   );
 }
 
