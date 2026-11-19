@@ -39,7 +39,6 @@ import {
 } from "@/lib/touch-up/session";
 import { writeHandoff } from "@/lib/touch-up/handoff";
 import { supabase } from "@/integrations/supabase/client";
-import { saveBlob } from "@/lib/save-file";
 import { useCloudGenerate } from "@/hooks/use-cloud-generate";
 
 /** JSON headers plus the signed-in user's access token, when there is one. */
@@ -704,7 +703,12 @@ function CreatePage() {
       const { vectorizeLineLayer } = await import("@/lib/classical-engine/vectorize");
       const svg = await vectorizeLineLayer(canvas);
       const blob = new Blob([svg], { type: "image/svg+xml" });
-      saveBlob(blob, "stencil-vector.svg");
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = u;
+      a.download = "stencil-vector.svg";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(u), 1000);
       toast.success("SVG exported");
     } catch (e) {
       // FIXED 2026-09-05: imagetracerjs IS installed (confirmed via direct

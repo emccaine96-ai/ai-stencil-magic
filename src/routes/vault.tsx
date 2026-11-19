@@ -19,8 +19,6 @@ import {
   Pencil,
 } from "lucide-react";
 import logo from "@/assets/stencil-logo.png";
-import { saveBlob, dataUrlToBlob, extensionForBlob } from "@/lib/save-file";
-import { useSaveImage } from "@/lib/use-save-image";
 import {
   listDocuments,
   listFolders,
@@ -57,7 +55,6 @@ type SortKey = "newest" | "oldest" | "name";
 type ViewMode = "grid" | "list";
 
 function VaultPage() {
-  const { saveImage, modal: saveModal } = useSaveImage();
   const [docs, setDocs] = useState<DocumentData[] | null>(null);
   const [editing, setEditing] = useState<DocumentData | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -143,13 +140,11 @@ function VaultPage() {
     refresh();
   }
 
-  async function download(d: DocumentData) {
-    try {
-      const blob = dataUrlToBlob(bestExportUrl(d));
-      await saveImage(blob, `${d.name.replace(/\s+/g, "-")}.${extensionForBlob(blob)}`);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Could not download that stencil.");
-    }
+  function download(d: DocumentData) {
+    const a = document.createElement("a");
+    a.href = bestExportUrl(d);
+    a.download = `${d.name.replace(/\s+/g, "-")}.png`;
+    a.click();
   }
 
   function openInStudio(d: DocumentData) {
@@ -162,13 +157,13 @@ function VaultPage() {
   }
 
   async function onExport() {
-    try {
-      const bundle = await exportBackup();
-      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
-      saveBlob(blob, `stencilmagic-library-${new Date().toISOString().slice(0, 10)}.json`);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Could not export the library.");
-    }
+    const bundle = await exportBackup();
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `stencilmagic-library-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
   async function onImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -229,7 +224,6 @@ function VaultPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {saveModal}
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
         <div className="mx-auto max-w-7xl px-4 h-16 flex items-center justify-between gap-3">
           <Link to="/" className="flex items-center gap-2 text-sm shrink-0">
