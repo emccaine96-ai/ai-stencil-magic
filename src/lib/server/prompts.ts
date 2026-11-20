@@ -5,21 +5,79 @@
 export type Style = "hatching" | "solid" | "dotwork" | "hybrid";
 
 export const STYLE_PROMPTS: Record<Style, string> = {
-  hatching:
-    "Pure pen-and-ink CROSSHATCHING — visible straight line strokes only, NEVER dots. Deep shadows use 3 overlaid hatch directions (45°/135°/90°) at ~3px spacing; dark mids 2 directions; mids single-direction parallel hatching; lights very sparse parallel strokes; highlights pure white. Lines must be crisp, straight and clearly readable. Transitions from bright light areas to dark shade must be gradual and smooth: let hatch density fade out and strokes taper off progressively across the transition, so the tone blends like a soft gradient. Never draw a line, outline or hard edge where light and shadow meet, and never add lines that are not real edges of the subject in the photo.",
-  solid:
-    "Clean bold solid line work, no shading fills. Use varying line weights only. Closed clean contours. Highlights pure white.",
-  dotwork:
-    "Dotwork stencil: clean solid CONTOUR LINES define every shape, with stippling DOTS filling the interior tones. Shadows = very dense small dots; dark mids = medium density; mids = sparse; lights = very few; highlights = pure white. Contour lines must be present and crisp — this is NOT pure dots, it is line work + dot shading.",
-  hybrid:
-    "Combine bold solid CONTOUR LINES with CROSSHATCHING in dark areas and STIPPLING dots in mid-to-light areas. All three techniques visible in the same image.",
+  hatching: [
+    "PEN-AND-INK HATCHING / CROSSHATCHING in the manner of a master engraver. Visible line strokes only: NEVER dots, stipple, scribble, wash or solid fill.",
+    "CONTOURS: a clean, confident, continuous outline for the silhouette and key interior edges (eyes, lids, lips, nostrils, hair or fur clumps, folds). Line weight swells on the shadow side and thins to nothing on the lit side.",
+    "HATCH FIELDS: shade each surface plane with its own set of parallel strokes that FOLLOW THE FORM, wrapping across cheeks, along the jaw and brow, around the muzzle or trunk, along muscle, fabric folds and petal curvature. Inside one plane keep one direction with a gentle curve; change direction between planes. Strokes are hand-drawn: varied in length, tapered at both ends, evenly spaced but never ruler-perfect.",
+    "TONE BY SPACING: highlights = no marks at all (white paper). Light tones = single sparse strokes about 6-8 line-widths apart. Midtones = one direction, about 3-4 line-widths apart. Shadows = add a second crossing direction (30-60 degrees from the first), about 2-3 line-widths apart. Only the deepest cores get a third direction or tightly packed strokes, and paper must still show between strokes.",
+    "NO MECHANICAL LATTICE: never use a fixed 45/135 degree grid, never repeat one pattern across unrelated areas, avoid moire.",
+    "TRANSITIONS: tone melts into white gradually. Strokes widen their spacing, get shorter and thinner, and end in a taper, like a soft gradient. Never draw a line, outline or hard edge where light and shadow meet, and never add lines that are not real edges or form in the photo. Strokes stop just short of the contour on the lit rim so edges stay bright.",
+  ].join("\n"),
+  solid: [
+    "BOLD CLEAN LINE WORK ONLY: no hatching, no stipple, no tonal shading, no fills (except tiny accents: pupils, nostril holes, lash roots, deepest creases).",
+    "Closed, continuous, confident contours around every shape, plus interior form lines for the key structure (eye, lids, lips, nose planes, hair or fur clumps, folds, wrinkles, petal veins).",
+    "Express depth ONLY with VARIABLE LINE WEIGHT like a brush-pen tattoo outline: heaviest where a form turns into shadow or overlaps another, medium on the silhouette, thin for fine detail, tapering at line ends. Highlights = no line at all (lost edges are welcome on the lit side so the form breathes).",
+    "Simplify tiny texture into a few meaningful lines. Lines are smooth: no jitter, no sketchy double lines, no gaps at joins. Hair, fur, beard and fabric = flowing strand or clump outlines, never scribbles. At a lower detail level draw fewer interior lines; at a higher level add more interior form lines, still with no shading.",
+  ].join("\n"),
+  dotwork: [
+    "REAL HAND-STIPPLED DOTWORK (pointillism), the way a tattooer builds tone with single needle taps: tone is made by DOT SPACING, never by lines.",
+    "DOTS: every dot is a small, perfectly ROUND, solid, crisp-edged circle of nearly identical size, about 0.4-0.6% of the image width (shadows may use dots up to 1.5x larger). NEVER dust, grain, noise, pixel specks, dithering or halftone screens, hairy fragments or smudged blobs.",
+    "PLACEMENT: random yet evenly distributed, like natural blue noise. No rows, diagonals, grid patterns, clumps, holes, chains of dots or moire. Dots do not touch each other except in the very darkest accents, where they may crowd to near-solid but still show specks of paper.",
+    "TONE BY DENSITY: highlights = no dots (pure white). Light = widely scattered, about 6-8 dot-diameters apart. Mid-light = 4-5. Midtones = 2.5-3. Dark mids = 1.5-2. Shadows = dots almost touching (about 1.1-1.3 apart). Density follows the 3D form: densest in the turning shadow of cheeks, jaw, eye sockets, under brows, nose and lips, under folds, and thinning smoothly toward the light with a feathered, scattered fall-off, never an abrupt band or hard edge. Skin and fur texture = a few randomly scattered dots.",
+    "CONTOURS: thin, clean, continuous lines (about 0.25-0.35% of the width) only on sharp edges and key features (silhouette, eyes, lids, lips, nostrils). Soft form edges are left to dot density alone. No hatching, no crosshatching, no lines used for shading: this is contour line plus dot shading, never pure dots.",
+  ].join("\n"),
+  hybrid: [
+    "HYBRID tattoo stencil: three techniques, each in its own tonal zone, handing over seamlessly. All three must be clearly visible in the same image.",
+    "1) CONTOUR LINES everywhere: clean, confident, continuous lines for the silhouette and key features (eyes, lids, lips, nostrils, hair or fur clumps, folds), using the line-weight hierarchy above.",
+    "2) FORM-FOLLOWING HATCHING in the dark mids and shadows only: tapered pen strokes that follow the surface curvature; sparse parallel strokes at the edge of a shadow, a second crossing direction only in the deep core; hand-drawn, never a ruler-perfect or fixed 45/135 degree grid.",
+    "3) REAL STIPPLE in the light mids and soft transitions: small, round, crisp, equal-size dots (about 0.4-0.6% of the image width), random yet evenly spaced like blue noise (no rows, grids or clumps; never dust or pixel noise), their density falling smoothly from the edge of the hatching to pure white paper.",
+    "HAND-OVER: deepest cores = crossing hatching. Shadow edge = hatch strokes shortening, thinning and tapering, then dissolving into stipple that thins to nothing. Light areas = sparse stipple or nothing. Highlights = pure white. No hard line or edge where tone steps from hatching to dots or from shadow to light, and dots never overlap hatch strokes.",
+  ].join("\n"),
 };
 
 export function buildPrompt(o: { style: Style; intensity: number; customPrompt?: string }) {
-  // Bake the proven "May 27" defaults into the prompt so first-shot output is
-  // gallery-grade without the user needing to touch sliders.
-  const base = `Convert this photo into a professional tattoo STENCIL line drawing, ready to transfer to skin.\n\nHARD RULES:\n- Output a single image on PURE WHITE background.\n- All ink is the EXACT color #A855F7 (neon purple). No gray, no black, no other colors.\n- Crystal-clear closed contour line work, tattoo-stencil ready.\n- Preserve the subject's identity, proportions, facial features, hair flow, jewelry and clothing details exactly.\n- For portraits: apply 3D face-mesh aware crosshatching that follows facial surface curvature (cheek, jawline, brow ridge, nose bridge). Eyes, lips and teeth crisply defined.\n- For flowers / objects: delicate parallel hatching radiating along petal curvature, soft pencil-like graduations from saturated purple in shadow folds to faint outline on outer petals.\n\nTONAL LAYERING (5 tiers via Otsu multi-level thresholding):\n1. Deep shadows — densest mark-making, 3 overlaid hatch directions.\n2. Dark mid-tones — heavy mark-making, 2 hatch directions.\n3. Mid-tones — medium single-direction hatching.\n4. Light mid-tones — sparse parallel strokes.\n5. Highlights — pure white paper.\n\nHATCH GEOMETRY: primary 45°, secondary 135°, tertiary 90°. ~3px line spacing.\n\nSTYLE: ${o.style.toUpperCase()}\n${STYLE_PROMPTS[o.style]}\n\nOverall shading density: ${Math.round(o.intensity * 100)}%.\nNo text, no watermarks, no signatures, no frame, no background scenery.`;
+  // v2 (Nov 2026): this base is style-neutral (fidelity, ink, line weight, print rules). ALL technique wording lives in
+  // STYLE_PROMPTS so a style can never be contradicted by another style's rules (the old base forced hatch geometry on every style).
+  const pct = Math.round(o.intensity * 100);
+  const level =
+    o.intensity < 0.34
+      ? "LIGHT: only the clear shadows and key edges are marked; most of the subject stays white paper."
+      : o.intensity < 0.67
+        ? "MEDIUM: shadows and midtones are marked; lights and highlights stay white."
+        : "RICH: full tonal range with deep, dense shadows, while every highlight stays white and every mark stays separate.";
+  const base = [
+    "TASK: Trace the supplied photo into a professional tattoo STENCIL (transfer line art). This is TRACING, not redrawing: treat the photo as a light-table underlay and put every mark exactly on top of what the photo shows.",
+    "",
+    "FIDELITY - NON-NEGOTIABLE (the result will be checked by overlaying it on the photo):",
+    "- Same subject, pose, camera angle, head tilt, gaze direction and expression. Never re-pose, rotate, mirror, flip, straighten, smile, frown, beautify, age or idealise anything.",
+    "- Same framing and crop: keep the subject at the same size and position, let it run off the canvas edges wherever the photo does, and do not zoom out, shrink, re-centre or complete cut-off parts. Keep the photo's aspect ratio and orientation.",
+    "- Every feature stays exactly where the photo has it (eyes, brows, nose, mouth, teeth, ears, wrinkles, scars, freckles, moles, hair parting and strand flow, jewelry, clothing folds, petals, feathers, scales, tusks, paws). Same count, proportions and asymmetries. Do not invent, remove, add or 'fix' anything, and keep the light coming from the same direction so shadows fall on the same side.",
+    "- Where the photo is unclear, copy what is visible; never substitute a generic face, animal or object. Likeness to THIS photo outranks style and prettiness. If the photo is itself a drawing, painting or render, trace that artwork faithfully instead of reinterpreting it.",
+    "- Draw the subject only. Background = pure white: no scenery, backdrop, ground shadow, frame or border.",
+    "",
+    "INK: ONE flat color only, exactly #A855F7 (neon purple), 100% opaque, on pure white #FFFFFF. No black, gray, lighter tints, gradients, transparency, glow, blur, grain or paper texture. Tone is made ONLY by the density, spacing and weight of marks, never by lighter color. Every mark must be razor sharp with clean edges, because the result is thresholded and thermal-printed and faint or soft marks are lost.",
+    "",
+    "LINE-WEIGHT HIERARCHY (judge by the image size, not by pixels):",
+    "- Primary contour (silhouette, eyelids, lips, nostrils, main form edges): confident medium weight, about 0.35-0.5% of the image width, tapering at the ends.",
+    "- Interior detail (wrinkles, hair strands, fold lines): fine, about 0.2-0.3% of the width.",
+    "- Shading marks: finest, about 0.15-0.25% of the width.",
+    "- Accents only (pupils, nostril holes, lash roots, deepest creases): up to about 0.7% of the width.",
+    "- Nothing thinner than 0.15% of the width (it will not print). No stray specks, dust or fragments.",
+    "",
+    "SUBJECT HANDLING:",
+    "- Faces: the eyes are the focal point. Draw the iris ring and pupil, leave the catchlight as white paper, make the upper lid line heavier than the lower, lashes as a few tapered flicks. Lips: a parting line plus a few form lines. Nose: its shadow side and nostril, never an outline all the way round. Pores and freckles only as sparse marks.",
+    "- Hair, fur, beard: grouped strands that follow the growth direction in flowing, tapered bundles with white gaps between them; never a solid mass.",
+    "- Wrinkled skin, scales, bark, petals, fabric: draw the creases as contour lines, then mark the shadow side of each form. Do not outline every highlight.",
+    "",
+    "PRINT READINESS (hectograph / thermal stencil paper, then transfer to skin): edges are continuous unbroken lines; separate marks keep a clear white gap of at least 1.5x the mark width so neighbours never merge or blot; no tiny closed holes or slivers; no large solid black fills; leave a little white margin around the subject.",
+    "",
+    `STYLE: ${o.style.toUpperCase()}`,
+    STYLE_PROMPTS[o.style],
+    "",
+    `Detail / shading level: ${pct}% (${level})`,
+    "Output exactly ONE image. No text, letters, numbers, watermark, signature, caption, color swatch, border or frame.",
+  ].join("\n");
   const extra = o.customPrompt?.trim();
   if (!extra) return base;
-  return `${base}\n\nADDITIONAL ARTIST INSTRUCTIONS (apply on top of everything above; do not violate the hard rules, ink color, white background, or tonal-layering rules above):\n${extra}`;
+  return `${base}\n\nADDITIONAL ARTIST INSTRUCTIONS (apply on top of everything above; never violate the fidelity rules, the ink color, the white background or the style technique above):\n${extra}`;
 }
